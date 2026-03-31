@@ -476,2143 +476,1570 @@ pushflip/
 └── README.md
 ```
 
+## Execution Philosophy
+
+> **"If a task feels too big, break it down further."**
+
+Every task below is broken into **micro-tasks of ~15-30 minutes**. Each micro-task is a single concrete action with a clear "done when" signal. The goal is to learn deeply along the way — not just copy-paste code.
+
+**Format:**
+- **Do**: The single action to take
+- **Learn**: What concept this teaches you
+- **Done when**: How you know you can move on
+
+---
+
 ## Implementation Phases
 
-### Phase 1: Foundation & Core Game Engine (Days 1-7)
+### Phase 1: Foundation & Core Game Engine (Days 1-10)
 
 **Goal:** Get a playable on-chain card game working with Pinocchio (no Anchor), including ZK deck commitment infrastructure. No tokens or special abilities yet.
 
-**Prerequisites:** Development environment set up
+**Prerequisites:** Rust installed, Solana CLI installed, a funded devnet wallet.
 
-#### Task 1.1: Environment Setup (3-4 hours)
+---
 
-**Deliverable:** Working Pinocchio development environment (NO Anchor)
+#### Task 1.1: Environment Setup
 
-```bash
-# Commands to run
-rustup default stable
-rustup update
-sh -c "$(curl -sSfL https://release.solana.com/v1.18.0/install)"
-cargo install cargo-build-sbf        # Solana BPF compiler (replaces anchor build)
-cargo install shank-cli               # IDL generation for native programs
-npm install -g @codama/cli            # Client code generation from IDL
-solana-keygen new
-solana config set --url devnet
-solana airdrop 5
+##### 1.1.1: Create the workspace Cargo.toml (~15 min)
+**Do**: Create a root `Cargo.toml` with `[workspace]` containing `members = ["program"]`. Create the `program/` directory.
+**Learn**: Rust workspaces let you manage multiple crates (packages) in one repo. Solana programs are just Rust crates compiled to BPF bytecode.
+**Done when**: `ls program/` exists and root `Cargo.toml` has `[workspace]`.
+
+##### 1.1.2: Set up the program Cargo.toml (~15 min)
+**Do**: Create `program/Cargo.toml` with these dependencies:
+- `pinocchio = "0.11"` — the zero-dependency Solana framework (replaces `solana-program`)
+- `pinocchio-system = "0.4"` — CPI helpers for the System Program
+- `pinocchio-token = "0.4"` — CPI helpers for SPL Token
+- `pinocchio-log = "0.3"` — efficient logging
+- `pinocchio-pubkey = "0.3"` — pubkey utilities and `declare_id!`
+- `shank = "0.4"` — IDL generation via derive macros
+- `groth16-solana = "0.2"` — on-chain Groth16 proof verifier
+- `light-poseidon = "0.2"` — Poseidon hash (ZK-friendly)
+
+Set `crate-type = ["cdylib", "lib"]` under `[lib]`.
+**Learn**: `cdylib` tells Rust to compile a C-compatible dynamic library — this is what Solana's BPF loader expects. `lib` allows unit tests to import the crate normally.
+**Done when**: `cargo check` inside `program/` resolves all dependencies (may take a minute to download).
+
+##### 1.1.3: Create the program entrypoint (~20 min)
+**Do**: Create `program/src/lib.rs` with:
+1. `declare_id!("YOUR_PROGRAM_ID")` — use a placeholder for now
+2. `default_allocator!()` and `default_panic_handler!()` — Pinocchio's built-in memory/panic setup
+3. `program_entrypoint!(process_instruction)` — the macro that wires your function as the BPF entrypoint
+4. A `process_instruction` function that reads the first byte of `instruction_data` and matches it to instruction discriminators (start with just a `_ => Err(...)` fallback)
+**Learn**: Unlike Anchor which hides the entrypoint behind macros, Pinocchio makes you write it explicitly. Every Solana instruction hits `process_instruction(program_id, accounts, instruction_data)`. The first byte is your discriminator — a manual routing table.
+**Done when**: `cargo build-sbf` compiles successfully (ignore warnings for now).
+
+##### 1.1.4: Create the folder structure (~10 min)
+**Do**: Create these empty files inside `program/src/`:
+- `instructions/mod.rs` — will hold all instruction handlers
+- `state/mod.rs` — will hold all account data structures
+- `zk/mod.rs` — will hold ZK verification logic
+- `utils/mod.rs` — shared helpers
+- `errors.rs` — custom program errors
+- `events.rs` — event emission helpers
+
+Add `mod instructions; mod state; mod zk; mod utils; mod errors; mod events;` to `lib.rs`.
+**Learn**: Rust module organization. Each `mod.rs` file is the entry point for its directory. This structure keeps the codebase navigable as it grows.
+**Done when**: `cargo build-sbf` still compiles.
+
+##### 1.1.5: Create the justfile (~15 min)
+**Do**: Create a `justfile` at the repo root with commands:
+- `build`: `cargo build-sbf`
+- `test`: `cargo test`
+- `deploy`: `solana program deploy target/deploy/pushflip.so`
+- `idl`: `shank idl -o idl -p pushflip` (generates IDL from Shank macros)
+- `generate-client`: `npx @codama/cli generate -i idl/pushflip.json -o clients/`
+**Learn**: `just` is a modern command runner (like `make` but simpler). These commands capture the full build pipeline: compile → test → generate IDL → generate client → deploy.
+**Done when**: `just build` runs `cargo build-sbf` successfully.
+
+##### 1.1.6: Create the pnpm workspace (~15 min)
+**Do**: Create root `package.json` with `"workspaces": ["app", "house-ai", "dealer", "clients/*"]` and a `pnpm-workspace.yaml`. Create placeholder `package.json` files in `app/`, `house-ai/`, `dealer/`, and `clients/js/`.
+**Learn**: pnpm workspaces let multiple JS packages share dependencies. The frontend, AI agent, dealer service, and generated client are all separate packages that can import each other.
+**Done when**: `pnpm install` runs without errors from the root.
+
+##### 1.1.7: Verify the full toolchain (~15 min)
+**Do**: Run these checks and fix any issues:
+1. `cargo build-sbf` — Solana program compiles
+2. `solana config get` — shows devnet
+3. `solana balance` — has SOL (airdrop if needed: `solana airdrop 2`)
+4. `solana-keygen pubkey` — your wallet address
+**Learn**: This is your development loop: edit Rust → build-sbf → deploy → test. Get comfortable with these commands.
+**Done when**: All four commands succeed. Write down your wallet address.
+
+---
+
+#### Task 1.2: Define State Structures
+
+##### 1.2.1: Understand Solana account model (~20 min, reading)
+**Do**: Read and understand these concepts before writing any code:
+1. Solana stores ALL data in "accounts" — fixed-size byte arrays owned by programs
+2. Your program defines the layout of those bytes (no ORM, no database — raw bytes)
+3. PDAs (Program Derived Addresses) are accounts whose address is derived from seeds — the program can sign for them without a private key
+4. "Zero-copy" means reading data directly from the byte array without deserialization — faster and cheaper
+**Learn**: This is the fundamental difference from Ethereum. There's no "storage" — everything is accounts with byte layouts you define. Pinocchio makes this explicit while Anchor hides it.
+**Done when**: You can explain to someone: what is a PDA, why do we use byte offsets, and what does zero-copy mean.
+
+##### 1.2.2: Define the Card struct (~20 min)
+**Do**: Create `state/card.rs` with:
+1. A `Card` struct packed into 3 bytes: `value: u8` (byte 0), `card_type: u8` (byte 1), `suit: u8` (byte 2)
+2. Constants for card types: `ALPHA = 0`, `PROTOCOL = 1`, `MULTIPLIER = 2`
+3. Constants for protocol effects: `RUG_PULL = 0`, `AIRDROP = 1`, `VAMPIRE_ATTACK = 2`
+4. `from_bytes(&[u8]) -> Card` and `to_bytes(&self) -> [u8; 3]` methods
+**Learn**: On-chain, every byte costs rent. Packing a card into 3 bytes (vs. a Borsh-serialized struct that might be 20+) saves lamports and CU. This is why Pinocchio uses raw bytes.
+**Done when**: Unit test passes — `Card::from_bytes(&card.to_bytes()) == card`.
+
+##### 1.2.3: Design the GameSession layout on paper (~15 min)
+**Do**: Before writing code, sketch the byte layout of `GameSession` on paper or in a comment:
 ```
-
-**Claude Code Prompt:**
+Byte 0:       discriminator (u8) = 1
+Bytes 1-8:    game_id (u64)
+Bytes 9-40:   authority (Pubkey, 32 bytes)
+Bytes 41-72:  house (Pubkey)
+Bytes 73-104: dealer (Pubkey)
+Bytes 105-136: treasury (Pubkey)
+Bytes 137-168: token_mint (Pubkey)
+Byte 169:     player_count (u8)
+Bytes 170-297: turn_order ([Pubkey; 4] = 4 × 32 bytes)
+Byte 298:     current_turn_index (u8)
+Byte 299:     round_active (bool)
+Bytes 300-307: round_number (u64)
+Bytes 308-315: pot_amount (u64)
+Bytes 316-347: merkle_root ([u8; 32])
+Byte 348:     deck_committed (bool)
+Byte 349:     draw_counter (u8)
+Bytes 350-351: treasury_fee_bps (u16)
+Byte 352:     rollover_count (u8)
+Bytes 353-360: last_action_slot (u64)
+... padding to 512 bytes
 ```
-Create a new Pinocchio-based Solana project called "pushflip" with the following:
+**Learn**: This is zero-copy layout design. You're literally deciding where each field lives in a byte array. Anchor does this automatically with Borsh, but you lose control over alignment and size. With Pinocchio, you control every byte.
+**Done when**: You have a complete byte map with no overlapping offsets and the total fits in 512 bytes.
 
-1. Workspace Cargo.toml at root with members: ["program"]
-2. program/Cargo.toml with dependencies:
-   - pinocchio = "0.11" (with features: ["cpi"])
-   - pinocchio-system = "0.4"
-   - pinocchio-token = "0.4"
-   - pinocchio-log = "0.3"
-   - pinocchio-pubkey = "0.3"
-   - shank = "0.4" (for IDL generation via derive macros)
-   - groth16-solana = "0.2" (for ZK proof verification)
-   - light-poseidon = "0.2" (for Poseidon Merkle verification)
-3. program/src/lib.rs with:
-   - pinocchio_pubkey::declare_id!("...") with placeholder
-   - pinocchio::default_allocator!()
-   - pinocchio::default_panic_handler!()
-   - pinocchio::program_entrypoint!(process_instruction)
-   - process_instruction function that dispatches on first byte of instruction_data
-4. Folder structure: instructions/, state/, zk/, utils/, errors.rs, events.rs
-5. A justfile with commands: build, test, idl, deploy, generate-client
-6. Root package.json with pnpm workspace for app/, house-ai/, dealer/, clients/
-7. codama.ts config file for client generation from Shank IDL
+##### 1.2.4: Implement the GameSession struct (~30 min)
+**Do**: Create `state/game_session.rs` with:
+1. Constants for every byte offset (e.g., `const GAME_ID_OFFSET: usize = 1;`)
+2. A `GameSession` struct that wraps a byte slice reference
+3. Accessor methods that read from the byte slice at the correct offset: `game_id(&self) -> u64`, `authority(&self) -> &[u8; 32]`, etc.
+4. Mutable setter methods: `set_round_active(&mut self, val: bool)`, etc.
+5. PDA seeds: `["game", game_id.to_le_bytes()]`
+**Learn**: This is the Pinocchio pattern — your struct IS the byte slice, and accessors read/write directly. No serialization overhead. Compare this to Anchor's `#[account]` macro which generates Borsh serialize/deserialize.
+**Done when**: `cargo build-sbf` compiles. Write a unit test that creates a 512-byte array, wraps it in GameSession, writes fields, and reads them back correctly.
 
-This is a NATIVE Pinocchio program — do NOT use Anchor, anchor-lang, or #[program] macros.
-Use Pinocchio's program_entrypoint! macro and manual instruction dispatch.
+##### 1.2.5: Design and implement the PlayerState layout (~25 min)
+**Do**: Create `state/player_state.rs` with the same pattern:
 ```
-
-**Validation:**
-- [ ] `cargo build-sbf` completes without errors (in program/ directory)
-- [ ] `solana config get` shows devnet
-- [ ] Wallet has SOL balance
-- [ ] `shank idl` generates a basic IDL
-
-#### Task 1.2: Define State Structures (4-5 hours)
-
-**Deliverable:** All account structures with zero-copy layouts for Pinocchio
-
-**Claude Code Prompt:**
+Byte 0:       discriminator (u8) = 2
+Bytes 1-32:   player (Pubkey)
+Bytes 33-40:  game_id (u64)
+Byte 41:      hand_size (u8)
+Bytes 42-71:  hand ([Card; 10] = 10 × 3 bytes = 30 bytes)
+Byte 72:      is_active (bool)
+Byte 73:      inactive_reason (u8) — 0=active, 1=bust, 2=stay
+Bytes 74-81:  score (u64)
+Bytes 82-89:  staked_amount (u64)
+Byte 90:      has_used_second_chance (bool)
+Byte 91:      has_used_scry (bool)
+... padding to 256 bytes
 ```
-In the pushflip Pinocchio program, create the state module with ZERO-COPY layouts:
+PDA seeds: `["player", game_id.to_le_bytes(), player.key()]`
+**Learn**: Each player gets their own PDA. The hand is stored inline (10 cards × 3 bytes = 30 bytes max). This is more efficient than a dynamic Vec because Solana accounts are fixed-size.
+**Done when**: Unit test passes — create PlayerState, add cards to hand, read them back.
 
-NOTE: Pinocchio does NOT use Anchor's #[account] macro. Instead, define fixed-size
-structs with known byte offsets and implement TryFrom<&AccountInfo> for deserialization.
-Use raw byte slicing on account data — no Borsh, no serde.
+##### 1.2.6: Write account validation helpers (~25 min)
+**Do**: Create `utils/accounts.rs` with helper functions:
+1. `verify_account_owner(account: &AccountInfo, expected: &Pubkey)` — checks `account.owner() == expected`
+2. `verify_pda(account: &AccountInfo, seeds: &[&[u8]], program_id: &Pubkey)` — derives PDA and checks it matches `account.key()`
+3. `verify_signer(account: &AccountInfo)` — checks `account.is_signer()`
+4. `verify_writable(account: &AccountInfo)` — checks `account.is_writable()`
+**Learn**: In Anchor, `#[account(mut, signer, has_one = authority)]` does these checks magically. In Pinocchio, YOU validate every account manually. This is the security-critical part — a missing check is a vulnerability.
+**Done when**: Each helper returns `Result<(), ProgramError>` and compiles.
 
-1. `state/card.rs`:
-   - Card struct: value (u8), card_type (u8), suit (u8) — 3 bytes, packed
-   - CardType constants: ALPHA = 0, PROTOCOL = 1, MULTIPLIER = 2
-   - ProtocolEffect constants: RUG_PULL = 0, AIRDROP = 1, VAMPIRE_ATTACK = 2
-   - Implement from_bytes(&[u8; 3]) -> Self and to_bytes(&self) -> [u8; 3]
-
-2. `state/game_session.rs`:
-   - GameSession: zero-copy layout with explicit byte offsets
-   - Fields at known offsets:
-     - [0]: discriminator (u8, = 1 for GameSession)
-     - [1]: bump (u8)
-     - [2..10]: game_id (u64 LE)
-     - [10..42]: authority (Pubkey)
-     - [42..74]: house_address (Pubkey)
-     - [74..106]: token_mint (Pubkey)
-     - [106..138]: vault (Pubkey)
-     - [138..170]: dealer (Pubkey) — ZK dealer address
-     - [170..202]: merkle_root ([u8; 32]) — Poseidon Merkle root
-     - [202]: draw_counter (u8)
-     - [203]: deck_committed (bool/u8)
-     - [204]: player_count (u8)
-     - [205..333]: turn_order ([Pubkey; 4], 128 bytes)
-     - [333]: current_turn_index (u8)
-     - [334..342]: pot_amount (u64 LE)
-     - [342]: round_active (bool/u8)
-     - [343..351]: round_number (u64 LE)
-     - [351]: rollover_count (u8)
-     - [352..360]: last_action_slot (u64 LE)
-     - [360..362]: treasury_fee_bps (u16 LE)
-     - [362..394]: treasury (Pubkey)
-   - Total: 394 bytes (allocate 512)
-   - Seeds: ["game", game_id.to_le_bytes()]
-   - Implement accessor methods: game_id(), authority(), is_player_turn(), etc.
-   - Implement mutable setters: set_round_active(), set_current_turn_index(), etc.
-
-3. `state/player_state.rs`:
-   - PlayerState: zero-copy layout
-   - Fields at known offsets:
-     - [0]: discriminator (u8, = 2 for PlayerState)
-     - [1]: bump (u8)
-     - [2..34]: player (Pubkey)
-     - [34..42]: game_id (u64 LE)
-     - [42]: hand_size (u8)
-     - [43..73]: hand ([Card; 10], 30 bytes fixed)
-     - [73..81]: score (u64 LE)
-     - [81]: is_active (bool/u8)
-     - [82]: inactive_reason (u8: 0=active, 1=bust, 2=stay)
-     - [83]: bust_card_value (u8)
-     - [84..92]: staked_amount (u64 LE)
-     - [92]: has_used_second_chance (bool/u8)
-     - [93..101]: total_wins (u64 LE)
-     - [101..109]: total_games (u64 LE)
-   - Total: 109 bytes (allocate 256)
-   - Seeds: ["player", game_id.to_le_bytes(), player.key()]
-
-4. `utils/accounts.rs`:
-   - Helper to validate PDA ownership: verify account.owner() == program_id
-   - Helper to verify PDA address: find_program_address with expected seeds
-   - Implement TryFrom<&AccountInfo> for each account type
-
-5. `state/mod.rs` to export all state types
-
-Use NO Borsh, NO Anchor macros. All serialization is manual byte slicing.
-Add Shank #[derive(ShankAccount)] annotations for IDL generation.
+##### 1.2.7: Create custom error types (~15 min)
+**Do**: In `errors.rs`, define a custom error enum:
+```rust
+#[derive(Clone, Debug, PartialEq)]
+pub enum PushFlipError {
+    InvalidInstruction,
+    GameAlreadyInitialized,
+    GameNotFound,
+    RoundAlreadyActive,
+    RoundNotActive,
+    DeckNotCommitted,
+    DeckAlreadyCommitted,
+    NotYourTurn,
+    PlayerNotActive,
+    MaxPlayersReached,
+    PlayerAlreadyJoined,
+    InvalidMerkleProof,
+    InvalidGroth16Proof,
+    InsufficientStake,
+    // ... add more as needed
+}
 ```
+Implement `From<PushFlipError> for ProgramError` mapping each to a custom error code.
+**Learn**: Solana programs return numeric error codes. Custom errors map meaningful names to codes (e.g., `InvalidMerkleProof = 0x6`). The client can decode these to show human-readable messages.
+**Done when**: `cargo build-sbf` compiles with the error types.
 
-**Validation:**
-- [ ] `cargo build-sbf` succeeds
-- [ ] All structs have correct byte offset calculations
-- [ ] PDA seeds are properly defined
-- [ ] `shank idl` generates correct IDL
+##### 1.2.8: Export everything from state/mod.rs (~10 min)
+**Do**: Update `state/mod.rs` to re-export `Card`, `GameSession`, `PlayerState`. Update `utils/mod.rs` to re-export the validation helpers. Ensure `lib.rs` modules are wired up.
+**Learn**: Rust's module system requires explicit re-exports. `pub use card::*;` in `mod.rs` makes the types available as `crate::state::Card`.
+**Done when**: `cargo build-sbf` compiles and `cargo test` runs (even if no tests yet).
 
-#### Task 1.3: Implement Deck Utilities (2-3 hours)
+---
 
-**Deliverable:** Deck creation and canonical ordering (shuffle is now off-chain via ZK dealer)
+#### Task 1.3: Implement Deck Utilities
 
-**Claude Code Prompt:**
+##### 1.3.1: Define the canonical deck (~20 min)
+**Do**: Create `utils/deck.rs` with `create_canonical_deck() -> [Card; 94]`:
+- 52 Alpha cards: values 1-13, four suits each (52 total)
+- 30 Protocol cards: 10 RugPull, 10 Airdrop, 10 VampireAttack
+- 12 Multiplier cards: 4×2x, 4×3x, 4×5x
+- Order them deterministically (Alpha by suit then value, Protocol by effect, Multiplier by value)
+**Learn**: The canonical deck order is a constant — both the on-chain program and the ZK circuit must agree on it. The shuffle is a permutation of THIS specific ordering.
+**Done when**: `create_canonical_deck().len() == 94` and the order is deterministic (call it twice, get identical results).
+
+##### 1.3.2: Implement canonical deck hashing (~20 min)
+**Do**: Add `canonical_deck_hash() -> [u8; 32]` that:
+1. Takes the canonical deck
+2. Hashes each card with Poseidon: `Poseidon(value, type, suit, index)`
+3. Returns a final hash over all card hashes
+**Learn**: Poseidon is a "ZK-friendly" hash — it's efficient inside a ZK circuit (far fewer constraints than SHA-256). The canonical hash is a public input to the Groth16 proof — it proves "the shuffled deck is a permutation of THIS known deck."
+**Done when**: Hash is deterministic. Same input always produces same output.
+
+##### 1.3.3: Write unit tests for deck utilities (~15 min)
+**Do**: Add tests in `utils/deck.rs`:
+1. `test_deck_size` — exactly 94 cards
+2. `test_deck_composition` — count: 52 Alpha, 30 Protocol, 12 Multiplier
+3. `test_canonical_order` — calling twice gives identical result
+4. `test_canonical_hash` — calling twice gives identical hash
+**Learn**: These tests establish invariants. If anyone changes the deck, the tests catch it — and the ZK circuit would break too.
+**Done when**: `cargo test` — all 4 tests pass.
+
+---
+
+#### Task 1.4: Implement Scoring Logic
+
+##### 1.4.1: Implement hand scoring (~20 min)
+**Do**: Create `utils/scoring.rs` with `calculate_hand_score(hand: &[Card], hand_size: u8) -> u64`:
+1. Sum the `value` of all Alpha cards in the hand
+2. Check for Multiplier cards and apply them (2x, 3x, 5x multiply the sum)
+3. Protocol cards contribute 0 to score
+**Learn**: Scoring is pure computation — no account access, no CPI. This makes it easy to unit test. The multiplier interaction is the interesting part — a 5x multiplier on a 20-point hand = 100 points.
+**Done when**: `calculate_hand_score` with hand `[Alpha(5), Alpha(10), Multiplier(3x)]` returns `45`.
+
+##### 1.4.2: Implement bust detection (~15 min)
+**Do**: Add `check_bust(hand: &[Card], hand_size: u8) -> bool`:
+- A player busts when they have two Alpha cards with the **same value** (e.g., two 7s)
+- Scan the hand for duplicate Alpha values
+**Learn**: This is the core tension of the game — push your luck (draw more cards for higher score) vs. risk busting on a duplicate.
+**Done when**: `check_bust([Alpha(7), Alpha(7)])` returns `true`. `check_bust([Alpha(7), Alpha(8)])` returns `false`.
+
+##### 1.4.3: Implement PushFlip detection (~10 min)
+**Do**: Add `check_pushflip(hand: &[Card], hand_size: u8) -> bool`:
+- A PushFlip is exactly 7 cards in hand without busting
+- This is the jackpot condition
+**Learn**: Named after the game itself — getting 7 cards without a duplicate is statistically rare and deserves a big reward.
+**Done when**: `check_pushflip` with 7 non-duplicate cards returns `true`, with 6 cards returns `false`.
+
+##### 1.4.4: Write scoring unit tests (~15 min)
+**Do**: Add tests:
+1. `test_basic_score` — Alpha cards only
+2. `test_multiplier_score` — with 2x, 3x, 5x multipliers
+3. `test_protocol_no_score` — Protocol cards add 0
+4. `test_bust_duplicate` — duplicate Alpha values bust
+5. `test_no_bust` — all unique is fine
+6. `test_pushflip` — exactly 7 cards, no bust
+**Done when**: `cargo test` — all 6 tests pass.
+
+---
+
+#### Task 1.5: ZK Verification Module
+
+##### 1.5.1: Understand the ZK flow (~20 min, reading)
+**Do**: Read and internalize this flow before writing code:
+1. **Off-chain dealer** shuffles the deck (a permutation of the 94 canonical cards)
+2. Dealer builds a **Poseidon Merkle tree** over the shuffled deck (each leaf = hash of a card)
+3. Dealer generates a **Groth16 proof** that the shuffled deck is a valid permutation
+4. Dealer submits `commit_deck(merkle_root, groth16_proof)` to the on-chain program
+5. On-chain program **verifies the Groth16 proof** (~200K CU) and stores the merkle_root
+6. When a player hits, the dealer reveals the card + **Merkle proof** for that position
+7. On-chain program **verifies the Merkle proof** against the stored root (~50K CU)
+**Learn**: The Groth16 proof guarantees "this is a valid shuffle." The Merkle proofs guarantee "this card was at this position in the committed shuffle." Together: provably fair dealing.
+**Done when**: You can draw this flow on paper from memory.
+
+##### 1.5.2: Implement Groth16 verification wrapper (~30 min)
+**Do**: Create `zk/groth16.rs` with `verify_shuffle_proof(proof: &[u8; 128], merkle_root: &[u8; 32], canonical_hash: &[u8; 32]) -> Result<()>`:
+1. Parse the 128-byte compressed proof into the format `groth16-solana` expects
+2. Set up the public inputs: `[merkle_root, canonical_hash]`
+3. Call the Groth16 verifier from `groth16-solana` — this uses Solana's native `alt_bn128` syscalls
+4. Return Ok if valid, error if not
+**Learn**: Groth16 is a "succinct" proof system — the proof is always 128 bytes regardless of circuit complexity. The verifier checks a pairing equation on the BN254 elliptic curve. Solana provides native syscalls for this, making verification feasible (~200K CU).
+**Done when**: Compiles. We'll test with real proofs after building the circuit in Phase 2.
+
+##### 1.5.3: Create the verifying key placeholder (~15 min)
+**Do**: Create `zk/verifying_key.rs` with the Groth16 verifying key as a constant:
+```rust
+pub const VERIFYING_KEY: &[u8] = &[/* placeholder bytes */];
 ```
-Create `utils/deck.rs` for the pushflip program with:
+Add a comment: "Generated during trusted setup (Phase 2, Task 2.8). Replace with real key after circuit compilation."
+**Learn**: The verifying key is the "public half" of the Groth16 trusted setup. It's embedded in the program and used to check proofs. It's specific to the circuit — if you change the circuit, you need a new key.
+**Done when**: File exists, compiles with placeholder.
 
-1. `create_canonical_deck() -> [Card; 94]` function (fixed-size array, no Vec):
-   - 52 Alpha cards (4 suits × 13 values, standard deck)
-   - 30 Protocol cards (10 each of RugPull, Airdrop, VampireAttack)
-   - 12 Multiplier cards (6 × 2x multiplier, 6 × 3x multiplier)
-   - Cards are in a deterministic "canonical order" — this is the public input
-     to the ZK circuit (everyone knows the unshuffled deck)
+##### 1.5.4: Implement Merkle proof verification (~30 min)
+**Do**: Create `zk/merkle.rs` with `verify_merkle_proof(leaf_data: &[u8], proof: &[[u8; 32]; 7], leaf_index: u8, root: &[u8; 32]) -> Result<()>`:
+1. Compute leaf hash: `Poseidon(card_value, card_type, suit, leaf_index)`
+2. Walk up the proof path (7 levels for depth-7 tree, supporting 128 leaves):
+   - At each level, determine left/right by checking the bit of `leaf_index` at that position
+   - Hash the pair: `Poseidon(left, right)`
+3. Compare final hash to the stored `root`
+**Learn**: A Merkle tree lets you prove a specific element exists in a committed set by providing just 7 hashes (the "proof path"). This is how we verify each card without revealing the whole deck.
+**Done when**: Unit test with a manually computed 3-level Merkle tree passes.
 
-2. `canonical_deck_hash() -> [u8; 32]`:
-   - Returns the Poseidon hash of the canonical deck in standard order
-   - This is a constant used by the ZK circuit as a public input
+##### 1.5.5: Write Merkle proof unit tests (~20 min)
+**Do**: Create a test that:
+1. Builds a small Poseidon Merkle tree (8 leaves) manually
+2. Generates a proof for leaf 3
+3. Verifies it against the root — should pass
+4. Tampers with one proof element — should fail
+5. Tests with wrong leaf_index — should fail
+**Learn**: Testing the Merkle verifier with known test vectors is critical. This is security-sensitive code — a bug here means players could cheat.
+**Done when**: All 3 test cases pass.
 
-3. NOTE: shuffle_deck() is NOT needed on-chain. The ZK dealer shuffles off-chain
-   and commits a Merkle root. On-chain, we only verify Merkle proofs for card reveals.
+##### 1.5.6: Wire up the ZK module (~10 min)
+**Do**: Update `zk/mod.rs` to export `verify_shuffle_proof`, `verify_merkle_proof`, and `VERIFYING_KEY`. Ensure `cargo build-sbf` compiles.
+**Done when**: Clean build, no warnings from the ZK module.
 
-Include unit tests using #[cfg(test)] module to verify:
-- Deck has exactly 94 cards
-- Canonical order is deterministic
-- Canonical deck hash is consistent
+---
+
+#### Task 1.6: Initialize Instruction
+
+##### 1.6.1: Understand Pinocchio instruction patterns (~15 min, reading)
+**Do**: Study how Pinocchio instructions work before writing one:
+1. Each instruction is a function: `process_initialize(accounts: &[AccountInfo], data: &[u8]) -> ProgramResult`
+2. You manually parse accounts from the slice: `let [game_session, authority, house, ...] = accounts else { return Err(...) }`
+3. You validate each account (signer? writable? correct owner? correct PDA?)
+4. You perform the action (create accounts, write data)
+5. You emit events (optional, via CPI to the noop program)
+**Learn**: In Anchor, `#[derive(Accounts)]` generates all the parsing and validation. In Pinocchio, you write it yourself. This gives you total control but requires discipline — every missing check is a potential exploit.
+**Done when**: You understand the pattern: parse → validate → execute → emit.
+
+##### 1.6.2: Create the initialize instruction file (~15 min)
+**Do**: Create `instructions/initialize.rs` with the function signature:
+```rust
+pub fn process_initialize(accounts: &[AccountInfo], instruction_data: &[u8]) -> ProgramResult
 ```
-
-**Validation:**
-- [ ] Unit tests pass with `cargo test`
-- [ ] Deck contains correct card distribution
-- [ ] Canonical hash is deterministic
-
-#### Task 1.4: Implement Scoring Logic (2 hours)
-
-**Deliverable:** Score calculation utilities
-
-**Claude Code Prompt:**
-```
-Create `utils/scoring.rs` for the pushflip program with:
-
-1. `calculate_hand_score(hand: &[Card], hand_size: u8) -> u64`:
-   - Sum all Alpha card values
-   - Apply multiplier cards (2x or 3x to total)
-   - Protocol cards don't add to score directly
-   - Return final score
-
-2. `check_bust(hand: &[Card], hand_size: u8) -> bool`:
-   - Return true if hand contains two Alpha cards with the same value
-   - Ignore suit, only check value
-   - Protocol and Multiplier cards cannot cause bust
-
-3. `check_pushflip(hand: &[Card], hand_size: u8) -> bool`:
-   - Return true if player has exactly 7 cards without busting
-
-4. NOTE: get_bust_probability() is a frontend-only calculation (no floats on-chain)
-
-Include comprehensive unit tests for edge cases.
-All functions work with fixed-size arrays and hand_size counter (no Vec).
-```
-
-**Validation:**
-- [ ] Score calculation matches game rules
-- [ ] Bust detection works correctly
-
-#### Task 1.5: ZK Verification Module (5-6 hours)
-
-**Deliverable:** On-chain Groth16 and Poseidon Merkle proof verification
-
-**Claude Code Prompt:**
-```
-Create the `zk/` module for on-chain ZK verification:
-
-1. `zk/groth16.rs`:
-   - Wrapper around groth16-solana crate for Groth16 proof verification
-   - `verify_shuffle_proof(proof: &[u8], merkle_root: &[u8; 32]) -> bool`
-   - Uses Solana's native alt_bn128 syscalls for efficient pairing checks (~200K CU)
-   - Proof format: 128 bytes compressed (2 G1 points + 1 G2 point)
-   - Public inputs: merkle_root, canonical_deck_hash (constant)
-
-2. `zk/verifying_key.rs`:
-   - Embed the Groth16 verifying key as a constant (generated during trusted setup)
-   - For now, use a placeholder — actual key comes from the Circom circuit trusted setup
-   - Format: alpha, beta, gamma, delta, IC points (BN254 curve)
-
-3. `zk/merkle.rs`:
-   - `verify_merkle_proof(root: &[u8; 32], leaf: &[u8; 32], proof: &[[u8; 32]; 7], index: u8) -> bool`
-   - Poseidon hash using light-poseidon crate (or Solana Poseidon syscall)
-   - Tree depth = 7 (supports up to 128 leaves, we use 94)
-   - Leaf = Poseidon(card_value, card_type, suit, leaf_index)
-   - Each proof step: if bit is 0, hash(current, sibling); if bit is 1, hash(sibling, current)
-
-4. `zk/mod.rs`:
-   - Export all ZK verification functions
-
-These are VERIFICATION-ONLY functions (on-chain). Proof GENERATION happens off-chain.
-Target: Groth16 verify ~200K CU, Merkle verify ~50K CU per card reveal.
-```
-
-**Validation:**
-- [ ] Groth16 verification compiles with groth16-solana
-- [ ] Merkle proof verification works with test vectors
-- [ ] CU usage is within budget
-
-#### Task 1.6: Initialize Instruction (4-5 hours)
-
-**Deliverable:** Game initialization instruction using Pinocchio patterns
-
-**Claude Code Prompt:**
-```
-Create `instructions/initialize.rs` for the pushflip Pinocchio program:
-
-NOTE: This is a NATIVE Pinocchio instruction — no Anchor macros.
-Pattern: define an accounts struct, implement TryFrom<&[AccountInfo]>,
-validate all accounts manually, then execute logic.
-
-1. Define `InitializeAccounts` struct:
-   - game_session: &AccountInfo (to be created as PDA)
-   - authority: &AccountInfo (signer, pays rent)
-   - house: &AccountInfo (not signer, stored as house_address)
-   - dealer: &AccountInfo (ZK dealer address)
-   - treasury: &AccountInfo (treasury token account)
-   - system_program: &AccountInfo
-
-2. Implement TryFrom<&[AccountInfo]> for InitializeAccounts:
-   - Verify account count
-   - Verify authority is signer
-   - Verify system_program is correct address
-
-3. Process function:
-   - Parse game_id from instruction_data (u64 LE after discriminator byte)
-   - Derive PDA: find_program_address(["game", game_id.to_le_bytes()], program_id)
-   - CPI to system_program::CreateAccount with PDA seeds for signing
-   - Write GameSession data at correct byte offsets:
-     - Set discriminator = 1
-     - Set authority, house_address, dealer
-     - Place House AI in turn_order[0], set player_count = 1
-     - Set round_active = false, rollover_count = 0
-     - Set treasury_fee_bps = 200 (2%)
-     - Set merkle_root = [0; 32], deck_committed = false, draw_counter = 0
-   - Emit GameInitialized event (CPI to noop program, Anchor-compatible format)
-
-4. Validation:
-   - game_id must be > 0
-   - PDA must not already exist (check data length == 0)
-
-5. In `events.rs`, define event emission helper using CPI to noop program
-
-6. In `entrypoint.rs`, add discriminator 0 => initialize
-
-Use pinocchio_system::instructions::CreateAccount for account creation CPI.
-Use invoke_signed() with PDA seeds for signing.
-```
-
-**Validation:**
-- [ ] Can initialize a new game session
-- [ ] PDA is created at correct address
-- [ ] Cannot initialize twice with same game_id
-
-#### Task 1.7: Commit Deck Instruction (5-6 hours)
-
-**Deliverable:** ZK-verified deck commitment — the core provably fair mechanism
-
-**Claude Code Prompt:**
-```
-Create `instructions/commit_deck.rs` for the pushflip Pinocchio program:
-
-This is the KEY differentiator — on-chain ZK proof verification for provably fair shuffling.
-
-1. Define `CommitDeckAccounts` struct:
-   - game_session: &AccountInfo (mutable PDA)
-   - dealer: &AccountInfo (signer — must match game_session.dealer)
-
-2. Implement TryFrom<&[AccountInfo]> with validation:
-   - Verify dealer is signer
-   - Verify game_session is owned by program
-   - Verify game_session.dealer == dealer.key()
-
-3. Parse instruction_data:
-   - [0]: discriminator (already consumed by router)
-   - [1..33]: merkle_root ([u8; 32])
-   - [33..161]: groth16_proof (128 bytes compressed)
-
-4. Process function:
-   - Verify round is NOT active (commit before start)
-   - Verify deck is NOT already committed for this round
-   - Call zk::groth16::verify_shuffle_proof(proof, merkle_root)
-   - If verification fails, return error
-   - Write merkle_root to GameSession
-   - Set deck_committed = true
-   - Set draw_counter = 0
-   - Emit DeckCommitted event with round_number and merkle_root
-
-5. CU budget: ~200K CU for Groth16 verification via alt_bn128 syscalls
-
-6. In entrypoint.rs, add discriminator 1 => commit_deck
-```
-
-**Validation:**
-- [ ] Valid Groth16 proofs are accepted
-- [ ] Invalid proofs are rejected
-- [ ] Cannot commit deck twice per round
-- [ ] Only the designated dealer can commit
-
-#### Task 1.8: Join Round Instruction (3-4 hours)
-
-**Deliverable:** Player joining functionality (without tokens for now)
-
-**Claude Code Prompt:**
-```
-Create `instructions/join_round.rs` for the pushflip Pinocchio program:
-
-1. Define `JoinRoundAccounts` struct:
-   - game_session: &AccountInfo (mutable PDA)
-   - player_state: &AccountInfo (to be created as PDA)
-   - player: &AccountInfo (signer, pays rent)
-   - system_program: &AccountInfo
-
-2. Implement TryFrom<&[AccountInfo]> with validation:
-   - Verify player is signer
-   - Verify game_session is owned by program
-
-3. Process function:
-   - Verify round is not currently active (joining phase)
-   - Verify player_count < 4 (House at slot 0, up to 3 humans at slots 1-3)
-   - Verify player pubkey not already in turn_order (prevent double-join)
-   - Derive PlayerState PDA: ["player", game_id.to_le_bytes(), player.key()]
-   - CPI to system_program::CreateAccount with PDA signing
-   - Write PlayerState at byte offsets:
-     - discriminator = 2, bump, player, game_id
-     - hand_size = 0, score = 0, is_active = false (will be set true on start_round)
-     - inactive_reason = 0, bust_card_value = 0
-   - Update GameSession: add to turn_order[player_count], increment player_count
-   - Emit PlayerJoined event
-
-4. In entrypoint.rs, add discriminator 2 => join_round
-
-For now, skip token staking — added in Phase 2.
-```
-
-**Validation:**
-- [ ] Player can join a game
-- [ ] PlayerState PDA is created
-- [ ] Cannot join twice or exceed max players
-
-#### Task 1.9: Start Round Instruction (3-4 hours)
-
-**Deliverable:** Round initialization (deck already committed via ZK)
-
-**Claude Code Prompt:**
-```
-Create `instructions/start_round.rs` for the pushflip Pinocchio program:
-
-NOTE: Unlike the Anchor version, the deck is NOT shuffled on-chain.
-The ZK dealer has already committed a Merkle root via commit_deck.
-start_round just begins play.
-
-1. Define `StartRoundAccounts` struct:
-   - game_session: &AccountInfo (mutable PDA)
-   - authority: &AccountInfo (signer, must be game authority)
-   - Plus all PlayerState accounts via remaining accounts
-
-2. Process function:
-   - Verify at least 2 players (House + 1 human minimum)
-   - Verify round is not already active
-   - Verify deck_committed == true (ZK dealer must have committed)
-   - Set round_active = true
-   - Set current_turn_index = 0
-   - Increment round_number
-   - Reset all PlayerState accounts:
-     - is_active = true, inactive_reason = 0, bust_card_value = 0
-     - Clear hand, hand_size = 0, score = 0
-     - has_used_second_chance = false
-   - Emit RoundStarted event
-
-3. Validate remaining accounts (PlayerState PDAs):
-   - Verify owner == program_id
-   - Verify PDA seeds match game_id + player pubkey
-   - Verify player is in turn_order
-   - Verify count == player_count
-
-4. In entrypoint.rs, add discriminator 3 => start_round
-```
-
-**Validation:**
-- [ ] Round starts only after deck committed
-- [ ] All players are set to active
-- [ ] Turn order is established
-
-#### Task 1.10: Hit Instruction (6-7 hours)
-
-**Deliverable:** Core card drawing with Merkle proof verification
-
-**Claude Code Prompt:**
-```
-Create `instructions/hit.rs` for the pushflip Pinocchio program:
-
-This instruction now VERIFIES a Merkle proof for the revealed card,
-rather than popping from an on-chain deck.
-
-1. Define `HitAccounts` struct:
-   - game_session: &AccountInfo (mutable PDA)
-   - player_state: &AccountInfo (mutable PDA)
-   - player: &AccountInfo (signer)
-
-2. Parse instruction_data (after discriminator):
-   - card_data: [u8; 3] (Card bytes: value, type, suit)
-   - merkle_proof: [[u8; 32]; 7] (7 sibling hashes, tree depth 7)
-   - leaf_index: u8 (position in shuffled deck)
-
-3. Process function:
-   - Verify round is active
-   - Verify it's this player's turn (current_turn_index matches)
-   - Verify player is_active
-   - **Verify leaf_index == game_session.draw_counter** (sequential draws)
-   - **Compute leaf hash: Poseidon(card_value, card_type, suit, leaf_index)**
-   - **Verify Merkle proof: zk::merkle::verify_merkle_proof(merkle_root, leaf_hash, proof, leaf_index)**
-   - If Merkle proof invalid, return error
-   - Increment draw_counter
-   - Deserialize card_data into Card
-   - Add card to player's hand at hand[hand_size], increment hand_size
-   - Check for bust condition (duplicate Alpha value)
-   - If busted:
-     - Set is_active = false, inactive_reason = 1
-     - Set bust_card_value = duplicate Alpha value
-     - Emit PlayerBusted event
-     - advance_turn()
-   - If not busted:
-     - Check for PushFlip (7 cards)
-     - Emit CardDrawn event
-     - Do NOT advance turn (player can hit again or stay)
-
-4. advance_turn() helper:
-   - Find next active player in turn_order
-   - Update current_turn_index
-   - If no active players remain, set flag for round end
-
-5. CU budget: ~50K CU per Merkle verification (Poseidon syscall)
-
-6. In entrypoint.rs, add discriminator 4 => hit
-```
-
-**Validation:**
-- [ ] Valid Merkle proofs accepted, cards added to hand
-- [ ] Invalid Merkle proofs rejected
-- [ ] Sequential draw_counter enforced
-- [ ] Bust detection works
-- [ ] Cannot act when not your turn
-
-#### Task 1.11: Stay Instruction (3-4 hours)
-
-**Deliverable:** Player ending their turn
-
-**Claude Code Prompt:**
-```
-Create `instructions/stay.rs` for the pushflip Pinocchio program:
-
-1. Define `StayAccounts` struct:
-   - game_session: &AccountInfo (mutable PDA)
-   - player_state: &AccountInfo (mutable PDA)
-   - player: &AccountInfo (signer)
-
-2. Process function:
-   - Verify round is active
-   - Verify it's this player's turn
-   - Verify player is_active
-   - Calculate and store final score using calculate_hand_score()
-   - Set is_active = false, inactive_reason = 2 (stay)
-   - Emit PlayerStayed event with final score
-   - advance_turn()
-   - Check if all players are now inactive → emit RoundReadyToEnd
-
-3. In entrypoint.rs, add discriminator 5 => stay
-```
-
-**Validation:**
-- [ ] Score is calculated correctly
-- [ ] Turn advances to next player
-- [ ] Round end is triggered when all players done
-
-#### Task 1.12: End Round Instruction (4-5 hours)
-
-**Deliverable:** Winner determination and round cleanup
-
-**Claude Code Prompt:**
-```
-Create `instructions/end_round.rs` for the pushflip Pinocchio program:
-
-1. Define `EndRoundAccounts` struct:
-   - game_session: &AccountInfo (mutable PDA)
-   - caller: &AccountInfo (signer — anyone can call when round ready)
-   - Plus all PlayerState accounts via remaining accounts
-
-2. Remaining accounts validation (CRITICAL):
-   - For each account:
-     a. Verify owner == program_id
-     b. Read discriminator byte == 2 (PlayerState)
-     c. Read player pubkey and game_id from byte offsets
-     d. Verify PDA: find_program_address(["player", game_id, player], program_id)
-     e. Verify player is in turn_order
-   - Verify count == player_count
-
-3. Process function:
-   - Set round_active = false FIRST (idempotency guard)
-   - Reset deck_committed = false (require new ZK commitment for next round)
-   - Verify all players are inactive
-   - Find highest score (inactive_reason == 2/stay only)
-   - Ties: first in turn order wins
-   - For now, just emit winner (token distribution in Phase 2)
-   - Update last_action_slot
-
-4. Edge case — everyone busted:
-   - Increment rollover_count
-   - Pot stays, rolls over
-   - No rake on rollover
-   - At rollover_count == 10: return stakes proportionally, reset
-
-5. In entrypoint.rs, add discriminator 6 => end_round
-```
-
-**Validation:**
-- [ ] Winner correctly determined
-- [ ] Ties handled
-- [ ] deck_committed reset for next round
-- [ ] Rollover logic works
-
-#### Task 1.13: Game Lifecycle Instructions (2-3 hours)
-
-**Deliverable:** Instructions for leaving and closing games
-
-**Claude Code Prompt:**
-```
-Create game lifecycle instructions for Pinocchio:
-
-1. `instructions/close_game.rs` (discriminator 7):
-   - Verify authority is signer
-   - Verify round_active == false, pot_amount == 0
-   - Close all PlayerState PDAs (transfer lamports back to players)
-   - Close GameSession PDA (transfer lamports to authority)
-   - To close: set data to zero, transfer all lamports, set owner to system program
-
-2. `instructions/leave_game.rs` (discriminator 8):
-   - If round NOT active: refund stake, remove from turn_order, close PlayerState
-   - If round IS active: forfeit (is_active = false, inactive_reason = 2, score = 0)
-   - PlayerState stays open until round ends if active
-
-Pinocchio account closing pattern:
-- Transfer all lamports from account to recipient
-- Set account data length to 0
-- Assign owner to system program (system_program ID)
-```
-
-**Validation:**
-- [ ] Can close game when inactive and pot empty
-- [ ] Leave refunds between rounds, forfeits mid-round
-
-#### Task 1.14: Integration Tests with LiteSVM (5-6 hours)
-
-**Deliverable:** Comprehensive test suite using LiteSVM (NOT Anchor test)
-
-**Claude Code Prompt:**
-```
-Create integration tests in `tests/` using LiteSVM:
-
-Add to Cargo.toml [dev-dependencies]:
-- litesvm = "0.4"
-- solana-sdk (for transaction building in tests)
-
-1. tests/helpers.rs:
-   - PDA derivation helpers
-   - Transaction building helpers
-   - Account data reading/parsing helpers
-   - Create test keypairs
-
-2. tests/integration.rs:
-   - Test: "Initializes game session"
-     - Build and send initialize instruction
-     - Read GameSession account, verify byte offsets
-   - Test: "Players can join round"
-     - 3 players join, verify PlayerState PDAs
-   - Test: "Cannot join twice"
-   - Test: "Deck commitment with valid ZK proof"
-     - Use test proof vectors (mock for now until circuit is built)
-   - Test: "Deck commitment rejected with invalid proof"
-   - Test: "Round starts after deck committed"
-   - Test: "Hit with valid Merkle proof"
-     - Construct a test Merkle tree, generate proof, submit hit
-   - Test: "Hit rejected with invalid Merkle proof"
-   - Test: "Sequential draw_counter enforced"
-   - Test: "Player can stay"
-   - Test: "Full game flow"
-     - Complete round with ZK commitment, hits, stays, end_round
-   - Test: "Bust condition works"
-
-LiteSVM runs an in-process Solana VM — much faster than solana-test-validator.
-No TypeScript, no Anchor — pure Rust tests.
-```
-
-**Validation:**
-- [ ] All tests pass with `cargo test`
-- [ ] ZK verification tested (with mock proofs)
-- [ ] Full game flow works end-to-end
-
-3. Test: "Players can join round"
-   - Have 3 players join the game
-   - Verify each PlayerState PDA is created
-   - Verify player_count = 3
-
-4. Test: "Cannot join twice"
-   - Try to join with same player
-   - Expect error
-
-5. Test: "Round starts correctly"
-   - Call start_round
-   - Verify deck has 94 cards
-   - Verify round_active = true
-   - Verify all players are active
-
-6. Test: "Player can hit and draw card"
-   - First player calls hit
-   - Verify card is added to hand
-   - Verify deck size decreased
-
-7. Test: "Cannot hit when not your turn"
-   - Second player tries to hit
-   - Expect error
-
-8. Test: "Player can stay"
-   - First player calls stay
-   - Verify score is calculated
-   - Verify turn advances to player 2
-
-9. Test: "Full game flow"
-   - Play through a complete round
-   - All players hit a few times then stay
-   - Call end_round
-   - Verify winner is determined
-
-10. Test: "Bust condition works"
-    - Set up scenario where player will bust
-    - Verify player is marked inactive
-    - Verify turn advances
-
-Include helper functions for common operations.
-```
-
-**Validation:**
-- [ ] All tests pass with `cargo test`
-- [ ] Edge cases are covered
-- [ ] Game flow works end-to-end
-
-### Phase 2: Token Economy, Special Abilities & ZK Circuit (Days 8-14)
+Parse accounts: `game_session`, `authority`, `house`, `dealer`, `treasury`, `system_program`. Return an error if account count is wrong.
+**Learn**: The account order is part of your instruction's API. Clients must pass accounts in this exact order. Document it.
+**Done when**: Function parses all 6 accounts and compiles.
+
+##### 1.6.3: Add account validation (~20 min)
+**Do**: After parsing, add validation:
+1. `authority` must be a signer
+2. `system_program` must equal `system_program::ID`
+3. `game_session` must be writable
+4. Parse `game_id` (u64) from `instruction_data[0..8]`
+5. Derive the expected PDA: `Pubkey::find_program_address(&["game", &game_id.to_le_bytes()], program_id)`
+6. Verify `game_session.key()` matches the derived PDA
+**Learn**: PDA verification is the most important check. If you skip it, an attacker could pass any account and your program would write to it. Always derive the PDA yourself and compare.
+**Done when**: Validation logic compiles. Invalid inputs would return specific error codes.
+
+##### 1.6.4: Create the GameSession account via CPI (~25 min)
+**Do**: After validation, create the account:
+1. Calculate space: 512 bytes (our GameSession layout)
+2. Calculate lamports for rent exemption: `Rent::get()?.minimum_balance(512)`
+3. CPI to System Program's `create_account`:
+   - From: `authority` (pays rent)
+   - To: `game_session` (the new PDA)
+   - Lamports, space, owner = your program ID
+   - Seeds for PDA signing: `&["game", &game_id.to_le_bytes(), &[bump]]`
+4. Use `pinocchio_system::instructions::CreateAccount` for the CPI
+**Learn**: PDAs can't sign transactions (no private key), so you pass the seeds to `invoke_signed`. The runtime verifies the seeds derive to the PDA address — this is how your program "signs" for its accounts.
+**Done when**: CPI call compiles. The PDA would be created on-chain.
+
+##### 1.6.5: Write initial GameSession data (~15 min)
+**Do**: After creating the account, write the initial state:
+1. Get mutable data reference: `game_session.try_borrow_mut_data()?`
+2. Write discriminator = 1 at byte 0
+3. Write `game_id` at the correct offset
+4. Write `authority`, `house`, `dealer`, `treasury` pubkeys
+5. Set `player_count = 1` (house is player 0)
+6. Write house pubkey into `turn_order[0]`
+7. Set `treasury_fee_bps = 200` (2%)
+8. Set `deck_committed = false`, `round_active = false`
+**Learn**: Writing to account data is just writing bytes at offsets. Use your GameSession setters from Task 1.2.4. The discriminator (byte 0) identifies this account type — critical for validation in other instructions.
+**Done when**: All fields written. Add to entrypoint: discriminator `0 => process_initialize`.
+
+##### 1.6.6: Create event emission helper (~15 min)
+**Do**: In `events.rs`, create a helper to emit events:
+1. Events on Solana are CPI calls to the SPL Noop program — they appear in transaction logs
+2. Create `emit_event(event_data: &[u8])` that does a CPI to the noop program
+3. Define `GameInitialized { game_id: u64, authority: Pubkey }` as the first event
+4. Emit it at the end of `process_initialize`
+**Learn**: Solana doesn't have Ethereum-style events. The convention is to write structured data to the noop program's logs. Indexers (like Helius) parse these. Shank macros can annotate them for IDL generation.
+**Done when**: Event emission compiles.
+
+##### 1.6.7: Write a unit test for initialize (~20 min)
+**Do**: In `tests/` or within the module, write a test that:
+1. Creates mock accounts (authority, game_session PDA, etc.)
+2. Calls `process_initialize` with valid data
+3. Reads the GameSession data back and verifies all fields
+**Learn**: Testing instruction handlers in isolation (without LiteSVM) means mocking accounts. This is faster but less realistic. We'll add full integration tests in Task 1.14.
+**Done when**: Test passes with `cargo test`.
+
+---
+
+#### Task 1.7: Commit Deck Instruction
+
+##### 1.7.1: Create the commit_deck handler (~15 min)
+**Do**: Create `instructions/commit_deck.rs` with:
+1. Parse accounts: `game_session`, `dealer`
+2. Validate: `dealer` is signer, `game_session` owned by program, `game_session.dealer() == dealer.key()`
+**Learn**: Only the designated dealer can commit a deck. This is an authorization check — without it, anyone could commit a fake deck.
+**Done when**: Account parsing and validation compiles.
+
+##### 1.7.2: Parse proof data from instruction_data (~15 min)
+**Do**: Parse the instruction data:
+- Bytes `[0..32]`: merkle_root (32 bytes)
+- Bytes `[32..160]`: groth16_proof (128 bytes)
+Validate the data length is exactly 160 bytes.
+**Learn**: Instruction data is raw bytes — you define the layout. The client must serialize data in this exact format. This is what Codama will generate from the Shank IDL.
+**Done when**: Parsing compiles and rejects data shorter than 160 bytes.
+
+##### 1.7.3: Add Groth16 verification call (~20 min)
+**Do**: In the handler:
+1. Verify `round_active == false` and `deck_committed == false`
+2. Call `zk::verify_shuffle_proof(proof, merkle_root, canonical_deck_hash)`
+3. If verification fails, return `PushFlipError::InvalidGroth16Proof`
+4. If it passes, write `merkle_root` to GameSession and set `deck_committed = true`
+5. Reset `draw_counter = 0`
+6. Emit `DeckCommitted { game_id, merkle_root }` event
+**Learn**: This is where the ZK magic happens. The Groth16 proof (~200K CU to verify) cryptographically guarantees the deck is a valid permutation. After this, the merkle_root is the "committed truth" for the entire round.
+**Done when**: Handler compiles. Add to entrypoint: discriminator `1 => process_commit_deck`.
+
+##### 1.7.4: Write a unit test with mock proof (~15 min)
+**Do**: Test that:
+1. Valid (mock) proof + root → deck_committed = true, merkle_root stored
+2. Calling commit_deck when already committed → error
+3. Non-dealer signer → error
+**Learn**: Mock proofs are fine for testing the instruction flow. Real proof verification will be tested end-to-end after building the circuit in Phase 2.
+**Done when**: All 3 test cases pass.
+
+---
+
+#### Task 1.8: Join Round Instruction
+
+##### 1.8.1: Create the join_round handler (~15 min)
+**Do**: Create `instructions/join_round.rs`:
+1. Parse accounts: `game_session`, `player_state`, `player`, `system_program`
+2. Validate: `player` is signer, `game_session` owned by program
+3. Check: `round_active == false`, `player_count < 4`, player not already in turn_order
+**Done when**: Validation logic compiles.
+
+##### 1.8.2: Create the PlayerState PDA (~20 min)
+**Do**: After validation:
+1. Derive PDA: `["player", game_id.to_le_bytes(), player.key()]`
+2. Verify `player_state.key()` matches derived PDA
+3. CPI to System Program to create the account (256 bytes)
+4. Write initial data: discriminator = 2, player pubkey, game_id, hand_size = 0, is_active = true
+**Learn**: Each player gets their own PDA account. The seeds include both `game_id` and `player` pubkey, so a player can be in multiple games but only once per game.
+**Done when**: PDA creation and data writing compiles.
+
+##### 1.8.3: Update GameSession turn order (~15 min)
+**Do**: After creating PlayerState:
+1. Read current `player_count` from GameSession
+2. Write `player.key()` into `turn_order[player_count]`
+3. Increment `player_count`
+4. Emit `PlayerJoined { game_id, player, player_count }`
+5. Add to entrypoint: discriminator `2 => process_join_round`
+**Done when**: Compiles. Turn order would now have [house, player1, ...].
+
+##### 1.8.4: Write join round tests (~15 min)
+**Do**: Test:
+1. Player joins successfully — PlayerState created, turn_order updated
+2. Same player joins twice — error
+3. 5th player joins (max 4) — error
+**Done when**: All 3 tests pass.
+
+---
+
+#### Task 1.9: Start Round Instruction
+
+##### 1.9.1: Create the start_round handler (~20 min)
+**Do**: Create `instructions/start_round.rs`:
+1. Parse accounts: `game_session`, `authority`, plus remaining accounts (PlayerStates)
+2. Validate: `authority` is signer, at least 2 players, `round_active == false`, `deck_committed == true`
+3. For each remaining account, verify: owned by program, discriminator == 2, PDA seeds match, player is in turn_order
+**Learn**: "Remaining accounts" is how Solana handles variable-length account lists. The first N accounts are fixed, and the rest are passed as a slice. You must validate each one.
+**Done when**: Validation compiles.
+
+##### 1.9.2: Initialize round state (~15 min)
+**Do**: After validation:
+1. Set `round_active = true`
+2. Set `current_turn_index = 0`
+3. Increment `round_number`
+4. Reset all PlayerStates: `hand_size = 0`, `is_active = true`, `inactive_reason = 0`, `score = 0`, `has_used_second_chance = false`, `has_used_scry = false`
+5. Emit `RoundStarted { game_id, round_number, player_count }`
+6. Add to entrypoint: discriminator `3 => process_start_round`
+**Done when**: Compiles. Write a test — round starts, all players active, turn index at 0.
+
+---
+
+#### Task 1.10: Hit Instruction
+
+##### 1.10.1: Create the hit handler skeleton (~15 min)
+**Do**: Create `instructions/hit.rs`:
+1. Parse accounts: `game_session`, `player_state`, `player`
+2. Validate: `player` is signer, `round_active == true`, it's this player's turn (`turn_order[current_turn_index] == player.key()`), `player.is_active == true`
+**Learn**: Turn enforcement is critical. Without it, players could act out of order or when it's not their turn.
+**Done when**: Validation compiles.
+
+##### 1.10.2: Parse card data and Merkle proof (~15 min)
+**Do**: Parse instruction_data:
+- Bytes `[0..3]`: card_data (value, type, suit)
+- Bytes `[3..227]`: merkle_proof (7 × 32 bytes = 224 bytes)
+- Byte `227`: leaf_index
+Validate: `leaf_index == game_session.draw_counter()` (cards must be drawn in order)
+**Learn**: The sequential draw_counter prevents replay attacks — the dealer can't re-deal the same card, and players can't skip ahead.
+**Done when**: Parsing compiles.
+
+##### 1.10.3: Verify the Merkle proof (~20 min)
+**Do**: After parsing:
+1. Call `zk::verify_merkle_proof(card_data, merkle_proof, leaf_index, game_session.merkle_root())`
+2. If invalid → `PushFlipError::InvalidMerkleProof`
+3. If valid → increment `draw_counter`
+**Learn**: This is the moment of truth for each card draw. The Merkle proof connects this specific card to the committed deck root. The dealer can't swap cards — the proof would fail.
+**Done when**: Merkle verification call compiles.
+
+##### 1.10.4: Add card to hand and check bust (~20 min)
+**Do**: After Merkle verification:
+1. Create `Card` from the verified card_data
+2. Write it to `player_state.hand[hand_size]`
+3. Increment `hand_size`
+4. Call `check_bust(hand, hand_size)`:
+   - If busted: set `is_active = false`, `inactive_reason = 1`, emit `PlayerBusted`, call `advance_turn()`
+   - If not busted: check `check_pushflip` (7 cards), emit `CardDrawn`, do NOT advance turn (player can hit again)
+**Learn**: The "push your luck" core loop: draw a card, check for bust, decide to continue or stay. The player keeps their turn until they hit, stay, or bust.
+**Done when**: Bust/no-bust paths compile.
+
+##### 1.10.5: Implement advance_turn helper (~15 min)
+**Do**: Create a helper `advance_turn(game_session: &mut GameSession)`:
+1. Starting from `current_turn_index + 1`, scan `turn_order` for the next active player
+2. Wrap around if needed
+3. If no active players remain, flag the round as ready to end
+4. Update `current_turn_index`
+**Learn**: Turn advancement must skip inactive players (busted or stayed). If everyone is done, the round ends.
+**Done when**: Helper compiles. Add to entrypoint: discriminator `4 => process_hit`.
+
+##### 1.10.6: Write hit instruction tests (~20 min)
+**Do**: Test:
+1. Valid Merkle proof → card added to hand, draw_counter incremented
+2. Invalid Merkle proof → rejected
+3. Wrong leaf_index (not sequential) → rejected
+4. Drawing a duplicate Alpha → bust detected
+5. Not your turn → rejected
+**Done when**: All 5 tests pass.
+
+---
+
+#### Task 1.11: Stay Instruction
+
+##### 1.11.1: Implement the stay handler (~20 min)
+**Do**: Create `instructions/stay.rs`:
+1. Parse accounts: `game_session`, `player_state`, `player`
+2. Validate: signer, round active, player's turn, player is active
+3. Calculate score: `calculate_hand_score(hand, hand_size)`
+4. Write score to PlayerState
+5. Set `is_active = false`, `inactive_reason = 2` (stayed)
+6. Emit `PlayerStayed { player, score }`
+7. Call `advance_turn()`
+8. Check if all players inactive → emit `RoundReadyToEnd`
+9. Add to entrypoint: discriminator `5 => process_stay`
+**Done when**: Compiles. Test: stay → score recorded, turn advances.
+
+---
+
+#### Task 1.12: End Round Instruction
+
+##### 1.12.1: Create the end_round handler (~15 min)
+**Do**: Create `instructions/end_round.rs`:
+1. Parse accounts: `game_session`, `caller`, plus remaining accounts (PlayerStates)
+2. Validate: all players inactive (everyone busted or stayed)
+3. Validate remaining accounts same as start_round
+**Done when**: Validation compiles.
+
+##### 1.12.2: Determine the winner (~20 min)
+**Do**: Implement winner logic:
+1. Scan all PlayerStates where `inactive_reason == 2` (stayed, not busted)
+2. Find the highest score
+3. Tie-breaking: first player in turn_order wins
+4. If everyone busted: increment `rollover_count`, pot stays for next round
+5. At `rollover_count == 10`: return stakes proportionally, reset
+6. Set `round_active = false`, `deck_committed = false` (force new deck for next round)
+7. Emit `RoundEnded { winner, score }`
+**Learn**: Resetting `deck_committed = false` is essential — it forces the dealer to commit a fresh shuffle each round. Otherwise the same deck could be reused.
+**Done when**: Winner determination compiles. Add to entrypoint: discriminator `6 => process_end_round`.
+
+##### 1.12.3: Write end round tests (~15 min)
+**Do**: Test:
+1. Player with highest score wins
+2. Tie → first in turn_order wins
+3. All busted → rollover_count increments, no winner
+4. deck_committed reset to false after round
+**Done when**: All 4 tests pass.
+
+---
+
+#### Task 1.13: Game Lifecycle Instructions
+
+##### 1.13.1: Implement close_game (~15 min)
+**Do**: Create `instructions/close_game.rs` (discriminator 7):
+1. Validate: authority signer, `round_active == false`, `pot_amount == 0`
+2. Close all PlayerState PDA accounts (return rent to authority)
+3. Close GameSession PDA account (return rent to authority)
+**Learn**: "Closing" an account on Solana means transferring all its lamports out and zeroing the data. The runtime garbage-collects it.
+**Done when**: Compiles and added to entrypoint.
+
+##### 1.13.2: Implement leave_game (~15 min)
+**Do**: Create `instructions/leave_game.rs` (discriminator 8):
+1. If round NOT active: remove player from turn_order, close PlayerState, refund
+2. If round IS active: forfeit (score = 0, is_active = false, inactive_reason = 1)
+**Done when**: Both paths compile and are added to entrypoint.
+
+##### 1.13.3: Write lifecycle tests (~15 min)
+**Do**: Test:
+1. Close game when inactive and pot empty → success
+2. Close game when round active → error
+3. Leave between rounds → refund
+4. Leave mid-round → forfeit
+**Done when**: All 4 tests pass.
+
+---
+
+#### Task 1.14: Integration Tests with LiteSVM
+
+##### 1.14.1: Set up LiteSVM test harness (~20 min)
+**Do**: Create `tests/integration.rs` with:
+1. Add `litesvm` and `mollusk-svm` to `[dev-dependencies]`
+2. Create a test helper that: starts a LiteSVM instance, deploys your program, creates test keypairs
+3. Create PDA derivation helpers that mirror the on-chain logic
+**Learn**: LiteSVM runs a full Solana VM in-process — no need for `solana-test-validator`. It's faster and more deterministic. Mollusk is for unit-testing individual instructions.
+**Done when**: LiteSVM starts and your program deploys in a test.
+
+##### 1.14.2: Test initialize + join flow (~20 min)
+**Do**: Write integration tests:
+1. Initialize a game → verify GameSession PDA exists with correct data
+2. Player 1 joins → verify PlayerState created, turn_order updated
+3. Player 2 joins → verify player_count == 3 (house + 2 players)
+4. Same player joins twice → expect error
+**Done when**: All 4 tests pass in LiteSVM.
+
+##### 1.14.3: Test deck commitment flow (~20 min)
+**Do**: Write integration tests:
+1. Commit deck with mock proof → deck_committed = true, merkle_root stored
+2. Commit deck again → error (already committed)
+3. Non-dealer commits → error
+**Done when**: All 3 tests pass.
+
+##### 1.14.4: Test the full game flow (~30 min)
+**Do**: Write the "golden path" integration test:
+1. Initialize game
+2. Two players join
+3. Dealer commits deck (mock proof)
+4. Start round
+5. Player 1 hits (mock Merkle proof) → card added
+6. Player 1 stays → score recorded
+7. Player 2 hits → card added
+8. Player 2 stays → score recorded
+9. End round → winner determined
+10. Verify: deck_committed reset, round_active false
+**Learn**: This is the full lifecycle. If this test passes, your game engine works.
+**Done when**: Full flow test passes.
+
+##### 1.14.5: Test bust and edge cases (~20 min)
+**Do**: Write tests:
+1. Player draws duplicate Alpha → bust detected, turn advances
+2. All players bust → rollover_count incremented
+3. Hit with invalid Merkle proof → rejected
+4. Hit when not your turn → rejected
+5. Start round without deck committed → error
+**Done when**: All 5 tests pass.
+
+##### 1.14.6: Run the full test suite and fix issues (~20 min)
+**Do**: Run `cargo test` and fix all failures. Ensure zero warnings with `cargo clippy`.
+**Done when**: `cargo test` — all green. `cargo clippy` — no warnings.
+
+---
+
+### Phase 2: Token Economy, Special Abilities & ZK Circuit (Days 11-17)
 
 **Goal:** Integrate $FLIP token with stake/burn mechanics, Protocol card effects, AND build the Circom ZK circuit + dealer service.
 
-#### Task 2.1: Create SPL Token (2-3 hours)
+**Prerequisites:** Phase 1 complete — all integration tests passing.
 
-**Deliverable:** $FLIP token mint and distribution script
+---
 
-**Claude Code Prompt:**
+#### Task 2.1: Create SPL Token
+
+##### 2.1.1: Write the token creation script (~20 min)
+**Do**: Create `scripts/create-token.ts` using @solana/kit:
+1. Import from `@solana/kit` and `@solana-program/token`
+2. Create a new SPL token mint: 9 decimals, mint authority = your wallet (will transfer to program PDA later)
+3. Print the mint address
+**Learn**: SPL tokens are Solana's equivalent of ERC-20. Each token has a "mint" account that defines supply, decimals, and who can mint more.
+**Done when**: Script runs and creates a token mint on devnet. Save the mint address.
+
+##### 2.1.2: Write the airdrop script (~15 min)
+**Do**: Create `scripts/airdrop-tokens.ts`:
+1. Mint initial supply to a treasury token account
+2. Create an airdrop function that mints tokens to a given wallet
+3. Create Associated Token Accounts (ATAs) as needed
+**Learn**: Token accounts are separate from wallet accounts. Each wallet needs an ATA (Associated Token Account) for each token type. Think of it as: wallet = your identity, ATA = your checking account for $FLIP specifically.
+**Done when**: Script mints tokens and you can see the balance in your wallet.
+
+##### 2.1.3: Add token constants to the program (~10 min)
+**Do**: In `program/src/utils/constants.rs`, define:
+```rust
+pub const FLIP_DECIMALS: u8 = 9;
+pub const MIN_STAKE: u64 = 100_000_000_000; // 100 $FLIP
+pub const HOUSE_STAKE_AMOUNT: u64 = 500_000_000_000; // 500 $FLIP
+pub const SECOND_CHANCE_COST: u64 = 50_000_000_000; // 50 $FLIP
+pub const SCRY_COST: u64 = 25_000_000_000; // 25 $FLIP
+pub const AIRDROP_BONUS: u64 = 25_000_000_000; // 25 $FLIP
+pub const TREASURY_FEE_BPS: u16 = 200; // 2%
 ```
-Create `scripts/create-token.ts` using @solana/kit (NOT legacy web3.js):
-
-1. Create a new SPL token mint for $FLIP:
-   - 9 decimals (standard)
-   - Mint authority = game program PDA (for minting rewards)
-   - Freeze authority = null (no freezing)
-
-2. Create `scripts/airdrop-tokens.ts`:
-   - Mint initial supply to a treasury wallet
-   - Function to airdrop tokens to test wallets
-   - Create associated token accounts as needed
-
-3. The program already stores token_mint in GameSession (set during initialize)
-
-4. Create constants in program/src/lib.rs:
-   - FLIP_DECIMALS: u8 = 9
-   - INITIAL_SUPPLY: u64 = 1_000_000_000
-   - MIN_STAKE: u64 = 100
-   - HOUSE_STAKE_AMOUNT: u64 = 500
-   - SECOND_CHANCE_COST: u64 = 50
-   - SCRY_COST: u64 = 25
-   - AIRDROP_BONUS: u64 = 25
-   - TREASURY_FEE_BPS: u16 = 200
-
-Document the token address after creation for frontend use.
-```
-
-**Validation:**
-- [ ] Token mint is created on devnet
-- [ ] Can mint and transfer tokens
-- [ ] Token accounts work correctly
-
-#### Task 2.2: Update Join Round with Staking (3-4 hours)
-
-**Deliverable:** Token staking on round join
-
-**Claude Code Prompt:**
-```
-Update `instructions/join_round.rs` to include token staking via Pinocchio:
-
-1. Add to JoinRoundAccounts:
-   - token_mint: &AccountInfo
-   - player_token_account: &AccountInfo (player's ATA)
-   - vault: &AccountInfo (PDA token account)
-   - token_program: &AccountInfo (SPL Token program)
-
-2. Parse stake_amount from instruction_data (u64 LE after discriminator)
-
-3. Update process function:
-   - Verify stake_amount >= MIN_STAKE (100 $FLIP)
-   - CPI to SPL Token transfer: player_token_account → vault
-   - Use pinocchio_token::instructions::Transfer for the CPI
-   - Store staked_amount in PlayerState at byte offset
-   - Add to pot_amount in GameSession
-   - **Invariant check**: verify vault balance matches pot_amount
-
-   Note: House AI calls join_round with HOUSE_STAKE_AMOUNT (500 $FLIP)
-   from its dedicated wallet. House stake is NOT from treasury.
-
-4. Vault PDA seeds: ["vault", game_session.key()]
-   Create vault in initialize instruction if it doesn't exist.
-
-Update LiteSVM tests to include token operations.
-```
-
-**Validation:**
-- [ ] Tokens are transferred to vault on join
-- [ ] Pot amount is tracked correctly
-- [ ] Cannot join without sufficient balance
-
-#### Task 2.3: Update End Round with Prize Distribution (3-4 hours)
-
-**Deliverable:** Winner receives pot
-
-**Claude Code Prompt:**
-```
-Update `instructions/end_round.rs` for token distribution via Pinocchio:
-
-1. Add to EndRoundAccounts:
-   - vault: &AccountInfo (Vault PDA token account)
-   - winner_token_account: &AccountInfo
-   - treasury_token_account: &AccountInfo
-   - token_program: &AccountInfo
-   - Plus all PlayerState + player_token_accounts via remaining accounts
-
-2. Update process function — three paths:
-
-   **Path A: Winner exists**
-   - Determine winner (highest score, ties: first in turn_order)
-   - Calculate rake: rake_amount = pot_amount * treasury_fee_bps / 10_000
-   - CPI: pinocchio_token::instructions::Transfer vault → treasury (rake)
-   - CPI: pinocchio_token::instructions::Transfer vault → winner (remainder)
-   - Use invoke_signed() with vault PDA seeds for signing
-   - Reset pot_amount = 0, rollover_count = 0
-   - **Invariant check**: assert vault.amount == 0
-
-   **Path B: Everyone busted, rollover_count < 10**
-   - Increment rollover_count, no transfers
-
-   **Path C: Everyone busted, rollover_count == 10 (cap)**
-   - Return stakes proportionally via CPI transfers
-   - Reset pot_amount = 0, rollover_count = 0
-
-3. Use pinocchio_token CPI helpers for all token transfers.
-
-Update LiteSVM tests for all three paths.
-```
-
-**Validation:**
-- [ ] Winner receives pot minus 2% treasury rake
-- [ ] Vault is emptied after round
-- [ ] Edge cases handled (no winner)
-
-#### Task 2.4: Burn for Second Chance (3-4 hours)
-
-**Deliverable:** Burn tokens to recover from bust
-
-**Claude Code Prompt:**
-```
-Create `instructions/burn_second_chance.rs` (discriminator 9):
-
-1. Define BurnSecondChanceAccounts:
-   - game_session: &AccountInfo (PDA)
-   - player_state: &AccountInfo (mutable PDA)
-   - player: &AccountInfo (signer)
-   - player_token_account: &AccountInfo (player's $FLIP ATA)
-   - token_mint: &AccountInfo
-   - token_program: &AccountInfo
-
-2. Process function:
-   - Verify inactive_reason == 1 (bust), NOT 2 (stay)
-   - Verify has_used_second_chance == false
-   - CPI: pinocchio_token::instructions::Burn for SECOND_CHANCE_COST tokens
-   - Remove card matching bust_card_value from hand (shift remaining cards)
-   - Set is_active = true, inactive_reason = 0, bust_card_value = 0
-   - Set has_used_second_chance = true
-   - Emit SecondChanceUsed event
-```
-
-**Validation:**
-- [ ] Can recover from bust by burning tokens
-- [ ] Cannot use twice in same round
-- [ ] Tokens are actually burned (supply decreases)
-
-#### Task 2.5: Burn for Scry (3-4 hours)
-
-**Deliverable:** Peek at next card ability
-
-**Claude Code Prompt:**
-```
-Create `instructions/burn_scry.rs` (discriminator 10):
-
-1. Define BurnScryAccounts:
-   - game_session: &AccountInfo (PDA)
-   - player_state: &AccountInfo (PDA)
-   - player: &AccountInfo (signer)
-   - player_token_account: &AccountInfo
-   - token_mint: &AccountInfo
-   - token_program: &AccountInfo
-
-2. Process function:
-   - Verify it's player's turn and player is active
-   - CPI: pinocchio_token::instructions::Burn for SCRY_COST tokens
-   - Request next card from ZK dealer service (off-chain)
-   - Emit ScryRequested event (triggers off-chain dealer to reveal next card)
-   - The dealer responds with the card via a separate reveal_card transaction
-
-3. NOTE: With ZK shuffle, the deck is off-chain. Scry works differently:
-   - On-chain: burn tokens, emit ScryRequested event with draw_counter
-   - Off-chain: dealer service sees event, returns card at draw_counter position
-   - Frontend displays the peeked card (from dealer API, not on-chain event)
-   - This is PRIVATE between player and dealer (unlike the old public ScryResult event)
-
-4. Alternative simpler approach: dealer reveals card + Merkle proof in a
-   "reveal_scry" instruction that stores the revealed card in PlayerState
-   without incrementing draw_counter. This makes scry visible on-chain but
-   doesn't consume the draw.
-```
-
-**Validation:**
-- [ ] Can peek at top card
-- [ ] Tokens are burned
-- [ ] Card remains on deck until hit
-
-#### Task 2.6: Protocol Card Effects (5-6 hours)
-
-**Deliverable:** Special card abilities
-
-**Claude Code Prompt:**
-```
-Update `instructions/hit.rs` to handle Protocol card effects (Pinocchio):
-
-1. After Merkle-verifying and adding the drawn card, check if it's a Protocol card
-
-2. **Validate remaining_accounts for Protocol card targets**:
-   - Verify each target account owner == program_id
-   - Read discriminator byte == 2 (PlayerState)
-   - Verify PDA seeds match game_id + player pubkey
-   - Verify target is in turn_order and is_active
-   - Verify target is not the acting player
-
-3. RugPull effect:
-   - Target highest-score active player, discard their highest Alpha card
-   - Pass target_player_state in remaining_accounts
-   - If no valid target: skip, no error
-
-4. Airdrop effect:
-   - CPI: pinocchio_token::instructions::Transfer treasury → player for AIRDROP_BONUS
-   - If treasury balance < AIRDROP_BONUS: skip, emit AirdropSkipped
-   - Requires treasury_token_account and player_token_account in remaining_accounts
-
-5. VampireAttack effect:
-   - Steal random card from another player's hand
-   - Use current slot for pseudo-randomness (documented limitation)
-   - Modify both PlayerState accounts at byte offsets
-
-6. Multiplier cards: no immediate effect, applied in calculate_hand_score()
-
-7. All edge cases skip gracefully — never error on missing targets
-```
-
-**Validation:**
-- [ ] Each Protocol effect works correctly
-- [ ] Multipliers affect final score
-- [ ] Edge cases don't crash
-
-#### Task 2.7: Basic Bounty System (4-5 hours)
-
-**Deliverable:** Achievement-based rewards
-
-**Claude Code Prompt:**
-```
-Create bounty system using Pinocchio:
-
-1. `state/bounty.rs`:
-   - Bounty: zero-copy layout (id: u64, bounty_type: u8, reward: u64, is_active: u8, claimed_by: [u8; 32])
-   - BountyType constants: SEVEN_CARD_WIN = 0, HIGH_SCORE = 1, SURVIVOR = 2, COMEBACK = 3
-   - BountyBoard PDA: discriminator (u8=3), bump, game_id, bounties (fixed array, max 10)
-
-2. `instructions/create_bounty.rs` (discriminator 11):
-   - Only authority can create bounties
-   - Verify treasury balance covers all active bounties + new one
-   - Write bounty to BountyBoard at next available slot
-
-3. `instructions/claim_bounty.rs` (discriminator 12):
-   - Verify player meets condition
-   - CPI: pinocchio_token::instructions::Transfer treasury → player
-   - Mark bounty as claimed (write claimed_by pubkey)
-
-4. Update `end_round.rs`: auto-claim qualifying bounties after winner determined
-
-5. Bounty conditions: SevenCardWin, HighScore, Survivor, Comeback
-```
-
-**Validation:**
-- [ ] Bounties can be created
-- [ ] Auto-claimed on qualifying win
-- [ ] Rewards distributed correctly
-
-#### Task 2.8: ZK Circuit & Dealer Service (6-8 hours)
-
-**Deliverable:** Working Circom circuit for shuffle verification + off-chain dealer service
-
-**Claude Code Prompt:**
-```
-Create the ZK circuit and dealer service:
-
-1. `zk-circuits/circuits/shuffle_verify.circom`:
-   - Circom 2 circuit proving valid 94-card permutation
-   - Public inputs: merkle_root, canonical_deck_hash
-   - Private inputs (witness): permutation[94] (u8 indices), random_seed
-   - Constraints:
-     a. Permutation is valid bijection (each index 0-93 appears exactly once)
-     b. Applying permutation to canonical deck produces shuffled deck
-     c. Poseidon Merkle tree of shuffled deck produces claimed merkle_root
-   - Use circomlib Poseidon template for hashing
-   - Estimated ~59K constraints (feasible for Groth16)
-
-2. `zk-circuits/scripts/trusted_setup.sh`:
-   - Powers of Tau ceremony (use Hermez phase 1 for BN254)
-   - Circuit-specific phase 2 setup
-   - Export verifying key (for embedding in on-chain program)
-   - Export proving key (for off-chain dealer)
-
-3. `dealer/src/dealer.ts`:
-   - Dealer class: generates shuffle, builds Merkle tree, generates Groth16 proof
-   - Uses snarkjs for proof generation
-   - Uses light-poseidon (WASM build) for Merkle tree construction
-   - On round start: shuffle → prove → commit_deck transaction
-   - On card reveal request: return card + Merkle proof for position
-
-4. `dealer/src/merkle.ts`:
-   - Poseidon Merkle tree (depth 7, 94 leaves)
-   - Leaf = Poseidon(card_value, card_type, suit, leaf_index)
-   - Generate proof for any leaf position
-   - Must match the on-chain verification exactly (same Poseidon params)
-
-5. `dealer/src/prover.ts`:
-   - Wrapper around snarkjs Groth16 prover
-   - Load circuit WASM + zkey
-   - Generate proof from witness (permutation + seed)
-   - Compress proof to 128 bytes for on-chain submission
-
-Target: proof generation < 8 seconds, verification < 200K CU on-chain.
-```
-
-**Validation:**
-- [ ] Circuit compiles with circom
-- [ ] Valid proofs generated and verified by snarkjs
-- [ ] Invalid permutations rejected
-- [ ] Dealer generates and submits commit_deck transactions
-- [ ] Card reveals include valid Merkle proofs
-
-#### Task 2.9: Phase 2 Integration Tests (4-5 hours)
-
-**Deliverable:** Tests for all token, ability, and ZK features
-
-**Claude Code Prompt:**
-```
-Extend LiteSVM tests with Phase 2 tests:
-
-1. Setup: Create token mint, fund test wallets with $FLIP
-
-2. Test: "Join round with stake"
-   - Player stakes 100 $FLIP
-   - Verify tokens in vault
-   - Verify pot amount
-
-3. Test: "Winner receives pot"
-   - Complete round with 3 players
-   - Winner gets all staked tokens
-
-4. Test: "Burn for second chance"
-   - Player busts
-   - Burns tokens to recover
-   - Can continue playing
-
-5. Test: "Cannot use second chance twice"
-   - Use second chance
-   - Bust again
-   - Cannot use again
-
-6. Test: "Scry request emits event"
-   - Burn for scry
-   - Verify ScryRequested event emitted
-
-7. Test: "Protocol cards execute effects"
-   - Test each Protocol card type
-   - Verify effects apply correctly
-
-8. Test: "Multipliers affect score"
-   - Hand with 2x multiplier
-   - Verify score is doubled
-
-9. Test: "Bounty auto-claim"
-   - Create SevenCardWin bounty
-   - Win with 7 cards
-   - Verify bounty claimed and reward received
-```
-
-10. Test: "Full ZK flow: commit_deck with real Circom proof"
-    - Generate proof via snarkjs in test setup
-    - Submit commit_deck, verify acceptance
-    - Play round with Merkle-verified hits
-
-**Validation:**
-- [ ] All Phase 2 tests pass
-- [ ] Token flows are correct
-- [ ] Special abilities work
-- [ ] ZK circuit generates valid proofs
-- [ ] End-to-end ZK shuffle flow works
-
-### Phase 3: Frontend Development (Days 15-20)
+**Learn**: With 9 decimals, `1 $FLIP = 1_000_000_000`. This is the same convention as SOL (1 SOL = 1B lamports). All on-chain amounts are in the smallest unit.
+**Done when**: Constants compile and are exported.
+
+---
+
+#### Task 2.2: Update Join Round with Staking
+
+##### 2.2.1: Add token accounts to join_round (~15 min)
+**Do**: Update `instructions/join_round.rs` to add:
+- `token_mint` (verify it matches GameSession.token_mint)
+- `player_token_account` (verify owner = player)
+- `vault` (PDA: `["vault", game_session.key()]`)
+- `token_program` (verify = SPL Token program ID)
+**Done when**: New account validation compiles.
+
+##### 2.2.2: Add stake transfer CPI (~20 min)
+**Do**: After creating PlayerState:
+1. Parse `stake_amount` from instruction_data
+2. Verify `stake_amount >= MIN_STAKE`
+3. CPI to SPL Token `Transfer`: from `player_token_account` to `vault`, amount = `stake_amount`, authority = `player`
+4. Store `staked_amount` in PlayerState
+5. Add `stake_amount` to GameSession `pot_amount`
+**Learn**: CPI (Cross-Program Invocation) is how your program calls another program. Here, you're calling the SPL Token program to move tokens. The player signs the transaction, authorizing the transfer.
+**Done when**: Compiles. Test: player joins with 100 $FLIP → vault balance increases by 100.
+
+##### 2.2.3: Create vault PDA in initialize (~15 min)
+**Do**: Update `process_initialize` to:
+1. Accept the vault token account in the accounts list
+2. Create the vault ATA owned by the vault PDA
+3. Store vault info as needed
+**Learn**: The vault PDA holds all staked tokens. The program can transfer out of it using `invoke_signed` — no one else can.
+**Done when**: Initialize creates the vault. Join transfers tokens into it.
+
+---
+
+#### Task 2.3: Update End Round with Prize Distribution
+
+##### 2.3.1: Add token accounts to end_round (~15 min)
+**Do**: Update `instructions/end_round.rs` to accept:
+- `vault` (PDA token account)
+- `winner_token_account`
+- `treasury_token_account`
+- `token_program`
+**Done when**: Account parsing compiles.
+
+##### 2.3.2: Implement winner payout (~25 min)
+**Do**: Three paths in end_round:
+1. **Winner exists**: `rake = pot * bps / 10000`. CPI Transfer vault→treasury (rake). CPI Transfer vault→winner (pot - rake). Use `invoke_signed` with vault PDA seeds. Reset pot = 0, rollover = 0.
+2. **All busted, rollover < 10**: Increment rollover_count. No transfers.
+3. **All busted, rollover == 10**: Return stakes proportionally. Reset.
+**Learn**: `invoke_signed` is the PDA equivalent of a regular signature. The vault PDA "signs" the transfer by proving the program derived its address from the known seeds.
+**Done when**: All three paths compile. Test: winner gets pot minus 2% rake.
+
+##### 2.3.3: Write payout tests (~20 min)
+**Do**: Test:
+1. Winner gets 98% of pot, treasury gets 2%
+2. Vault balance is 0 after payout
+3. Rollover: no payout, pot carries over
+4. Rollover at 10: proportional refund
+**Done when**: All 4 tests pass.
+
+---
+
+#### Task 2.4: Burn for Second Chance
+
+##### 2.4.1: Implement burn_second_chance instruction (~25 min)
+**Do**: Create `instructions/burn_second_chance.rs` (discriminator 9):
+1. Parse: `game_session`, `player_state`, `player`, `player_token_account`, `token_mint`, `token_program`
+2. Validate: player is signer, `inactive_reason == 1` (bust, not stay), `has_used_second_chance == false`
+3. CPI to SPL Token `Burn`: burn `SECOND_CHANCE_COST` from player's token account
+4. Remove the bust card (last card in hand), decrement hand_size
+5. Set `is_active = true`, `inactive_reason = 0`, `has_used_second_chance = true`
+6. Emit `SecondChanceUsed`
+**Learn**: Token burning permanently removes tokens from circulation (reduces total supply). This creates deflationary pressure on $FLIP.
+**Done when**: Compiles. Test: bust → burn → back in the game.
+
+##### 2.4.2: Write second chance tests (~15 min)
+**Do**: Test:
+1. Bust → second chance → player is active again, bust card removed
+2. Second chance when not busted → error
+3. Second chance used twice → error
+4. Token balance decreased by SECOND_CHANCE_COST
+**Done when**: All 4 tests pass.
+
+---
+
+#### Task 2.5: Burn for Scry
+
+##### 2.5.1: Implement burn_scry instruction (~20 min)
+**Do**: Create `instructions/burn_scry.rs` (discriminator 10):
+1. Parse: `game_session`, `player_state`, `player`, `player_token_account`, `token_mint`, `token_program`
+2. Validate: player's turn, player is active
+3. CPI to SPL Token `Burn`: burn `SCRY_COST`
+4. Emit `ScryRequested { game_id, player }` — the off-chain dealer will respond with the next card's data (without committing it as drawn)
+**Learn**: Scry is a peek mechanic — see the next card before deciding to hit or stay. The on-chain program just burns tokens and emits an event; the actual card reveal is off-chain.
+**Done when**: Compiles. Test: scry → tokens burned, event emitted, draw_counter NOT incremented.
+
+---
+
+#### Task 2.6: Protocol Card Effects
+
+##### 2.6.1: Implement RugPull effect (~20 min)
+**Do**: In `instructions/hit.rs`, after verifying and adding a card, check if it's a Protocol card. If `card_type == PROTOCOL && effect == RUG_PULL`:
+1. Find the target: highest-score active player (from remaining accounts)
+2. Validate target's PlayerState PDA
+3. Discard their highest Alpha card (remove from hand, shift remaining)
+4. Emit `RugPullExecuted { target, card_removed }`
+5. If no valid target → skip effect
+**Learn**: Protocol cards add chaos and strategy. RugPull is the most aggressive — it's a direct attack on the leader.
+**Done when**: Test: draw RugPull → target loses their best card.
+
+##### 2.6.2: Implement Airdrop effect (~15 min)
+**Do**: If `effect == AIRDROP`:
+1. CPI Transfer from treasury to player's token account for `AIRDROP_BONUS`
+2. If treasury insufficient → skip (no error)
+3. Emit `AirdropReceived { player, amount }`
+**Done when**: Test: draw Airdrop → player gains 25 $FLIP.
+
+##### 2.6.3: Implement VampireAttack effect (~20 min)
+**Do**: If `effect == VAMPIRE_ATTACK`:
+1. Find target: use `current_slot % active_players` for pseudo-random target selection
+2. "Steal" a random card from target's hand (use slot for randomness)
+3. Remove card from target's hand, add to player's hand
+4. Emit `VampireAttackExecuted { attacker, target, card_stolen }`
+**Learn**: Using slot for pseudo-randomness is acceptable for Protocol effects (low stakes). The shuffle itself uses proper ZK randomness.
+**Done when**: Test: draw Vampire → card moves from target to player.
+
+##### 2.6.4: Verify multiplier scoring works (~10 min)
+**Do**: Multiplier cards (2x, 3x, 5x) should already work via `calculate_hand_score`. Verify with a test:
+- Hand: `[Alpha(5), Alpha(10), Multiplier(3x)]` → score = 45
+- Multiple multipliers: `[Alpha(10), Multiplier(2x), Multiplier(3x)]` → score = 60
+**Done when**: Scoring tests pass with multipliers.
+
+---
+
+#### Task 2.7: Basic Bounty System
+
+##### 2.7.1: Define bounty state (~15 min)
+**Do**: Create `state/bounty.rs`:
+1. BountyBoard zero-copy layout (discriminator = 3)
+2. Constants: `SEVEN_CARD_WIN = 0`, `HIGH_SCORE = 1`, `SURVIVOR = 2`, `COMEBACK = 3`
+3. PDA seeds: `["bounty", game_session.key()]`
+4. Max 10 bounties, each with: type, amount, claimed flag
+**Done when**: Compiles.
+
+##### 2.7.2: Implement create_bounty instruction (~20 min)
+**Do**: Create `instructions/create_bounty.rs` (discriminator 11):
+1. Only authority can create bounties
+2. Verify treasury covers the total bounty amounts
+3. Write bounty data to BountyBoard
+**Done when**: Compiles and test passes.
+
+##### 2.7.3: Implement auto-claim in end_round (~20 min)
+**Do**: Update `process_end_round` to check bounty conditions after determining winner:
+1. `SEVEN_CARD_WIN`: winner has 7 cards (PushFlip)
+2. `HIGH_SCORE`: winner score > threshold
+3. `SURVIVOR`: winner was the last active player
+4. `COMEBACK`: winner used second chance
+5. CPI Transfer bounty amount from treasury to winner
+6. Mark bounty as claimed
+**Done when**: Test: PushFlip win → bounty auto-claimed.
+
+---
+
+#### Task 2.8: ZK Circuit & Dealer Service
+
+##### 2.8.1: Install Circom and snarkjs (~15 min)
+**Do**: Install the ZK toolchain:
+1. `npm install -g circom` (or build from source)
+2. `npm install -g snarkjs`
+3. Verify: `circom --version`, `snarkjs --version`
+**Learn**: Circom is a domain-specific language for writing ZK circuits. snarkjs is the JavaScript library that generates and verifies Groth16 proofs. Together they form the "ZK proving pipeline."
+**Done when**: Both tools installed and version commands work.
+
+##### 2.8.2: Understand the shuffle circuit (~20 min, reading)
+**Do**: Before writing the circuit, understand what it must prove:
+1. **Public inputs**: `merkle_root` (committed deck), `canonical_deck_hash` (known standard deck)
+2. **Private inputs**: `permutation[94]` (the shuffle order), `random_seed` (entropy)
+3. **Constraints**: The permutation is a valid bijection (each card appears exactly once), applying the permutation to the canonical deck produces the shuffled deck, the Poseidon Merkle tree of the shuffled deck produces `merkle_root`
+**Learn**: The circuit proves "I know a valid shuffle that produces this Merkle root" without revealing the shuffle itself. This is the core of ZK — proving knowledge without revealing it.
+**Done when**: You can explain the public inputs, private inputs, and constraints.
+
+##### 2.8.3: Write the Circom circuit (~45 min)
+**Do**: Create `zk-circuits/circuits/shuffle_verify.circom`:
+1. Import Poseidon from `circomlib`
+2. Define the permutation check: verify each index 0-93 appears exactly once
+3. Apply permutation to canonical deck
+4. Build Poseidon Merkle tree over shuffled deck
+5. Constrain: computed merkle_root == public merkle_root
+6. Constrain: hash of canonical deck == public canonical_deck_hash
+**Learn**: Circom circuits define constraints (equations that must be satisfied). The prover finds values that satisfy all constraints; the verifier checks the proof. ~59K constraints for a 94-card permutation.
+**Done when**: `circom shuffle_verify.circom --r1cs --wasm --sym` compiles without errors.
+
+##### 2.8.4: Run the trusted setup (~20 min)
+**Do**: Create `zk-circuits/scripts/trusted_setup.sh`:
+1. Download Powers of Tau (Hermez BN254 ceremony — pre-existing, trusted)
+2. Run circuit-specific Phase 2: `snarkjs groth16 setup shuffle_verify.r1cs pot_final.ptau shuffle_verify.zkey`
+3. Export verifying key: `snarkjs zkey export verificationkey shuffle_verify.zkey vk.json`
+4. Export Solana-compatible verifying key bytes
+**Learn**: Groth16 requires a "trusted setup" — a ceremony that generates the proving/verifying keys. The Powers of Tau ceremony is shared across all circuits; Phase 2 is circuit-specific. As long as at least one ceremony participant was honest, the setup is secure.
+**Done when**: `vk.json` and `shuffle_verify.zkey` exist.
+
+##### 2.8.5: Update the on-chain verifying key (~10 min)
+**Do**: Replace the placeholder in `zk/verifying_key.rs` with the real verifying key bytes from the trusted setup output.
+**Done when**: `cargo build-sbf` compiles with the real verifying key.
+
+##### 2.8.6: Create the dealer service structure (~15 min)
+**Do**: Set up `dealer/` as a TypeScript project:
+1. `package.json` with dependencies: `@solana/kit`, `snarkjs`, `circomlibjs` (for Poseidon)
+2. `tsconfig.json`
+3. Source files: `src/dealer.ts`, `src/merkle.ts`, `src/prover.ts`, `src/index.ts`
+**Done when**: `pnpm install` succeeds in `dealer/`.
+
+##### 2.8.7: Implement the Poseidon Merkle tree (~25 min)
+**Do**: In `dealer/src/merkle.ts`:
+1. Import Poseidon from `circomlibjs`
+2. Build a Merkle tree (depth 7, 128 leaves, 94 used + 34 empty)
+3. Leaf hash: `Poseidon(card_value, card_type, suit, leaf_index)` — must match on-chain computation
+4. Function: `buildMerkleTree(shuffledDeck) -> { root, tree }`
+5. Function: `getMerkleProof(tree, leafIndex) -> proof[]`
+**Learn**: The off-chain Merkle tree must use the exact same hash function and parameters as the on-chain verifier. If they diverge, proofs will fail.
+**Done when**: Build tree for a test deck, get root and proof for leaf 0.
+
+##### 2.8.8: Implement the Groth16 prover (~20 min)
+**Do**: In `dealer/src/prover.ts`:
+1. Load the WASM witness generator and zkey from the trusted setup
+2. Function: `generateProof(permutation, seed) -> { proof, publicSignals }`
+3. Compress proof to 128 bytes (Solana-compatible format)
+4. Verify locally before submitting: `snarkjs.groth16.verify(vk, publicSignals, proof)`
+**Done when**: Generate a proof for a known permutation, verify it locally.
+
+##### 2.8.9: Implement the dealer class (~25 min)
+**Do**: In `dealer/src/dealer.ts`:
+1. `shuffle()`: Fisher-Yates shuffle of canonical deck, return permutation
+2. `commitDeck()`: shuffle → build Merkle tree → generate Groth16 proof → submit `commit_deck` transaction
+3. `revealCard(index)`: return card data + Merkle proof for the given index
+**Done when**: Dealer can shuffle, commit, and reveal cards. Test end-to-end with a local validator.
+
+##### 2.8.10: End-to-end ZK test (~30 min)
+**Do**: Write a test that:
+1. Dealer shuffles and commits a deck (real Groth16 proof)
+2. On-chain program verifies the proof and stores the root
+3. Player hits — dealer reveals card with Merkle proof
+4. On-chain program verifies the Merkle proof
+5. Complete a full round with ZK verification
+**Learn**: This is the moment everything comes together. Real cryptographic proofs, verified on-chain. If this test passes, you have a provably fair card game.
+**Done when**: End-to-end test passes with real proofs.
+
+---
+
+#### Task 2.9: Phase 2 Integration Tests
+
+##### 2.9.1: Token flow tests (~20 min)
+**Do**: Test the full token lifecycle:
+1. Create mint, fund wallets
+2. Join with stake → tokens in vault
+3. Play round → winner gets pot minus rake
+4. Verify vault empty after payout
+**Done when**: Token flow test passes.
+
+##### 2.9.2: Burn mechanics tests (~15 min)
+**Do**: Test:
+1. Second chance: bust → burn → recover
+2. Scry: burn → event emitted
+3. Verify token supply decreased after burns
+**Done when**: Burn tests pass.
+
+##### 2.9.3: Protocol card and bounty tests (~15 min)
+**Do**: Test:
+1. Each Protocol card effect
+2. Bounty auto-claim on qualifying win
+3. Full game with all mechanics
+**Done when**: All Phase 2 tests pass. Run `cargo test` — all green.
+
+---
+
+### Phase 3: Frontend Development (Days 18-22)
 
 **Goal:** Build interactive Vite + React frontend with @solana/kit + Kit Plugins + Codama-generated client.
 
-#### Task 3.1: Vite + React Project Setup (2-3 hours)
+**Prerequisites:** Phase 2 complete. Program deployed to devnet. Codama client generated.
 
-**Deliverable:** Configured Vite + React app with Kit + Kit Plugins dependencies
+---
 
-**Claude Code Prompt:**
+#### Task 3.1: Vite + React Project Setup
+
+##### 3.1.1: Scaffold the Vite project (~10 min)
+**Do**: From the repo root:
+```bash
+pnpm create vite app --template react-ts
+cd app && pnpm install
 ```
-Set up the Vite + React frontend in the `app/` directory:
+Verify: `pnpm dev` shows the Vite starter page.
+**Done when**: Dev server runs at localhost:5173.
 
-1. Initialize Vite project with React + TypeScript:
-   - Use: pnpm create vite app --template react-ts
-   - Configure Tailwind CSS
-   - Set up Biome with Ultracite preset (NOT ESLint/Prettier)
+##### 3.1.2: Configure Tailwind CSS (~15 min)
+**Do**: Install and configure Tailwind:
+1. `pnpm add -D tailwindcss @tailwindcss/vite`
+2. Add the plugin to `vite.config.ts`
+3. Add `@import "tailwindcss"` to `src/styles/globals.css`
+4. Test with a `<div className="text-red-500">Test</div>`
+**Done when**: Red text appears — Tailwind is working.
 
-2. Install dependencies:
-   - @solana/kit (official next-gen SDK, NOT legacy @solana/web3.js)
-   - @solana/kit-client-rpc (pre-configured RPC client preset)
-   - @solana/kit-plugin-rpc (RPC plugins: airdrop, tx planner, etc.)
-   - @solana/kit-plugin-payer (fee payer management)
-   - @solana/kit-plugin-instruction-plan (tx planning & execution)
-   - @solana/wallet-adapter-react
-   - @solana/wallet-adapter-react-ui
-   - @solana/wallet-adapter-wallets (phantom, solflare)
-   - @tanstack/react-query
-   - zustand
-   - Install shadcn/ui and add: button, card, dialog, toast
-   - Do NOT install @coral-xyz/anchor, @solana/web3.js, or gill
+##### 3.1.3: Set up Biome with Ultracite (~15 min)
+**Do**:
+1. `pnpm add -D @biomejs/biome ultracite`
+2. Create `biome.json` extending Ultracite
+3. Add scripts: `"lint": "biome check"`, `"lint:fix": "biome check --fix"`
+4. Run `pnpm lint` and fix any issues in the starter code
+**Learn**: Biome replaces ESLint + Prettier in a single Rust-based tool. Ultracite is an opinionated config preset. One tool, zero config debate.
+**Done when**: `pnpm lint` passes cleanly.
 
-3. Create `src/providers/WalletProvider.tsx`:
-   - WalletProvider with Phantom and Solflare
-   - Connection to devnet via Kit's createSolanaRpc()
-   - Create Kit client using createClient() from @solana/kit-client-rpc
-
-4. Create `src/providers/QueryProvider.tsx`:
-   - QueryClientProvider wrapper
-
-5. Update `src/App.tsx`:
-   - Wrap with providers
-   - Basic layout structure
-
-6. Create `src/lib/constants.ts`:
-   - PROGRAM_ID
-   - TOKEN_MINT
-   - RPC_ENDPOINT (devnet)
-   - GAME_ID
-
-7. Create `src/lib/program.ts`:
-   - Import Codama-generated client from clients/js/
-   - PDA derivation helpers (from Codama-generated code)
-   - Kit RPC setup: createSolanaRpc(RPC_ENDPOINT)
-
-8. Configure vite.config.ts:
-   - Path aliases (@/ for src/)
-   - Kit is tree-shakable and doesn't need Buffer polyfills
+##### 3.1.4: Install Solana dependencies (~10 min)
+**Do**:
+```bash
+pnpm add @solana/kit @solana/kit-client-rpc @solana/kit-plugin-rpc \
+  @solana/kit-plugin-payer @solana/kit-plugin-instruction-plan \
+  @solana/wallet-adapter-react @solana/wallet-adapter-react-ui \
+  @solana/wallet-adapter-wallets
 ```
+Do NOT install `@coral-xyz/anchor`, `@solana/web3.js`, or `gill`.
+**Done when**: `pnpm install` succeeds. No legacy packages in package.json.
 
-**Validation:**
-- [ ] `pnpm dev` runs without errors
-- [ ] Wallet connect button appears
-- [ ] Can connect Phantom wallet
-
-#### Task 3.2: Program Integration Layer (3-4 hours)
-
-**Deliverable:** Hooks for interacting with the program
-
-**Claude Code Prompt:**
+##### 3.1.5: Install UI dependencies (~10 min)
+**Do**:
+```bash
+pnpm add @tanstack/react-query zustand
+npx shadcn@latest init
+npx shadcn@latest add button card dialog toast
 ```
-Create React hooks for program interaction using Kit + Codama client:
+**Done when**: shadcn components available in `src/components/ui/`.
 
-1. `src/hooks/useGameSession.ts`:
-   - Fetch GameSession account using Codama-generated decoder
-   - Subscribe to account changes via Kit's subscribeAccount()
-   - Return: gameSession, isLoading, error, refetch
-   - Use React Query for caching
+##### 3.1.6: Create WalletProvider (~20 min)
+**Do**: Create `src/providers/WalletProvider.tsx`:
+1. Import `WalletProvider`, `ConnectionProvider` from wallet-adapter-react
+2. Configure for devnet with Kit's `createSolanaRpc()`
+3. Add Phantom and Solflare wallet adapters
+4. Wrap children
+**Learn**: The wallet adapter handles the connection flow between your dApp and browser extension wallets. `createSolanaRpc()` from Kit replaces the old `Connection` class.
+**Done when**: No errors in console when the app loads.
 
-2. `src/hooks/usePlayerState.ts`:
-   - Fetch PlayerState using Codama-generated decoder
-   - Subscribe to changes
-   - Return: playerState, isLoading, isPlayer (boolean)
+##### 3.1.7: Create QueryProvider and wire up App.tsx (~15 min)
+**Do**:
+1. Create `src/providers/QueryProvider.tsx` with React Query's `QueryClientProvider`
+2. Update `src/App.tsx` to wrap with both providers
+3. Add basic layout structure: header, main, footer
+**Done when**: App renders with providers, no console errors.
 
-3. `src/hooks/useGameActions.ts`:
-   - joinRound(stakeAmount): Build instruction via Codama-generated builder
-   - hit(cardData, merkleProof, leafIndex): Build hit with ZK proof data
-   - stay(): Build stay instruction
-   - burnSecondChance(): Build burn instruction
-   - burnScry(): Build scry request
-   - All use Kit's sendAndConfirmTransaction()
-   - Use useMutation from React Query, show toast on success/error
+##### 3.1.8: Create constants and program setup (~15 min)
+**Do**:
+1. Create `src/lib/constants.ts`: `PROGRAM_ID`, `TOKEN_MINT`, `RPC_ENDPOINT`, `GAME_ID`
+2. Create `src/lib/program.ts`: import Codama-generated client, PDA derivation helpers, Kit RPC setup
+3. Configure `vite.config.ts`: path aliases (`@/` → `src/`)
+**Done when**: Can import constants and program helpers from any component.
 
-4. `src/lib/program.ts`:
-   - Import from Codama-generated client (clients/js/)
-   - PDA derivation: use Codama-generated findGameSessionPda(), findPlayerStatePda()
-   - Kit RPC connection setup
+---
 
-5. `src/types/index.ts`:
-   - Re-export Codama-generated types
-   - Card, CardType, GameSession, PlayerState types (auto-generated from Shank IDL)
+#### Task 3.2: Program Integration Layer
 
-NOTE: With Codama, most types and instruction builders are auto-generated.
-No manual IDL parsing or type definitions needed.
-```
+##### 3.2.1: Create useGameSession hook (~25 min)
+**Do**: Create `src/hooks/useGameSession.ts`:
+1. Fetch GameSession account using Codama decoder + React Query
+2. Subscribe to account changes via Kit's `accountNotifications`
+3. Return typed game state: pot, turn_order, round_active, deck_committed, etc.
+**Learn**: Kit subscriptions use `AsyncIterator` with an `AbortController`. React Query handles caching and refetching. Together they give you real-time account state.
+**Done when**: Hook returns game session data. Log it to console.
 
-**Validation:**
-- [ ] Can fetch game session data
-- [ ] Can fetch player state
-- [ ] Transactions build correctly
+##### 3.2.2: Create usePlayerState hook (~20 min)
+**Do**: Create `src/hooks/usePlayerState.ts`:
+1. Derive PlayerState PDA from connected wallet + game_id
+2. Fetch and subscribe using same pattern as useGameSession
+3. Return: hand, score, is_active, staked_amount, isPlayer boolean
+**Done when**: Hook returns player state or null (if not joined).
 
-#### Task 3.3: Game Board Components (5-6 hours)
+##### 3.2.3: Create useGameActions hook (~30 min)
+**Do**: Create `src/hooks/useGameActions.ts`:
+1. `joinRound(stakeAmount)`: build instruction via Codama → sign via wallet → send via Kit → toast result
+2. `hit()`: request card from dealer API → build instruction with card + Merkle proof → send
+3. `stay()`: build and send
+4. `burnSecondChance()`: build and send
+5. `burnScry()`: build and send
+Each action: `useMutation` from React Query, success/error toasts, auto-refetch game state.
+**Learn**: The flow is: Codama builds the instruction → Kit builds the transaction → wallet signs → Kit sends and confirms. This is the Kit + Codama pipeline in action.
+**Done when**: Each action function exists and compiles. Test joinRound against devnet.
 
-**Deliverable:** Main game UI components
+---
 
-**Claude Code Prompt:**
-```
-Create game UI components:
+#### Task 3.3: Game Board Components
 
-1. `src/components/game/GameBoard.tsx`:
-   - Main game container
-   - Shows game state (waiting, active, ended)
-   - Displays pot amount
-   - Shows current turn indicator
-   - Lists all players and their status
+##### 3.3.1: Create the Card component (~20 min)
+**Do**: Create `src/components/game/Card.tsx`:
+1. Props: `card: Card`, `faceDown: boolean`, `animate: boolean`
+2. Different styles per card type: Alpha (blue), Protocol (red), Multiplier (gold)
+3. Show value, type icon, suit
+4. Face-down state: show card back
+**Done when**: Card renders with all three types visually distinct.
 
-2. `src/components/game/Card.tsx`:
-   - Visual card component
-   - Props: card (Card type), faceDown (boolean)
-   - Different styles for Alpha, Protocol, Multiplier
-   - Show card value and suit for Alpha
-   - Show effect name for Protocol
-   - Animate on draw
+##### 3.3.2: Create PlayerHand component (~15 min)
+**Do**: Create `src/components/game/PlayerHand.tsx`:
+1. Props: hand array, isCurrentPlayer, score
+2. Render cards in a row
+3. Highlight if it's this player's turn
+4. Show score and bust indicator
+**Done when**: Hand renders with multiple cards.
 
-3. `src/components/game/PlayerHand.tsx`:
-   - Display array of cards
-   - Props: cards, isCurrentPlayer, score
-   - Highlight if it's this player's turn
-   - Show calculated score
-   - Show bust indicator if busted
+##### 3.3.3: Create ActionButtons component (~20 min)
+**Do**: Create `src/components/game/ActionButtons.tsx`:
+1. Hit button — enabled when it's your turn
+2. Stay button — enabled when it's your turn
+3. Second Chance button — enabled when busted, shows cost
+4. Scry button — enabled when it's your turn, shows cost
+5. Loading states on each button during transactions
+**Done when**: Buttons render with correct enabled/disabled states.
 
-4. `src/components/game/ActionButtons.tsx`:
-   - Hit button (disabled if not turn)
-   - Stay button (disabled if not turn)
-   - Second Chance button (show cost, disabled if not busted)
-   - Scry button (show cost)
-   - Loading states during transactions
+##### 3.3.4: Create GameBoard container (~25 min)
+**Do**: Create `src/components/game/GameBoard.tsx`:
+1. Uses useGameSession and usePlayerState hooks
+2. Shows pot amount, round number, turn indicator
+3. Renders all players' hands
+4. Shows ActionButtons for the current player
+5. Join button if not yet in the game
+**Done when**: Full game board renders with live data from devnet.
 
-5. `src/components/game/PotDisplay.tsx`:
-   - Show current pot in $FLIP
-   - Animate when pot increases
+##### 3.3.5: Create PotDisplay and TurnIndicator (~15 min)
+**Do**: Create small components:
+1. `PotDisplay.tsx`: shows pot in $FLIP, animate on increase
+2. `TurnIndicator.tsx`: shows whose turn, "Your turn!" highlight
+**Done when**: Both components render correctly in GameBoard.
 
-6. `src/components/game/TurnIndicator.tsx`:
-   - Show whose turn it is
-   - Countdown timer (optional)
-   - "Your turn!" highlight
+---
 
-Use Tailwind for styling with a dark, "degen" aesthetic.
-```
+#### Task 3.4: Wallet Integration
 
-**Validation:**
-- [ ] Components render correctly
-- [ ] Cards display proper information
-- [ ] Buttons enable/disable appropriately
+##### 3.4.1: Create WalletButton component (~15 min)
+**Do**: Create `src/components/wallet/WalletButton.tsx`:
+1. Customize shadcn/ui button with wallet multi-button behavior
+2. Show truncated address when connected
+3. Show $FLIP balance next to address
+**Done when**: Connect/disconnect flow works with Phantom.
 
-#### Task 3.4: Wallet Integration (2-3 hours)
+##### 3.4.2: Create useTokenBalance hook (~15 min)
+**Do**: Create `src/hooks/useTokenBalance.ts`:
+1. Fetch $FLIP ATA balance for connected wallet
+2. Subscribe to balance changes
+3. Return formatted balance
+**Done when**: Balance displays and updates after transactions.
 
-**Deliverable:** Wallet connection UI
+##### 3.4.3: Create JoinGameDialog (~20 min)
+**Do**: Create `src/components/game/JoinGameDialog.tsx`:
+1. Modal dialog (shadcn Dialog)
+2. Stake amount input with min/max validation
+3. Show current $FLIP balance
+4. Confirm button triggers joinRound action
+5. Loading state during transaction
+**Done when**: Can join a game via the dialog.
 
-**Claude Code Prompt:**
-```
-Create wallet components:
+---
 
-1. `src/components/wallet/WalletButton.tsx`:
-   - Use wallet adapter's WalletMultiButton
-   - Custom styling to match theme
-   - Show truncated address when connected
-   - Show $FLIP balance when connected
+#### Task 3.5: Flip Advisor Component
 
-2. `src/hooks/useTokenBalance.ts`:
-   - Fetch player's $FLIP token balance
-   - Subscribe to changes
-   - Return: balance, isLoading
+##### 3.5.1: Implement probability calculations (~20 min)
+**Do**: Create `src/lib/advisor.ts`:
+1. `calculateBustProbability(hand, playedCards)`: count remaining cards that would cause a bust (duplicate Alpha values), divide by remaining deck size
+2. `getRecommendation(bustProb, score, potSize)`: heuristic — >30% bust AND score > 15 → stay; otherwise hit
+**Learn**: This is pure frontend math — no blockchain involved. It helps players make informed decisions. The advisor knows which cards have been played (all reveals are public).
+**Done when**: `calculateBustProbability` returns correct probabilities for known hands.
 
-3. Update `src/app/page.tsx`:
-   - Show connect wallet prompt if not connected
-   - Show game board if connected
-   - Handle wallet disconnection gracefully
+##### 3.5.2: Create the FlipAdvisor component (~20 min)
+**Do**: Create `src/components/advisor/FlipAdvisor.tsx`:
+1. Collapsible panel
+2. Shows bust probability with color coding (green < 20%, yellow < 40%, red > 40%)
+3. Shows recommendation with reasoning
+4. "Degen Mode" toggle that always recommends HIT
+**Done when**: Advisor shows correct probabilities and recommendations.
 
-4. `src/components/game/JoinGameDialog.tsx`:
-   - Modal to join a round
-   - Input for stake amount (with min/max)
-   - Show current balance
-   - Confirm button
-   - Loading state during transaction
-```
+---
 
-**Validation:**
-- [ ] Can connect/disconnect wallet
-- [ ] Balance displays correctly
-- [ ] Join dialog works
+#### Task 3.6: Event Handling & Real-time Updates
 
-#### Task 3.5: Flip Advisor Component (3-4 hours)
+##### 3.6.1: Create useGameEvents hook (~25 min)
+**Do**: Create `src/hooks/useGameEvents.ts`:
+1. Subscribe to program log events via Kit
+2. Parse event types (CardDrawn, PlayerBusted, PlayerStayed, RoundEnded, etc.)
+3. Trigger React Query refetches on relevant events
+4. Show toast notifications
+**Done when**: Events appear as toasts in real-time.
 
-**Deliverable:** AI probability assistant
+##### 3.6.2: Create EventFeed component (~15 min)
+**Do**: Create `src/components/game/EventFeed.tsx`:
+1. Scrolling list of game events
+2. Player actions with timestamps
+3. Auto-scroll to latest
+**Done when**: Feed shows live events as the game progresses.
 
-**Claude Code Prompt:**
-```
-Create the Flip Advisor feature:
+##### 3.6.3: Handle scry result (~15 min)
+**Do**: Create `src/hooks/useScryResult.ts`:
+1. Listen for ScryResult events filtered for current wallet
+2. Show result in a modal (the peeked card)
+3. Auto-dismiss after 5 seconds
+**Done when**: Scry burns tokens, shows next card in a modal.
 
-1. `src/hooks/useFlipAdvisor.ts`:
-   - Input: player's hand, known played cards
-   - Calculate bust probability based on remaining deck
-   - Calculate expected value of hitting vs staying
-   - Return: bustProbability, recommendation, confidence
+##### 3.6.4: Add WebSocket reconnection handling (~15 min)
+**Do**: Add connection status handling:
+1. Show a status indicator (connected/disconnected)
+2. Auto-reconnect on WebSocket drop
+3. Fall back to polling if WebSocket fails
+**Done when**: App recovers gracefully from connection drops.
 
-2. `src/lib/advisor.ts`:
-   - Pure functions for probability calculations
-   - `calculateBustProbability(hand, playedCards)`:
-     - Determine which Alpha values are in hand
-     - Count remaining cards of those values in deck
-     - Calculate probability of drawing a duplicate
-   - `getRecommendation(bustProb, currentScore, potSize)`:
-     - Simple heuristic: if bust prob > 30% and score > 15, stay
-     - Return "HIT" or "STAY" with reasoning
+---
 
-3. `src/components/advisor/FlipAdvisor.tsx`:
-   - Collapsible panel
-   - Show bust probability as percentage with color coding
-   - Show recommendation with reasoning
-   - "🎰 Degen Mode" toggle that always says HIT
-   - Styled as a "whisper" or "advisor" aesthetic
+#### Task 3.7: Polish & Styling
 
-4. Track played cards:
-   - Store all cards that have been revealed this round
-   - Update when any player draws or discards
-   - Reset on new round
-```
+##### 3.7.1: Set up the theme (~20 min)
+**Do**: Configure `tailwind.config.js`:
+1. Dark background (#0a0a0a)
+2. Accent colors: green (hit), red (bust), gold (multiplier/win)
+3. Card gradients per type
+4. "Degen" aesthetic — bold, high contrast
+**Done when**: App has a cohesive dark theme.
 
-**Validation:**
-- [ ] Probability calculations are accurate
-- [ ] Recommendations make sense
-- [ ] UI updates in real-time
+##### 3.7.2: Add animations (~25 min)
+**Do**: Add CSS/Framer Motion animations:
+1. Card flip animation on draw
+2. Shake on bust
+3. Confetti on win
+4. Pulse on "your turn"
+5. Smooth transitions between states
+**Done when**: Key moments feel satisfying and responsive.
 
-#### Task 3.6: Event Handling & Real-time Updates (3-4 hours)
+##### 3.7.3: Make it responsive (~20 min)
+**Do**: Test and fix for mobile:
+1. Stack cards vertically on small screens
+2. Touch-friendly button sizes
+3. Scrollable event feed
+4. Test on phone viewport (375px width)
+**Done when**: Playable on a phone-sized viewport.
 
-**Deliverable:** Live game state updates
+##### 3.7.4: Add loading and error states (~15 min)
+**Do**:
+1. Skeleton loaders for game state
+2. Spinner during transactions
+3. User-friendly error messages (map program error codes to text)
+4. Retry buttons on failed fetches
+**Done when**: App handles slow connections and errors gracefully.
 
-**Claude Code Prompt:**
-```
-Implement real-time game updates:
+---
 
-1. `src/hooks/useGameEvents.ts`:
-   - Subscribe to program logs/events
-   - Parse events: CardDrawn, PlayerBusted, RoundEnded, etc.
-   - Trigger React Query refetches on relevant events
-   - Show toast notifications for game events
-
-2. `src/components/game/EventFeed.tsx`:
-   - Scrolling feed of recent game events
-   - "Player X drew a card"
-   - "Player Y busted!"
-   - "Player Z used Rug Pull on Player W"
-   - Timestamp each event
-   - Auto-scroll to latest
-
-3. `src/hooks/useScryResult.ts`:
-   - Listen specifically for ScryResult events
-   - Filter for events targeting current wallet
-   - Show modal with revealed card
-   - Auto-dismiss after 5 seconds
-
-4. Update GameBoard to:
-   - Show animations when cards are drawn
-   - Highlight player who just acted
-   - Show "Waiting for X..." indicator
-   - Celebrate when you win
-
-5. Handle WebSocket disconnection:
-   - Show connection status indicator
-   - Auto-reconnect logic
-   - Fallback to polling if needed
-```
-
-**Validation:**
-- [ ] Events appear in real-time
-- [ ] Toasts show for important events
-- [ ] Scry result displays correctly
-
-#### Task 3.7: Polish & Styling (4-5 hours)
-
-**Deliverable:** Polished, themed UI
-
-**Claude Code Prompt:**
-```
-Polish the frontend:
-
-1. Create consistent theme in `tailwind.config.js`:
-   - Dark background (#0a0a0a)
-   - Accent colors: green for wins, red for busts, gold for $FLIP
-   - "Degen" aesthetic: slightly chaotic, neon accents
-   - Card designs with gradients
-
-2. Add animations:
-   - Card flip animation when drawn
-   - Shake animation on bust
-   - Confetti on win (use canvas-confetti)
-   - Pulse on "your turn"
-   - Smooth transitions for all state changes
-
-3. Responsive design:
-   - Mobile-friendly layout
-   - Stack cards vertically on small screens
-   - Touch-friendly buttons
-
-4. Loading states:
-   - Skeleton loaders for game data
-   - Spinner on transaction pending
-   - Optimistic updates where safe
-
-5. Error handling:
-   - User-friendly error messages
-   - Retry buttons
-   - "Transaction failed" with details
-
-6. Sound effects (optional):
-   - Card draw sound
-   - Bust sound
-   - Win fanfare
-   - Toggle to mute
-
-7. Create favicon and OG image for sharing
-```
-
-**Validation:**
-- [ ] UI looks polished and cohesive
-- [ ] Animations are smooth
-- [ ] Works on mobile
-
-### Phase 4: The House AI Agent (Days 21-23)
+### Phase 4: The House AI Agent (Days 23-25)
 
 **Goal:** Build autonomous AI opponent that plays against humans, integrated with ZK dealer.
 
-#### Task 4.1: AI Agent Setup (2-3 hours)
+**Prerequisites:** Phase 3 complete. Frontend working against devnet.
 
-**Deliverable:** Node.js project structure for AI agent
+---
 
-**Claude Code Prompt:**
-```
-Set up the House AI agent in `house-ai/` directory:
+#### Task 4.1: AI Agent Setup
 
-1. Initialize Node.js project:
-   - TypeScript configuration
-   - Dependencies: @solana/kit, @solana/kit-client-rpc, @solana/kit-plugin-rpc, @solana/kit-plugin-payer, Codama-generated client, dotenv
+##### 4.1.1: Scaffold the house-ai project (~15 min)
+**Do**: In `house-ai/`:
+1. `package.json` with: `@solana/kit`, `@solana/kit-client-rpc`, `@solana/kit-plugin-rpc`, `@solana/kit-plugin-payer`, Codama-generated client, `dotenv`
+2. `tsconfig.json` with strict mode
+3. `.env.example` documenting: `HOUSE_PRIVATE_KEY`, `RPC_ENDPOINT`, `PROGRAM_ID`, `GAME_ID`
+**Done when**: `pnpm install` succeeds.
 
-2. `src/config.ts`:
-   - Load environment variables
-   - HOUSE_PRIVATE_KEY (from .env)
-   - RPC_ENDPOINT
-   - PROGRAM_ID
-   - GAME_ID
-   - Polling interval
+##### 4.1.2: Create config and entry point (~15 min)
+**Do**:
+1. `src/config.ts`: load and validate env vars
+2. `src/index.ts`: initialize Kit client via `createClient()`, load house wallet from private key, start agent, handle graceful shutdown (SIGINT/SIGTERM)
+**Done when**: Agent starts, connects to devnet, logs wallet address and SOL balance.
 
-3. `src/index.ts`:
-   - Entry point
-   - Initialize connection and wallet
-   - Start the agent loop
-   - Graceful shutdown handling
+---
 
-4. Create `.env.example`:
-   - Document required environment variables
-   - NEVER commit actual .env file
+#### Task 4.2: Account Monitoring
 
-5. `src/agent.ts`:
-   - HouseAgent class
-   - Constructor: connection, wallet, program
-   - start(): Begin monitoring
-   - stop(): Clean shutdown
-   - Methods for game actions
+##### 4.2.1: Create account subscriber (~20 min)
+**Do**: Create `src/accountSubscriber.ts`:
+1. Subscribe to GameSession account changes via Kit's `accountNotifications`
+2. Decode state using Codama decoder
+3. Emit typed events: `turnChanged`, `roundStarted`, `roundEnded`
+**Done when**: Agent logs state changes as they happen.
 
-6. Add scripts to package.json:
-   - "start": Run the agent
-   - "dev": Run with nodemon for development
-```
+##### 4.2.2: Add polling fallback (~15 min)
+**Do**: If WebSocket fails:
+1. Poll GameSession every 2 seconds via `getAccountInfo`
+2. Detect changes by comparing with previous state
+3. Emit the same events as the subscription path
+**Done when**: Agent detects turns changes even without WebSocket.
 
-**Validation:**
-- [ ] Agent starts without errors
-- [ ] Can connect to devnet
-- [ ] Wallet loads correctly
+##### 4.2.3: Wire up the agent loop (~15 min)
+**Do**: In `src/agent.ts`:
+1. On `turnChanged`: check if it's House's turn → trigger decision
+2. On `roundEnded`: log result, prepare for next round
+3. On `roundStarted`: log round number, reset internal state
+**Done when**: Agent logs "My turn!" when the turn reaches the house.
 
-#### Task 4.2: Account Monitoring (3-4 hours)
+---
 
-**Deliverable:** Real-time game state monitoring
+#### Task 4.3: Strategy Engine
 
-**Claude Code Prompt:**
-```
-Implement game state monitoring in `house-ai/`:
+##### 4.3.1: Implement hand evaluation (~15 min)
+**Do**: Create `src/strategy.ts`:
+1. `evaluateHand(hand, deckRemaining)`: calculate current score, bust probability (same logic as frontend advisor)
+2. Return `{ score, bustProbability, handSize }`
+**Done when**: Evaluation matches frontend calculations.
 
-1. `src/accountSubscriber.ts`:
-   - Subscribe to GameSession account changes
-   - Parse account data using Codama-generated decoder
-   - Emit events when state changes
-   - Track: whose turn, round status, deck size
+##### 4.3.2: Implement hit/stay decision logic (~20 min)
+**Do**: Add `shouldHit(evaluation, gameContext)`:
+1. Score < 15 → always hit
+2. Score >= 15 and bustProb < 25% → hit
+3. Score >= 20 or bustProb > 40% → stay
+4. Context-aware: losing = more aggressive, winning = more conservative
+5. 10% random deviation for human-like play
+**Done when**: Unit tests for strategy decisions pass.
 
-2. `src/agent.ts` updates:
-   - On game state change:
-     - Check if it's House's turn
-     - If yes, trigger decision logic
-     - Execute action (hit or stay)
-   - Handle round transitions:
-     - Auto-join new rounds
-     - Track win/loss statistics
+##### 4.3.3: Write strategy unit tests (~15 min)
+**Do**: Test:
+1. Low score → hit
+2. High score → stay
+3. High bust probability → stay
+4. Edge cases (score exactly 15, exactly 20)
+**Done when**: All tests pass.
 
-3. Implement polling fallback:
-   - If WebSocket fails, poll every 2 seconds
-   - Detect changes by comparing state
+---
 
-4. Add logging:
-   - Log all state changes
-   - Log decisions made
-   - Log transaction results
-   - Use structured logging (pino or winston)
+#### Task 4.4: Transaction Execution
 
-5. Error recovery:
-   - Reconnect on connection loss
-   - Retry failed transactions
-   - Alert on repeated failures (optional: Discord webhook)
-```
+##### 4.4.1: Implement hit and stay execution (~20 min)
+**Do**: Create `src/executor.ts`:
+1. `executeHit()`: request card from dealer → build hit instruction via Codama → sign with house keypair → send via Kit → confirm
+2. `executeStay()`: build stay instruction → sign → send → confirm
+3. Retry with exponential backoff on failure
+**Done when**: Agent can submit hit and stay transactions.
 
-**Validation:**
-- [ ] Agent detects turn changes
-- [ ] Logs show game progression
-- [ ] Handles disconnections
+##### 4.4.2: Implement round joining (~15 min)
+**Do**: Add `joinRound(stakeAmount)`:
+1. Check $FLIP balance
+2. Build join_round instruction
+3. Sign and send
+4. Log result
+**Done when**: Agent auto-joins rounds.
 
-#### Task 4.3: Strategy Engine (4-5 hours)
+##### 4.4.3: Add balance management (~10 min)
+**Do**:
+1. Check SOL and $FLIP balances on startup
+2. Log warnings if low
+3. Auto-airdrop SOL on devnet if needed
+**Done when**: Agent handles low balances gracefully.
 
-**Deliverable:** Decision-making logic for hit/stay
+---
 
-**Claude Code Prompt:**
-```
-Implement AI strategy in `house-ai/src/strategy.ts`:
+#### Task 4.5: Integration & Testing
 
-1. `evaluateHand(hand: Card[], deckRemaining: number)`:
-   - Calculate current score
-   - Calculate bust probability
-   - Return evaluation object
+##### 4.5.1: Run end-to-end test (~25 min)
+**Do**: Write a test script:
+1. Start House AI agent
+2. Simulate a human player joining and making moves (via script)
+3. Verify House responds correctly
+4. Complete a full round
+**Done when**: House plays a complete game autonomously.
 
-2. `shouldHit(evaluation, gameContext)`:
-   - Basic strategy (start here):
-     - If score < 15, always hit
-     - If score >= 15 and bust prob < 25%, hit
-     - If score >= 20 or bust prob > 40%, stay
-   - Consider game context:
-     - If losing to visible opponent scores, be more aggressive
-     - If winning, be more conservative
-     - Adjust based on pot size
+##### 4.5.2: Add statistics and logging (~15 min)
+**Do**:
+1. Track: games played, wins, losses, total $FLIP won/lost, average score
+2. Structured logging (pino)
+3. Save stats to a JSON file
+**Done when**: Stats file updates after each round.
 
-3. `makeDecision(gameState, houseState)`:
-   - Get evaluation
-   - Apply strategy rules
-   - Return { action: 'hit' | 'stay', reasoning: string }
-   - Log the reasoning for debugging
+##### 4.5.3: Stability test (~15 min)
+**Do**: Let the agent run for 10+ minutes:
+1. Verify no memory leaks
+2. Verify reconnection after connection drops
+3. Verify graceful shutdown
+**Done when**: Agent runs stably without errors.
 
-4. Advanced strategy (optional):
-   - Track opponent patterns
-   - Adjust aggression based on round number
-   - Consider Protocol card probabilities
+---
 
-5. Add randomness factor:
-   - 10% chance to deviate from optimal
-   - Makes House less predictable
-   - More "human-like" play
-
-6. Unit tests for strategy:
-   - Test various hand scenarios
-   - Verify decisions match expectations
-```
-
-**Validation:**
-- [ ] Strategy makes reasonable decisions
-- [ ] Logging shows reasoning
-- [ ] Unit tests pass
-
-#### Task 4.4: Transaction Execution (3-4 hours)
-
-**Deliverable:** Reliable transaction submission
-
-**Claude Code Prompt:**
-```
-Implement transaction execution in `house-ai/src/agent.ts`:
-
-1. `executeHit()`:
-   - Build hit instruction
-   - Sign with House wallet
-   - Submit transaction
-   - Wait for confirmation
-   - Handle errors
-
-2. `executeStay()`:
-   - Build stay instruction
-   - Sign and submit
-   - Wait for confirmation
-
-3. `joinRound(stakeAmount)`:
-   - Check $FLIP balance
-   - Build join instruction
-   - Execute transaction
-
-4. Transaction utilities:
-   - Retry logic with exponential backoff
-   - Priority fee handling for congestion
-   - Transaction confirmation with timeout
-   - Nonce management if needed
-
-5. Balance management:
-   - Check SOL balance for fees
-   - Check $FLIP balance for staking
-   - Alert if balances low
-   - Auto-request airdrop on devnet (for testing)
-
-6. Rate limiting:
-   - Don't spam transactions
-   - Wait for previous tx to confirm
-   - Minimum delay between actions
-
-7. Comprehensive error handling:
-   - Parse program error codes
-   - Log detailed error info
-   - Decide whether to retry
-```
-
-**Validation:**
-- [ ] Transactions submit successfully
-- [ ] Retries work on failure
-- [ ] Balances are managed
-
-#### Task 4.5: Integration & Testing (3-4 hours)
-
-**Deliverable:** Fully functional AI opponent
-
-**Claude Code Prompt:**
-```
-Complete House AI integration:
-
-1. End-to-end test script:
-   - Start a game with House + 1 human player
-   - Human makes moves via script
-   - Verify House responds appropriately
-   - Complete full round
-
-2. `src/index.ts` complete implementation:
-   - Startup sequence:
-     1. Connect to RPC
-     2. Load wallet
-     3. Verify balances
-     4. Find or wait for active game
-     5. Join if not already joined
-     6. Start monitoring loop
-   - Shutdown sequence:
-     1. Stop monitoring
-     2. Log final statistics
-     3. Clean exit
-
-3. Statistics tracking:
-   - Games played
-   - Wins/losses
-   - Total $FLIP won/lost
-   - Average score
-   - Save to file periodically
-
-4. Health check endpoint (optional):
-   - Simple HTTP server on port 3001
-   - GET /health returns status
-   - Useful for deployment monitoring
-
-5. Documentation:
-   - README for house-ai/
-   - Setup instructions
-   - Configuration options
-   - Deployment guide
-```
-
-**Validation:**
-- [ ] House plays complete games
-- [ ] Makes reasonable decisions
-- [ ] Runs stably for extended periods
-
-### Phase 5: Documentation & Deployment (Days 24-27)
+### Phase 5: Documentation & Deployment (Days 26-29)
 
 **Goal:** Production-ready deployment and comprehensive documentation.
 
-#### Task 5.1: Program Deployment (2-3 hours)
-
-**Deliverable:** Deployed program on devnet
-
-**Claude Code Prompt:**
-```
-Create deployment scripts and documentation:
-
-1. `scripts/deploy.sh`:
-   - Build program: cargo build-sbf (in program/ directory)
-   - Deploy to devnet: solana program deploy target/deploy/pushflip.so
-   - Save program ID
-   - Verify deployment
-
-2. `scripts/initialize-game.ts`:
-   - Create $FLIP token mint
-   - Initialize GameSession
-   - Set House address
-   - Create initial bounties
-   - Fund treasury
-   - Output all addresses
-
-3. `scripts/setup-devnet.ts`:
-   - Complete setup script
-   - Airdrop SOL to test wallets
-   - Mint $FLIP to test wallets
-   - Initialize game
-   - Print summary of all addresses
-
-4. Update all config files with deployed addresses:
-   - Frontend constants
-   - House AI config
-   - Test configuration
-
-5. Create `DEPLOYMENT.md`:
-   - Step-by-step deployment guide
-   - Environment requirements
-   - Troubleshooting common issues
-```
-
-**Validation:**
-- [ ] Program deployed to devnet
-- [ ] All addresses documented
-- [ ] Setup script works end-to-end
-
-#### Task 5.2: Frontend Deployment (2-3 hours)
-
-**Deliverable:** Live frontend on self-hosted Ubuntu 25.04 VPS via Podman/Docker + nginx
-
-**Claude Code Prompt:**
-```
-Deploy frontend to VPS using Podman/Docker:
-
-1. Prepare for production:
-   - Environment variables in .env.production
-   - Update RPC endpoint (consider using Helius or Quicknode)
-   - Verify all constants are correct
-
-2. Create Dockerfile for frontend:
-   - Multi-stage build: node for building, nginx for serving
-   - Copy built Vite output to nginx html directory
-   - Configure nginx for SPA routing (fallback to index.html)
-
-3. Container setup on VPS:
-   - Build container image with Podman/Docker
-   - Create docker-compose.yml (or podman-compose) for frontend service
-   - Configure nginx reverse proxy with SSL (Let's Encrypt / certbot)
-   - Map port 443 to container
-
-4. Deploy:
-   - Push image or build on VPS
-   - Start container via compose
-   - Verify live site works
-
-5. Post-deployment:
-   - Test wallet connection on live site
-   - Test full game flow
-   - Check for console errors
-   - Verify mobile responsiveness
-
-6. Set up custom domain (optional):
-   - pushflip.xyz or similar
-   - Configure DNS A record to VPS IP
-   - SSL certificate via certbot
-```
-
-**Validation:**
-- [ ] Site is live and accessible
-- [ ] All features work in production
-- [ ] No console errors
-
-#### Task 5.3: AI Agent Deployment (2-3 hours)
-
-**Deliverable:** House AI running as Podman/Docker container on same VPS
-
-**Claude Code Prompt:**
-```
-Deploy House AI agent as container on VPS:
-
-1. Prepare for deployment:
-   - Ensure all secrets are in environment variables
-   - Create Dockerfile for house-ai service
-   - Health check endpoint working
-
-2. Container setup on VPS:
-   - Add house-ai service to docker-compose.yml (or podman-compose)
-   - Configure environment variables via .env file (not committed)
-   - Set restart policy (always/on-failure)
-   - Co-locate with frontend container on same VPS
-
-3. Monitoring:
-   - View logs via podman/docker logs
-   - Set up systemd service for auto-restart
-   - Monitor resource usage
-
-4. Security:
-   - House wallet private key in secure env var
-   - Never log sensitive data
-   - Rate limiting on RPC calls
-
-5. Verify:
-   - Agent connects and monitors
-   - Plays games correctly
-   - Recovers from errors
-```
-
-**Validation:**
-- [ ] Agent running 24/7
-- [ ] Logs accessible
-- [ ] Playing games autonomously
-
-#### Task 5.4: Comprehensive README (4-5 hours)
-
-**Deliverable:** Portfolio-quality documentation
-
-**Claude Code Prompt:**
-```
-Create comprehensive README.md at project root:
-
-# PushFlip 🎰
-
-## Overview
-[2-3 paragraphs explaining what PushFlip is, the problem it solves, 
-and why it's interesting]
-
-## Features
-- ✅ On-chain card game built with **Pinocchio** (zero-dependency native Rust, zero-copy)
-- ✅ **ZK-proof provably fair shuffling** (Groth16 + Poseidon Merkle trees — no trusted oracle)
-- ✅ $FLIP token economy with stake/burn mechanics
-- ✅ AI opponent ("The House") + ZK dealer service
-- ✅ Real-time multiplayer
-- ✅ Flip Advisor probability assistant
-- ✅ Achievement bounty system
-
-## Game Rules
-[Detailed explanation of how to play, card types, scoring, etc.]
-
-## Technical Architecture
-
-### Smart Contract (Solana/Pinocchio)
-[Explain the Pinocchio program structure, zero-copy layouts, PDAs, key instructions]
-[Highlight: no Anchor dependency, manual account validation, single-byte discriminators]
-
-### Provably Fair Randomness (ZK-SNARK)
-[Explain the Groth16 + Poseidon Merkle approach]
-"PushFlip uses ZK-SNARK proofs for provably fair deck shuffling. The dealer
-generates a shuffle off-chain, commits a Poseidon Merkle root on-chain with a
-Groth16 proof of valid permutation (~200K CU). Card reveals are verified via
-Merkle proofs (~50K CU each). No trusted oracle — cryptographic proof IS the guarantee."
-
-### Token Economics
-[Explain $FLIP utility: staking, burning, rewards]
-
-### AI Agent
-[Explain House AI architecture and strategy]
-
-## Project Structure
-[Directory tree with explanations]
-
-## Getting Started
-
-### Prerequisites
-- Rust 1.70+
-- Solana CLI 1.18+
-- cargo-build-sbf
-- shank-cli + @codama/cli
-- circom 2 + snarkjs (for ZK circuits)
-- Node.js 18+
-- pnpm
-
-### Local Development
-```bash
-# Clone and install
-git clone https://github.com/yourusername/pushflip
-cd pushflip
-pnpm install
-
-# Build program (Pinocchio native — no Anchor)
-cd program && cargo build-sbf
-
-# Generate IDL and client code
-shank idl -o idl/pushflip.json -p program/src/lib.rs
-npx codama generate
-
-# Run tests (LiteSVM — no validator needed)
-cargo test
-
-# Compile ZK circuit + trusted setup (first time only)
-cd zk-circuits && ./scripts/compile.sh && ./scripts/trusted_setup.sh
-
-# Start frontend
-cd app && pnpm dev
-
-# Start dealer service (separate terminal)
-cd dealer && pnpm dev
-
-# Start House AI (separate terminal)
-cd house-ai && pnpm dev
-```
-
-### Deployment
-[Link to DEPLOYMENT.md]
-
-## Future Work
-[This is crucial for portfolio - show you think ahead]
-
-### Decentralized Dealer (Threshold Cryptography)
-The current architecture uses a single trusted dealer for ZK shuffle generation.
-A future version could decentralize this using threshold cryptography — multiple
-parties contribute randomness shards, and the shuffle proof is generated collaboratively.
-No single party can predict or control the deck order.
-
-### Additional Features
-- AI Agent Tournaments (developers deploy competing AI agents in dedicated arena mode)
-- Dynamic Bounty Generator (AI agent monitors game stats and autonomously creates engagement bounties)
-- Personalized AI Coach (analyzes player history via LLM, provides strategy feedback)
-- AI Commentator/Narrator (live play-by-play commentary via WebSocket, degen-themed)
-- Cross-chain deployment
-- Mobile app
-
-## Tech Stack
-[Table of all technologies used]
-
-## License
-MIT
-
-## Author
-[Your name and links]
-```
-
-**Validation:**
-- [ ] README is comprehensive
-- [ ] All sections complete
-- [ ] Links work
-- [ ] Code examples accurate
-
-#### Task 5.5: Code Cleanup & Final Testing (3-4 hours)
-
-**Deliverable:** Production-ready codebase
-
-**Claude Code Prompt:**
-```
-Final cleanup and testing:
-
-1. Code quality:
-   - Run clippy on Rust code, fix warnings
-   - Run biome check on TypeScript, fix issues
-   - Remove console.logs (except intentional)
-   - Remove commented-out code
-   - Ensure consistent formatting (biome/rustfmt)
-
-2. Security review:
-   - Check for exposed secrets
-   - Verify all user inputs are validated
-   - Check for integer overflow in Rust
-   - Verify PDA derivations are correct
-
-3. Testing:
-   - Run full test suite
-   - Manual testing of all features
-   - Test error cases
-   - Test on mobile
-
-4. Documentation:
-   - Inline comments on complex logic
-   - JSDoc/RustDoc on public functions
-   - Update any outdated comments
-
-5. Git cleanup:
-   - Squash messy commits (optional)
-   - Ensure .gitignore is complete
-   - No secrets in git history
-   - Clean commit messages
-
-6. Create demo video (optional but recommended):
-   - 2-3 minute walkthrough
-   - Show game being played
-   - Highlight technical features
-   - Upload to YouTube/Loom
-```
-
-**Validation:**
-- [ ] No linting errors
-- [ ] All tests pass
-- [ ] Manual QA complete
-- [ ] Ready for portfolio presentation
-
-### ~~Phase 6: ZK-Proof Deck Verification~~ (NOW INTEGRATED INTO PHASES 1-2)
-
-> **NOTE:** ZK-proof deck verification has been elevated from post-MVP to a CORE FEATURE.
-> The ZK verification module (Groth16 + Poseidon Merkle) is built in Phase 1 Task 1.5.
-> The Circom circuit and dealer service are built in Phase 2 Task 2.8.
-> The architecture details below remain as a reference but are now part of the main build.
-
-**Why this matters:** ZK-proofs make the game *trustlessly* fair: the cryptographic proof itself is the guarantee, not any third party. This is the primary portfolio differentiator — demonstrating Groth16 verification on Solana via native alt_bn128 syscalls.
-
-#### Architecture Overview
-
-The ZK shuffle system introduces a **dealer role** (initially the House AI, later decentralizable) that operates off-chain to generate shuffles and proofs, while all verification happens on-chain.
-
-```
-┌──────────────────────────────────────────────────────────┐
-│                    Off-Chain Dealer                       │
-│                                                          │
-│  1. Generate random seed (from secure RNG)               │
-│  2. Derive permutation: Fisher-Yates shuffle of 94 cards │
-│  3. Build Merkle tree over shuffled deck                  │
-│  4. Generate ZK-SNARK proof of valid permutation          │
-│  5. Publish (merkle_root, proof) on-chain                 │
-└────────────────────────┬─────────────────────────────────┘
-                         │
-                         ▼
-┌──────────────────────────────────────────────────────────┐
-│                   On-Chain Contract                       │
-│                                                          │
-│  commit_deck(merkle_root, zk_proof):                     │
-│    - Verify ZK-SNARK proof against merkle_root            │
-│    - Store merkle_root in GameSession                     │
-│    - Set deck_committed = true                            │
-│                                                          │
-│  hit(card_data, merkle_proof, leaf_index):                │
-│    - Verify merkle_proof against stored merkle_root       │
-│    - Verify leaf_index == draw_counter (sequential draw)  │
-│    - Deserialize card_data, add to player hand            │
-│    - Increment draw_counter                               │
-│    - Normal bust/score logic continues                    │
-└──────────────────────────────────────────────────────────┘
-```
-
-#### Task 6.1: ZK Circuit Design (Research & Implementation)
-
-**Deliverable:** A ZK-SNARK circuit that proves a valid 94-card permutation produces a given Merkle root.
-
-**Circuit specification:**
-- **Public inputs**: Merkle root (32 bytes), canonical deck hash (constant — the hash of cards 1-94 in standard order)
-- **Private inputs (witness)**: The secret permutation (94 × u8 indices), the random seed
-- **Constraints the circuit enforces**:
-  1. The permutation is a valid bijection (each index 0-93 appears exactly once)
-  2. Applying the permutation to the canonical deck produces a shuffled deck
-  3. The Merkle tree built from the shuffled deck produces the claimed Merkle root
-- **Estimated constraint count**: ~50K-100K constraints (feasible for Groth16 on BN254)
-
-**Framework options (evaluate in order of preference):**
-1. **Groth16 via `ark-groth16`** — smallest proof size (~128 bytes), cheapest on-chain verification, but requires a trusted setup ceremony per circuit change
-2. **PLONK via `halo2`** — no trusted setup, but larger proofs and more expensive verification on Solana
-3. **Light Protocol** — Solana-native ZK framework with built-in Groth16 verifier, may simplify on-chain integration
-
-**Validation:**
-- [ ] Circuit compiles and generates valid proofs for known test permutations
-- [ ] Circuit rejects invalid permutations (duplicate indices, wrong length, etc.)
-- [ ] Proof generation completes in < 10 seconds on target hardware
-- [ ] Proof size fits within Solana transaction limits
-
-#### Task 6.2: Merkle Tree Implementation
-
-**Deliverable:** Shared Merkle tree library used by both the off-chain dealer and on-chain verifier.
-
-**Specification:**
-- Binary Merkle tree with Poseidon hash (ZK-friendly, ~10x cheaper in-circuit than SHA-256)
-- 94 leaves, each leaf = `Poseidon(card_value, card_type, suit, leaf_index)`
-- Tree depth = 7 (ceil(log2(94)) = 7, supports up to 128 leaves)
-- Merkle proof = 7 sibling hashes (7 × 32 = 224 bytes per card reveal)
-
-**Components:**
-1. **`zk-utils/merkle.rs`** — Rust library for tree construction and proof generation (used off-chain by dealer)
-2. **On-chain Poseidon** — Use Light Protocol's `light-poseidon` crate for on-chain Merkle proof verification
-3. **Proof verification function** — `verify_merkle_proof(root, leaf, proof, index) -> bool`
-
-**Validation:**
-- [ ] Merkle root is deterministic for a given deck order
-- [ ] Merkle proofs verify correctly for all 94 positions
-- [ ] Invalid proofs (wrong position, tampered card) are rejected
-- [ ] On-chain verification fits within Solana compute budget (~50K CU per verify)
-
-#### Task 6.3: Dealer Service
-
-**Deliverable:** Off-chain service that generates shuffles, proofs, and responds to card draw requests.
-
-**Components:**
-1. **Shuffle engine**: Takes a secure random seed, performs Fisher-Yates shuffle on the canonical 94-card deck
-2. **Proof generator**: Runs the ZK circuit to produce a Groth16 proof of valid permutation
-3. **Commitment publisher**: Submits `commit_deck` transaction with Merkle root + ZK proof
-4. **Card reveal API**: When the contract requests a card draw, the dealer responds with `(card_data, merkle_proof, leaf_index)`
-
-**Integration with House AI:**
-- The dealer service runs alongside (or integrated into) the House AI agent
-- On `start_round`, the dealer generates a new shuffle, proof, and commits on-chain
-- The dealer stores the full shuffled deck in memory for the duration of the round
-- Card reveals are triggered by the `hit` instruction via a CPI callback or off-chain relay
-
-**Security considerations:**
-- The dealer MUST delete the shuffled deck and seed after the round ends
-- The dealer cannot change the deck after commitment (Merkle root is binding)
-- If the dealer goes offline mid-round, a timeout mechanism forces round resolution (forfeit or rollover)
-- Future: decentralize the dealer role using threshold cryptography (multiple parties contribute randomness)
-
-**Validation:**
-- [ ] Dealer generates and commits a valid shuffle within one Solana block (~400ms)
-- [ ] Card reveals include valid Merkle proofs
-- [ ] Dealer cannot reveal a card at a position that doesn't match the committed deck
-- [ ] Timeout handling works when dealer is unresponsive
-
-#### Task 6.4: On-Chain Contract Modifications
-
-**Deliverable:** (Now built directly in Phase 1 as a Pinocchio program with ZK from day one.)
-
-**New/modified instructions:**
-1. **`commit_deck`** (new) — Called by dealer at round start
-   - Accounts: `game_session` (mut), `dealer` (signer), `zk_verifier` (program)
-   - Args: `merkle_root: [u8; 32]`, `proof: Vec<u8>`
-   - Logic: Verify ZK proof, store `merkle_root` in GameSession, set `deck_committed = true`
-
-2. **`hit`** (modified) — Now accepts Merkle proof instead of popping from on-chain deck
-   - Additional args: `card_data: Card`, `merkle_proof: Vec<[u8; 32]>`, `leaf_index: u8`
-   - Logic: Verify `leaf_index == draw_counter`, verify Merkle proof, then existing card/bust logic
-   - The on-chain `deck` vector is removed — cards are revealed one at a time from the committed tree
-
-3. **`reveal_remaining`** (new, optional) — After round ends, dealer publishes remaining deck for full auditability
-   - Allows anyone to rebuild the full Merkle tree and verify the root matches
-
-**GameSession state changes:**
-- Remove: `deck: Vec<Card>` (no longer stored on-chain)
-- Add: `merkle_root: [u8; 32]`, `draw_counter: u8`, `deck_committed: bool`, `dealer: Pubkey`
-- This significantly reduces account size (~94 cards × ~4 bytes = ~376 bytes saved)
-
-**Validation:**
-- [ ] `commit_deck` rejects invalid ZK proofs
-- [ ] `hit` rejects invalid Merkle proofs
-- [ ] `hit` rejects out-of-order card reveals (wrong `leaf_index`)
-- [ ] Game plays correctly end-to-end with ZK shuffle
-- [ ] Account size is reduced compared to on-chain deck storage
-
-#### Task 6.5: Migration Path & Feature Flag
-
-**Deliverable:** Clean upgrade path from slot-hash to ZK shuffle without breaking existing functionality.
-
-**Approach:**
-- Add a `randomness_mode` field to GameSession: `SlotHash = 0`, `ZkShuffle = 1`
-- The `initialize` instruction accepts the mode as a parameter
-- `hit` instruction branches on the mode:
-  - `SlotHash`: existing logic (pop from on-chain deck)
-  - `ZkShuffle`: Merkle proof verification path
-- This allows both modes to coexist during transition and testing
-
-**Validation:**
-- [ ] Existing slot-hash games continue to work
-- [ ] New games can opt into ZK mode
-- [ ] Frontend detects the mode and adjusts UX (shows "provably fair" badge for ZK games)
-- [ ] Integration tests cover both paths
-
+**Prerequisites:** All phases complete. Full game playable on devnet.
+
+---
+
+#### Task 5.1: Program Deployment
+
+##### 5.1.1: Write the deploy script (~15 min)
+**Do**: Create `scripts/deploy.sh`:
+1. `cargo build-sbf`
+2. `solana program deploy target/deploy/pushflip.so`
+3. Save the program ID
+4. Verify with `solana program show <PROGRAM_ID>`
+**Done when**: Program deployed to devnet.
+
+##### 5.1.2: Write the initialization script (~20 min)
+**Do**: Create `scripts/initialize-game.ts`:
+1. Create token mint (or use existing)
+2. Initialize GameSession
+3. Set house address and dealer address
+4. Create bounties
+5. Fund treasury with $FLIP
+6. Print all addresses
+**Done when**: Script runs end-to-end and outputs all addresses.
+
+##### 5.1.3: Update all configs with deployed addresses (~10 min)
+**Do**: Update `PROGRAM_ID`, `TOKEN_MINT`, `GAME_ID` in:
+1. Frontend `constants.ts`
+2. House AI `.env`
+3. Dealer `.env`
+**Done when**: All services point to the deployed program.
+
+---
+
+#### Task 5.2: Frontend Deployment
+
+##### 5.2.1: Create the Dockerfile (~15 min)
+**Do**: Multi-stage Dockerfile in `app/`:
+1. Stage 1: Node build (`pnpm build`)
+2. Stage 2: nginx serving static files
+3. Add SPA routing config (all routes → index.html)
+**Done when**: `docker build` succeeds.
+
+##### 5.2.2: Set up nginx + SSL on VPS (~25 min)
+**Do**:
+1. `docker-compose.yml` with frontend service
+2. nginx reverse proxy config
+3. Let's Encrypt SSL via certbot
+4. Custom domain if available
+**Done when**: Site accessible via HTTPS.
+
+##### 5.2.3: Verify production deployment (~15 min)
+**Do**: Test in production:
+1. Wallet connects
+2. Full game flow works
+3. No console errors
+4. Mobile works
+**Done when**: Everything works in production.
+
+---
+
+#### Task 5.3: AI Agent Deployment
+
+##### 5.3.1: Create House AI Dockerfile (~10 min)
+**Do**: Dockerfile for `house-ai/`:
+1. Node.js base image
+2. Build TypeScript
+3. Health check endpoint
+**Done when**: `docker build` succeeds.
+
+##### 5.3.2: Add to docker-compose and deploy (~15 min)
+**Do**:
+1. Add house-ai service to `docker-compose.yml`
+2. Pass secrets via environment variables
+3. Set restart policy: `unless-stopped`
+4. Deploy to VPS
+**Done when**: Agent running as a container, playing games.
+
+##### 5.3.3: Set up monitoring (~10 min)
+**Do**:
+1. `docker logs -f house-ai` accessible
+2. Health check endpoint responding
+3. Resource monitoring (CPU/memory)
+**Done when**: Can monitor agent health remotely.
+
+---
+
+#### Task 5.4: Comprehensive README
+
+##### 5.4.1: Write the overview and features (~20 min)
+**Do**: Write the top of `README.md`:
+1. Project name, one-line description
+2. 2-3 paragraph overview
+3. Features list highlighting: Pinocchio, ZK-SNARKs, $FLIP economy, House AI, Flip Advisor
+**Done when**: Someone reading the first section understands what PushFlip is and why it's impressive.
+
+##### 5.4.2: Write technical architecture sections (~25 min)
+**Do**: Document:
+1. Smart Contract (Pinocchio patterns, zero-copy, manual validation)
+2. Provably Fair Randomness (Groth16 + Poseidon Merkle — the ZK flow)
+3. Token Economics ($FLIP staking, burning, distribution)
+4. AI Agent (strategy, monitoring, execution)
+**Done when**: Each section explains the tech clearly enough for a portfolio reviewer.
+
+##### 5.4.3: Write getting started and project structure (~15 min)
+**Do**: Document:
+1. Prerequisites (Rust, Solana CLI, Node 20+, pnpm, circom, snarkjs)
+2. Local development commands
+3. Directory tree with annotations
+**Done when**: A developer could clone and run the project from your instructions.
+
+##### 5.4.4: Write future work section (~10 min)
+**Do**: List planned improvements:
+1. Decentralized dealer (threshold cryptography)
+2. Player-contributed entropy for provable randomness
+3. AI tournaments
+4. Dynamic bounty generator
+5. Cross-chain potential
+**Done when**: Shows you've thought beyond the MVP.
+
+---
+
+#### Task 5.5: Code Cleanup & Final Testing
+
+##### 5.5.1: Run linters and fix issues (~15 min)
+**Do**:
+1. `cargo clippy` on Rust — fix all warnings
+2. `pnpm lint` (Biome) on TypeScript — fix all issues
+3. `rustfmt` on all Rust files
+**Done when**: Zero linting errors.
+
+##### 5.5.2: Security review (~20 min)
+**Do**: Check:
+1. No secrets in code or git history
+2. All accounts validated in every instruction
+3. Integer overflow checks on arithmetic
+4. PDA verification on every account access
+**Done when**: No security issues found.
+
+##### 5.5.3: Full test suite (~15 min)
+**Do**: Run everything:
+1. `cargo test` — all Rust tests
+2. Frontend manual test — full game flow
+3. Agent test — plays complete game
+**Done when**: All green. Project is portfolio-ready.
+
+##### 5.5.4: Create demo walkthrough (optional) (~30 min)
+**Do**: Record a 2-3 minute video:
+1. Show the game UI
+2. Play a round
+3. Highlight the ZK proof verification in transaction logs
+4. Show the House AI playing
+**Done when**: Video uploaded and linked in README.
 ## Risk & Dependency Management
 
 ### Technical Risks
@@ -2803,13 +2230,15 @@ Uses Codama-generated instruction builders and Kit's sendAndConfirmTransaction.
 
 ## Summary
 
-This execution plan provides a complete roadmap for building PushFlip with Claude Code. The project is broken into 5 phases over approximately 27 days, prioritizing **portfolio value** over hackathon speed:
+This execution plan provides a complete roadmap for building PushFlip with Claude Code. The project is broken into 5 phases over approximately 29 days, with every task decomposed into **~15-30 minute micro-tasks** for fluid, stress-free execution while learning deeply along the way.
 
-1. **Phase 1 (Days 1-7)**: Core game engine with Pinocchio + ZK verification module
-2. **Phase 2 (Days 8-14)**: Token economy + ZK circuit (Circom) + dealer service
-3. **Phase 3 (Days 15-20)**: Frontend with Kit/Kit Plugins/Codama
-4. **Phase 4 (Days 21-23)**: House AI + dealer integration
-5. **Phase 5 (Days 24-27)**: Deployment and documentation
+1. **Phase 1 (Days 1-10)**: Core game engine with Pinocchio + ZK verification module — 14 tasks, 64 micro-tasks
+2. **Phase 2 (Days 11-17)**: Token economy + ZK circuit (Circom) + dealer service — 9 tasks, 32 micro-tasks
+3. **Phase 3 (Days 18-22)**: Frontend with Kit/Kit Plugins/Codama — 7 tasks, 29 micro-tasks
+4. **Phase 4 (Days 23-25)**: House AI + dealer integration — 5 tasks, 14 micro-tasks
+5. **Phase 5 (Days 26-29)**: Deployment and documentation — 5 tasks, 17 micro-tasks
+
+**156 micro-tasks total** — each one a concrete, immediately actionable step.
 
 **Key differentiators for portfolio:**
 - **Pinocchio** (not Anchor) — demonstrates deep Solana internals: zero-copy accounts, manual account validation, raw byte manipulation, PDA signing via invoke_signed
@@ -2817,4 +2246,4 @@ This execution plan provides a complete roadmap for building PushFlip with Claud
 - **Modern client stack** — @solana/kit + Kit Plugins (not deprecated web3.js or Gill), Codama-generated clients from Shank IDL
 - **Full-stack architecture** — on-chain program + ZK circuit + off-chain dealer + AI agent + frontend
 
-Start with Task 1.1 (Pinocchio Environment Setup) and work through sequentially.
+**How to use this plan:** Start with micro-task 1.1.1 and work through sequentially. Each micro-task has a "Done when" criterion — move on only when you hit it. If anything feels too big, break it down further. Task-snack through the day.

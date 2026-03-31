@@ -1,0 +1,603 @@
+# Pinocchio Development Resource Guide for PushFlip
+
+Comprehensive documentation, tutorials, and resources for building the PushFlip on-chain
+gambling program using Pinocchio (the zero-dependency Solana framework by Anza).
+
+---
+
+## Table of Contents
+
+1. [Official Documentation and Core References](#1-official-documentation-and-core-references)
+2. [Tutorials and Step-by-Step Guides](#2-tutorials-and-step-by-step-guides)
+3. [Example Programs and Repositories](#3-example-programs-and-repositories)
+4. [IDL Generation (Shank + Codama)](#4-idl-generation-shank--codama)
+5. [PDAs and CPIs in Pinocchio](#5-pdas-and-cpis-in-pinocchio)
+6. [Testing with LiteSVM](#6-testing-with-litesvm)
+7. [Pinocchio vs Anchor Comparison](#7-pinocchio-vs-anchor-comparison)
+8. [Project Templates and Starters](#8-project-templates-and-starters)
+9. [Recommended Toolchain for PushFlip](#9-recommended-toolchain-for-pushflip)
+
+---
+
+## 1. Official Documentation and Core References
+
+### Pinocchio GitHub Repository (Official)
+- **URL**: https://github.com/anza-xyz/pinocchio
+- **Quality**: Authoritative. Maintained by Anza (Solana's Agave client developers). Actively updated through 2026.
+- **What it covers**: Core library, API types, feature flags, entrypoint patterns, zero-copy design.
+- **Key takeaways**:
+  - Latest version: **0.11.x**
+  - Entrypoint macro: `program_entrypoint!` (eager) or `lazy_program_entrypoint!` (lazy/on-demand parsing)
+  - Also requires: `default_allocator!` and `default_panic_handler!` (or `no_allocator!()` for zero-alloc programs)
+  - Handler signature: `fn handler(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) -> ProgramResult`
+  - Feature flags:
+    - `alloc` (default) -- enables `Vec`/`String` support
+    - `cpi` -- cross-program invocation helpers + instruction/signer types
+    - `copy` -- derives `Copy` on types
+    - `account-resize` -- runtime account data resizing
+  - Lazy entrypoint provides `remaining()`, `next_account()`, `instruction_data()`, `program_id()` for on-demand parsing
+  - Use `default-features = false` to disable heap allocation entirely
+
+### Pinocchio API Docs (docs.rs)
+- **URL**: https://docs.rs/pinocchio/latest/pinocchio/
+- **Quality**: Auto-generated from source. Canonical reference for all types and methods.
+- **Key takeaways**: Reference for `AccountView`, `ProgramResult`, `Seed`, `Signer`, CPI invoke helpers.
+
+### Pinocchio Companion Crates
+- `pinocchio-system` -- System program CPI helpers (Transfer, CreateAccount, etc.)
+- `pinocchio-token` -- SPL Token program CPI helpers
+- `pinocchio-log` -- Lightweight logging (`log!` macro)
+- `pinocchio-pubkey` -- `declare_id!` macro for program ID
+
+---
+
+## 2. Tutorials and Step-by-Step Guides
+
+### QuickNode: Build and Deploy a Solana Program Using Pinocchio (BEST OVERALL TUTORIAL)
+- **URL**: https://www.quicknode.com/guides/solana-development/pinocchio/how-to-build-and-deploy-a-solana-program-using-pinocchio
+- **Quality**: Excellent. Most comprehensive end-to-end tutorial available. Covers the FULL workflow from program to client to tests.
+- **What it covers**: Vault program with deposit/withdraw, Shank IDL generation, Codama client generation, TypeScript testing with Solana Kit.
+- **Key takeaways**:
+  - Complete Cargo.toml with `pinocchio`, `pinocchio-system`, `pinocchio-log`, `pinocchio-pubkey`, `shank`
+  - Program structure: `lib.rs` (entrypoint + dispatcher) + `instructions.rs` (handlers)
+  - Instruction dispatching via `match instruction_data.split_first()` with single-byte discriminators
+  - Account validation via `TryFrom` trait implementations
+  - PDA derivation with `find_program_address`
+  - CPI using `pinocchio_system::instructions::Transfer` and `CreateAccount`
+  - IDL generation: `shank idl -o idl`
+  - Client generation: `npx codama init && npx codama run js`
+  - Testing against `solana-test-validator` with Solana Kit (`@solana/kit`)
+
+### Helius: How to Build Solana Programs with Pinocchio
+- **URL**: https://www.helius.dev/blog/pinocchio
+- **Quality**: Good conceptual overview with code examples. Less hands-on than QuickNode guide.
+- **What it covers**: Framework comparison, Token2022 creation example, zero-copy concepts, tooling ecosystem.
+- **Key takeaways**:
+  - Pinocchio is "unopinionated" -- no enforced project structure
+  - Must use external tools (Shank/Codama) for IDL
+  - Bytemuck recommended over Borsh for account serialization
+  - Performance: 88-95% CU reduction vs solana-program in token operations
+
+### Pinocchio Guide (Community Tutorial)
+- **URL**: https://github.com/vict0rcarvalh0/pinocchio-guide
+- **Tutorial**: https://github.com/vict0rcarvalh0/pinocchio-guide/blob/main/TUTORIAL.md
+- **Quality**: Good. Shows Anchor-to-Pinocchio migration side-by-side.
+- **What it covers**: Converting an Anchor Vault to Pinocchio, account validation patterns, CPI patterns.
+- **Key takeaways**:
+  - Side-by-side Anchor vs Pinocchio code comparison
+  - How to replace `#[derive(Accounts)]` with manual `TryFrom` implementations
+  - PDA seed construction patterns
+
+### Blueshift: Pinocchio for Dummies (Course)
+- **URL**: https://learn.blueshift.gg/en/courses/pinocchio-for-dummies/pinocchio-101
+- **Quality**: Good structured course. 9 lessons covering fundamentals to advanced topics.
+- **What it covers**: Accounts, instructions, errors, data operations, testing (Mollusk), performance, middleware entrypoint, batch instructions.
+- **Key takeaways**:
+  - TryFrom trait is the core pattern for account validation
+  - Single-byte discriminators support up to 255 instructions
+  - Mollusk framework for unit testing (alternative to LiteSVM)
+  - Middleware entrypoint pattern for hot-path optimization
+  - Batch instructions to reduce CPI overhead
+
+### Accelerate 2025 Talk: No Strings Attached Programs with Pinocchio
+- **URL**: https://solanacompass.com/learn/accelerate-25/scale-or-die-2025-no-strings-attached-programs-w-pinocchio
+- **Quality**: Excellent. Direct from Pinocchio's creator (Fernando Otero / Febo at Anza).
+- **Key takeaways**:
+  - "Program first" design: no deps, zero alloc, zero-copy
+  - P-Token (SPL reimplementation): 88-95% CU reduction, 40% smaller binary
+  - CPI operations: 5x CU reduction
+  - Logging: up to 10x improvement
+  - Lazy entrypoint delays input reading for single-instruction programs
+  - Safe code is possible -- unsafe variants exist for extra optimization
+  - Future: integration into Solana SDK, Token22 + ATA optimizations
+
+---
+
+## 3. Example Programs and Repositories
+
+### Awesome Pinocchio (Curated List)
+- **URL**: https://github.com/deltartificial/awesome-pinocchio
+- **Quality**: Excellent curated list. The best starting point for finding examples.
+- **Key projects listed**:
+
+| Project | URL | Relevance to PushFlip |
+|---------|-----|----------------------|
+| P-Token (SPL Token reimplementation) | https://github.com/solana-program/token/tree/main/p-token | Token operations reference |
+| Pinocchio Staking | https://github.com/Turbin3/pinocchio-stake | Staking/locking patterns |
+| Pinocchio Escrow (ASCorreia) | https://github.com/ASCorreia/pinocchio-escrow | Multi-party fund management |
+| Pinocchio Escrow (PaulX) | https://github.com/ogunbor/pinocchio-escrow-paulx | Classic escrow pattern |
+| Pinocchio Bonding Curve | https://github.com/harsh4786/bonding-curve-pinocchio | Token economics |
+| Native Flash Loan | https://github.com/L0STE/native-flash-loan-program | Advanced CPI patterns |
+| Raydium CPMM CPI | https://github.com/kirarisk/pinocchio-raydium-cpmm-cpi | DEX integration CPI |
+| SPL Examples | https://github.com/L0STE/pinocchio-spl-examples | Token mint/transfer patterns |
+| Pinocchio Vault | https://github.com/stellarnodeN/Pinocchio-Vault | PDA + deposit/withdraw |
+| Solana Pinocchio Starter | https://github.com/Nagaprasadvr/solana-pinocchio-starter | Boilerplate template |
+| Pinocchio CLI Init | https://github.com/bidhan-a/pinocchio-init | Project scaffolding tool |
+
+### Anchor + Pinocchio Side-by-Side
+- **URL**: https://github.com/bluntbrain/solana-projects
+- **Quality**: Good for comparison. Has both Anchor and Pinocchio implementations.
+
+---
+
+## 4. IDL Generation (Shank + Codama)
+
+### The Workflow
+
+```
+Pinocchio Program (Rust)
+    |
+    | (annotate with Shank macros)
+    v
+shank idl -o idl/        --> generates IDL JSON
+    |
+    | (feed to Codama)
+    v
+codama run js             --> TypeScript client
+codama run rust           --> Rust client
+```
+
+### Shank (IDL Generation from Native Programs)
+- **URL**: https://github.com/metaplex-foundation/shank
+- **Install**: `cargo install shank-cli`
+- **Quality**: Mature tool from Metaplex. Has preliminary Pinocchio support (PR #69).
+- **How it works**:
+  - Add `shank` to your Cargo.toml dependencies
+  - Annotate an instruction enum with `#[derive(ShankInstruction)]`
+  - Use `#[account(...)]` attributes to define account metadata per instruction
+  - Run `shank idl -o idl/` to generate the IDL JSON
+
+**Example Shank annotation:**
+```rust
+#[derive(ShankInstruction)]
+pub enum GameInstruction {
+    #[account(0, signer, writable, name = "player", desc = "The player")]
+    #[account(1, writable, name = "game_state", desc = "Game PDA")]
+    #[account(2, name = "system_program", desc = "System Program")]
+    StartGame { bet_amount: u64 },
+
+    #[account(0, signer, name = "player", desc = "The player")]
+    #[account(1, writable, name = "game_state", desc = "Game PDA")]
+    Hit {},
+
+    #[account(0, signer, name = "player", desc = "The player")]
+    #[account(1, writable, name = "game_state", desc = "Game PDA")]
+    #[account(2, writable, name = "vault", desc = "House vault PDA")]
+    Stay {},
+}
+```
+
+### Codama (Client Generation)
+- **URL**: https://github.com/codama-idl/codama
+- **Docs**: https://solana.com/docs/programs/codama/clients
+- **Install**: `npm install codama`
+- **Quality**: Actively maintained. Official Solana Foundation recommended tool for 2026.
+- **Available renderers**:
+  - `@codama/renderers-js` -- JavaScript/TypeScript (Solana Kit compatible)
+  - `@codama/renderers-rust` -- Rust (Solana SDK compatible)
+  - `@codama/renderers-go` -- Go
+  - `@limechain/codama-dart` -- Dart
+  - `codama-py` -- Python
+- **Commands**:
+  - `codama init` -- creates `codama.json` config pointing to your IDL
+  - `codama run js` -- generate TypeScript client
+  - `codama run rust` -- generate Rust client
+  - `codama run --all` -- run all configured renderers
+
+### Solana IDL Guide (Official)
+- **URL**: https://solana.com/developers/guides/advanced/idls
+- **Quality**: Official. Covers all approaches (Anchor, Shank, Codama, manual).
+
+---
+
+## 5. PDAs and CPIs in Pinocchio
+
+### PDA Derivation
+
+```rust
+use pinocchio::pubkey::find_program_address;
+
+// Derive a game state PDA
+let (game_pda, bump) = find_program_address(
+    &[b"game", player.key().as_ref()],
+    &crate::ID,
+);
+
+// Verify the passed account matches
+if account.key() != &game_pda {
+    return Err(ProgramError::InvalidAccountData);
+}
+```
+
+### CPI with PDA Signing (invoke_signed)
+
+```rust
+use pinocchio::instruction::{Seed, Signer};
+use pinocchio_system::instructions::CreateAccount;
+
+// Build signer seeds for PDA
+let signer_seeds = [
+    Seed::from(b"vault".as_slice()),
+    Seed::from(owner.key().as_ref()),
+    Seed::from(core::slice::from_ref(&bump)),
+];
+let signer = Signer::from(&signer_seeds);
+
+// CPI: Create account owned by our program
+CreateAccount {
+    from: payer,
+    to: vault_account,
+    lamports: rent_lamports,
+    space: ACCOUNT_SIZE as u64,
+    owner: &crate::ID,
+}
+.invoke_signed(&[signer])?;
+```
+
+### CPI: Transfer SOL
+
+```rust
+use pinocchio_system::instructions::Transfer as SystemTransfer;
+
+// Simple transfer (signer is in accounts list)
+SystemTransfer {
+    from: player,
+    to: vault,
+    lamports: bet_amount,
+}
+.invoke()?;
+```
+
+### CPI: Transfer from PDA (signed)
+
+```rust
+// Transfer FROM a PDA (requires invoke_signed)
+SystemTransfer {
+    from: vault,
+    to: winner,
+    lamports: payout,
+}
+.invoke_signed(&[vault_signer])?;
+```
+
+### Direct Lamport Manipulation (No CPI Needed)
+
+For program-owned accounts, you can directly modify lamports without CPI:
+
+```rust
+// Withdraw from a program-owned account (no system program CPI needed)
+{
+    let mut vault_lamports = vault.try_borrow_mut_lamports()?;
+    *vault_lamports = vault_lamports
+        .checked_sub(amount)
+        .ok_or(ProgramError::InsufficientFunds)?;
+}
+{
+    let mut recipient_lamports = recipient.try_borrow_mut_lamports()?;
+    *recipient_lamports = recipient_lamports
+        .checked_add(amount)
+        .ok_or(ProgramError::InsufficientFunds)?;
+}
+```
+
+---
+
+## 6. Testing with LiteSVM
+
+### Overview
+- **URL**: https://github.com/LiteSVM/litesvm
+- **Guide**: https://www.quicknode.com/guides/solana-development/tooling/litesvm
+- **API Docs**: https://docs.rs/litesvm/latest/litesvm/
+- **Quality**: Recommended by Solana Foundation for 2026. Fast, in-process VM testing.
+
+### Setup
+
+```toml
+# Cargo.toml
+[dev-dependencies]
+litesvm = "0.8"
+litesvm-token = "0.8"   # optional: SPL token test helpers
+```
+
+### Core API
+
+```rust
+use litesvm::LiteSVM;
+
+// Initialize
+let mut svm = LiteSVM::new();
+
+// Load your compiled program
+let program_id = Pubkey::from_str("YOUR_PROGRAM_ID").unwrap();
+let program_bytes = std::fs::read("target/deploy/pushflip.so").unwrap();
+svm.add_program(program_id, &program_bytes);
+
+// Fund accounts
+svm.airdrop(&player_pubkey, 1_000_000_000).unwrap();
+
+// Set arbitrary account state
+svm.set_account(pda_key, Account {
+    lamports: 100_000_000,
+    data: vec![0u8; 128],
+    owner: program_id,
+    executable: false,
+    rent_epoch: 0,
+});
+
+// Send transactions
+let tx = Transaction::new(
+    &[&keypair],
+    Message::new(&[instruction], Some(&payer)),
+    svm.latest_blockhash(),
+);
+let result = svm.send_transaction(tx);
+assert!(result.is_ok());
+
+// Read account state after transaction
+let account = svm.get_account(&pda_key).expect("account exists");
+```
+
+### Time Travel (Clock Manipulation)
+
+```rust
+// Advance the clock (useful for time-locked game rounds)
+let mut clock: Clock = svm.get_sysvar::<Clock>();
+clock.unix_timestamp += 3600;  // advance 1 hour
+svm.set_sysvar::<Clock>(&clock);
+
+// Jump to future slot
+svm.warp_to_slot(500);
+
+// Expire blockhash (test expiry paths)
+svm.expire_blockhash();
+```
+
+### Testing Tiers (Solana Foundation Recommendation)
+
+| Level | Tool | Purpose |
+|-------|------|---------|
+| Unit tests | **Mollusk** | Isolated single-instruction testing |
+| Integration tests | **LiteSVM** | Full program interaction, multi-instruction flows |
+| E2E tests | **Surfpool** | Mainnet-like conditions, fork testing |
+
+### Alternative: Mollusk (Lighter Weight Unit Tests)
+- **URL**: https://github.com/buffalojoec/mollusk
+- Focused on single-instruction unit testing
+- Even lighter than LiteSVM for simple validation tests
+
+---
+
+## 7. Pinocchio vs Anchor Comparison
+
+### Performance Benchmarks
+
+| Metric | Anchor | Pinocchio | Improvement |
+|--------|--------|-----------|-------------|
+| Simple instruction CU | ~649 CU | ~109 CU | **~6x reduction** |
+| SPL Token operations | Baseline | 88-95% less CU | **~10-20x reduction** |
+| CPI overhead | Baseline | 5x less CU | **5x reduction** |
+| Binary size | Baseline | ~40% smaller | **40% reduction** |
+| Log formatting | Baseline | ~10x less CU | **10x reduction** |
+
+### Feature Comparison
+
+| Feature | Anchor | Pinocchio |
+|---------|--------|-----------|
+| Account validation | Automatic (macros) | Manual (TryFrom trait) |
+| IDL generation | Built-in | External (Shank + Codama) |
+| Serialization | Borsh (copies data) | Zero-copy (direct access) |
+| Dependencies | Many (solana-program, etc.) | Zero external deps |
+| Learning curve | Lower | Higher |
+| Program structure | Opinionated | Unopinionated |
+| Error handling | Built-in error types | Manual custom errors |
+| Client generation | anchor-client | Codama renderers |
+| Testing | anchor-bankrun, anchor-litesvm | LiteSVM, Mollusk |
+| `#![no_std]` support | No | Yes |
+| Allocator control | No | Yes (`no_allocator!()`) |
+
+### When to Choose Pinocchio (PushFlip Should)
+
+- Performance-critical on-chain logic (gambling requires minimal CU for profitability)
+- Portfolio differentiation (shows deeper Solana understanding than Anchor)
+- Full control over account validation (important for security in gambling dApps)
+- Smaller binary size (lower deploy cost)
+- Future-proof: Anchor v2 is likely to use Pinocchio as its entrypoint
+
+### Migration Path from Anchor Thinking
+
+1. Replace `#[derive(Accounts)]` with manual `TryFrom<&[AccountInfo]>` implementations
+2. Replace `#[program]` module with `entrypoint!` macro + match dispatcher
+3. Replace Borsh serialization with direct byte slice access or bytemuck
+4. Replace `ctx.accounts.field` with indexed array access `accounts[0]`
+5. Replace `anchor_lang::system_program::transfer` with `pinocchio_system::instructions::Transfer`
+6. Replace built-in IDL with Shank annotations + Codama generation
+
+---
+
+## 8. Project Templates and Starters
+
+### Official Pinocchio Counter Template (RECOMMENDED STARTING POINT)
+- **URL**: https://solana.com/developers/templates/pinocchio-counter
+- **Source**: https://github.com/solana-foundation/templates/tree/main/pinocchio/pinocchio-counter
+- **Quality**: Official Solana Foundation template. Production-grade structure.
+- **Structure**:
+  ```
+  program/src/
+    instructions/     -- create_counter/, increment/
+    state/            -- account state definitions
+    traits/           -- AccountSerialize, AccountDeserialize, PdaSeeds
+    events/           -- event emission via CPI
+    utils/            -- validation utilities
+  clients/
+    typescript/       -- Codama-generated TS client
+    rust/             -- Codama-generated Rust client
+  tests/
+    integration-tests/  -- LiteSVM integration tests
+  scripts/            -- Codama generation scripts
+  justfile            -- Build commands
+  ```
+- **Build commands**:
+  - `just build` -- build program + generate clients
+  - `just generate-idl` -- generate IDL from Rust code
+  - `just generate-clients` -- regenerate clients from IDL
+  - `just integration-test` -- run LiteSVM tests
+
+### Solana Pinocchio Starter
+- **URL**: https://github.com/Nagaprasadvr/solana-pinocchio-starter
+- **Quality**: Community maintained. Good minimal boilerplate.
+
+### Pinocchio CLI Init
+- **URL**: https://github.com/bidhan-a/pinocchio-init
+- **Quality**: Scaffolding tool for new projects.
+
+### Exo-Tech Template
+- **URL**: https://github.com/exo-tech-xyz/pinocchio-project
+- **Quality**: Community template with good defaults.
+
+---
+
+## 9. Recommended Toolchain for PushFlip
+
+Based on all research, here is the recommended stack for the PushFlip gambling dApp:
+
+### On-Chain Program
+| Component | Tool | Why |
+|-----------|------|-----|
+| Framework | **Pinocchio 0.11** | Zero-dep, minimal CU, portfolio differentiator |
+| System CPI | **pinocchio-system** | Transfer, CreateAccount helpers |
+| Token CPI | **pinocchio-token** | SPL token operations for game tokens |
+| Logging | **pinocchio-log** | Lightweight on-chain logging |
+| Program ID | **pinocchio-pubkey** | `declare_id!` macro |
+| IDL annotations | **Shank** | `#[derive(ShankInstruction)]` for IDL generation |
+
+### Client + IDL
+| Component | Tool | Why |
+|-----------|------|-----|
+| IDL generation | **Shank CLI** | `shank idl -o idl/` |
+| Client generation | **Codama** | `codama run js` for TypeScript, `codama run rust` for Rust |
+| TypeScript SDK | **@solana/kit v5** | Official 2026 recommended client library |
+| Wallet adapter | **Solana Foundation framework-kit** | React hooks for wallet connection |
+
+### Testing
+| Component | Tool | Why |
+|-----------|------|-----|
+| Unit tests | **Mollusk** | Fast single-instruction validation |
+| Integration tests | **LiteSVM 0.8** | Full program flow, clock manipulation, 25x faster than TS |
+| E2E tests | **Surfpool** | Mainnet fork testing for final validation |
+
+### Build + Deploy
+| Component | Tool | Why |
+|-----------|------|-----|
+| Build | `cargo build-sbf` | Standard Solana BPF compilation |
+| Deploy | `solana program deploy` | Direct deployment |
+| Task runner | **just** (justfile) | Used by official templates |
+
+### Project Structure (Recommended)
+
+```
+pushflip/
+  program/
+    Cargo.toml
+    src/
+      lib.rs                    -- entrypoint + instruction dispatcher
+      instructions/
+        mod.rs
+        start_game.rs           -- initialize game PDA, accept bet
+        hit.rs                  -- draw card, update state
+        stay.rs                 -- resolve round, calculate score
+        settle.rs               -- payout or collect from vault
+      state/
+        mod.rs
+        game.rs                 -- GameState account definition
+        vault.rs                -- House vault PDA
+      errors.rs                 -- Custom ProgramError variants
+      utils.rs                  -- Validation helpers, randomness
+  idl/                          -- Generated by Shank
+  clients/
+    typescript/                 -- Generated by Codama
+    rust/                       -- Generated by Codama
+  tests/
+    integration/                -- LiteSVM tests
+  scripts/
+    generate-idl.sh
+    generate-clients.sh
+  justfile
+```
+
+### Minimal Cargo.toml
+
+```toml
+[package]
+name = "pushflip"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+pinocchio = { version = "0.11", default-features = false }
+pinocchio-system = "0.5"
+pinocchio-token = "0.4"
+pinocchio-log = "0.4"
+pinocchio-pubkey = "0.3"
+shank = "0.4"
+
+[dev-dependencies]
+litesvm = "0.8"
+```
+
+---
+
+## Sources
+
+- [Pinocchio GitHub (Official)](https://github.com/anza-xyz/pinocchio)
+- [QuickNode: Build and Deploy with Pinocchio](https://www.quicknode.com/guides/solana-development/pinocchio/how-to-build-and-deploy-a-solana-program-using-pinocchio)
+- [Helius: How to Build Solana Programs with Pinocchio](https://www.helius.dev/blog/pinocchio)
+- [Pinocchio Counter Template](https://solana.com/developers/templates/pinocchio-counter)
+- [Pinocchio Guide (Community)](https://github.com/vict0rcarvalh0/pinocchio-guide)
+- [Blueshift: Pinocchio for Dummies Course](https://learn.blueshift.gg/en/courses/pinocchio-for-dummies/pinocchio-101)
+- [Awesome Pinocchio](https://github.com/deltartificial/awesome-pinocchio)
+- [P-Token (SPL Token Reimplementation)](https://github.com/febo/p-token)
+- [Pinocchio Vault Example](https://github.com/stellarnodeN/Pinocchio-Vault)
+- [Codama (Client Generation)](https://github.com/codama-idl/codama)
+- [Codama Client Docs](https://solana.com/docs/programs/codama/clients)
+- [Shank (IDL Generation)](https://github.com/metaplex-foundation/shank)
+- [Solana IDL Guide](https://solana.com/developers/guides/advanced/idls)
+- [LiteSVM](https://github.com/LiteSVM/litesvm)
+- [QuickNode: Test with LiteSVM](https://www.quicknode.com/guides/solana-development/tooling/litesvm)
+- [LiteSVM API Docs](https://docs.rs/litesvm/latest/litesvm/)
+- [Accelerate 2025: Pinocchio Talk](https://solanacompass.com/learn/accelerate-25/scale-or-die-2025-no-strings-attached-programs-w-pinocchio)
+- [Solana Dev Skill (2026 Best Practices)](https://github.com/solana-foundation/solana-dev-skill)
+- [Solana Foundation Templates](https://github.com/solana-foundation/templates)
+- [Pinocchio Bonding Curve](https://github.com/harsh4786/bonding-curve-pinocchio)
+- [Pinocchio Escrow](https://github.com/ASCorreia/pinocchio-escrow)
+- [Pinocchio Staking](https://github.com/Turbin3/pinocchio-stake)
+- [Raydium CPMM CPI](https://github.com/kirarisk/pinocchio-raydium-cpmm-cpi)
+- [Native Flash Loan](https://github.com/L0STE/native-flash-loan-program)
+- [Pinocchio SPL Examples](https://github.com/L0STE/pinocchio-spl-examples)
+- [Solana Optimized Programs](https://github.com/Laugharne/solana_optimized_programs)
+- [Anchor vs Pinocchio Projects](https://github.com/bluntbrain/solana-projects)
+- [Shank Pinocchio Support PR](https://github.com/metaplex-foundation/shank/pull/69)
+- [Solana Pinocchio Starter](https://github.com/Nagaprasadvr/solana-pinocchio-starter)
+- [Pinocchio CLI Init](https://github.com/bidhan-a/pinocchio-init)

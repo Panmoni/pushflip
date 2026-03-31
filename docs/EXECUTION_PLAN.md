@@ -15,6 +15,10 @@
   - Clean, interactive frontend with wallet integration (@solana/kit + Kit Plugins)
   - Comprehensive documentation suitable for portfolio presentation
   - Demonstrates deep Solana internals knowledge (zero-copy accounts, CPI, PDA signing, ZK verification)
+- **Team**:
+  - George Donnelly
+  - Alex Ramirez
+  - Jorge Gallo
 
 ## Scope Definition
 

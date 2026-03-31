@@ -12,7 +12,12 @@
       "Bash(git diff:*)",
       "Bash(git log:*)",
       "Bash(git ls-files:*)",
-      "Bash(gh:*)"
+      "Bash(gh:*)",
+      "Read(//home/george9874/**)",
+      "Bash(psql -h localhost -U openbrain -d open_brain_pushflip -c :*)",
+      "Bash(find /home/george9874/repos/pushflip -type f \\\\\\(-name *.env* -o -name *.yml -o -name *.yaml -o -name *.toml -o -name *.json \\\\\\))",
+      "Read(//dev/**)",
+      "Bash(for commit:*)"
     ],
     "deny": [
       "Bash(rm -rf *)",
@@ -20,7 +25,8 @@
       "Bash(cat *secrets*)"
     ],
     "additionalDirectories": [
-      "/home/george9874/repos"
+      "/home/george9874/repos",
+      "/home/george9874/tools/open-brain-mcp/src"
     ]
   }
 }

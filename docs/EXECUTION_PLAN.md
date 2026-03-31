@@ -152,6 +152,34 @@ sequenceDiagram
     Program-->>Frontend: Final state + winner
 ```
 
+### Fairness Model Analysis
+
+#### What the ZK system guarantees
+
+The current design uses a **commit-then-reveal** scheme with two cryptographic layers:
+
+1. **Groth16 proof at commit time** — The ZK Dealer shuffles the deck, builds a Poseidon Merkle tree over it, and generates a Groth16 proof that the shuffled deck is a **valid permutation** of a standard 52-card deck. The on-chain program verifies this proof (~200K CU) before storing the Merkle root. This guarantees: *the committed deck contains exactly the right cards — no duplicates, no missing cards.*
+
+2. **Merkle proof at reveal time** — Each `hit()` submits the card data + Merkle proof + leaf index. The program verifies the proof against the stored root. This guarantees: *each revealed card was part of the originally committed deck at that exact position.*
+
+Together these prove: **the deck was valid at commit time, and every card revealed matches what was committed.** The dealer cannot swap cards mid-game.
+
+#### The gap: single trusted dealer
+
+The ZK Dealer is an off-chain service that chooses the shuffle order, generates the validity proof, and submits the commitment. The Groth16 proof proves the deck is a **valid** shuffle but does NOT prove the shuffle is **random** or **unpredictable**. The dealer knows the entire deck order from the start and could theoretically stack the deck or collude with the House AI (same operator).
+
+**Current status: provably valid, not provably random.** Players can verify the deck was a real permutation and that revealed cards match the commitment, but they must trust the dealer to have shuffled honestly.
+
+#### Strengthening options (in order of complexity)
+
+1. **Player-contributed entropy (recommended for MVP)** — Player commits `hash(player_seed)` during `join_round`. Dealer commits `hash(dealer_seed)`. Final shuffle seed = `hash(player_seed || dealer_seed)`. The Circom circuit proves the shuffle was derived from this combined seed. Neither party alone controls the shuffle.
+
+2. **Verifiable delay function (VDF)** — Adds a time-locked computation on top of the combined seed so no one can predict the output fast enough to manipulate it. Higher complexity, stronger guarantees.
+
+3. **Decentralized dealer (threshold cryptography)** — Multiple independent parties each contribute a secret share. The shuffle can only be reconstructed when enough shares are combined. Eliminates single-dealer trust entirely. (Already listed as Post-MVP feature.)
+
+> **Decision needed**: Should we implement Option 1 (player-contributed entropy) in Phase 2 to make the "provably fair" claim genuinely defensible, or ship the single-dealer model first and upgrade later?
+
 ## Technology Stack
 
 | Category | Technology | Rationale | Alternatives Considered |
@@ -169,8 +197,9 @@ sequenceDiagram
 | **Frontend Framework** | Vite 5 + React 18 | Fast dev server, perfect for SPAs, lightweight, excellent DX | Next.js (unnecessary SSR/routing overhead for dApp) |
 | **Solana Client (JS)** | **@solana/kit + Kit Plugins** | Official next-gen SDK (tree-shakable, 83% smaller bundles, 900% faster crypto), Kit Plugins add composable client presets (RPC, payer, tx planning, LiteSVM) | Legacy @solana/web3.js 1.x (deprecated), @coral-xyz/anchor TS (requires Anchor), Gill (unnecessary wrapper) |
 | **Styling** | Tailwind CSS + shadcn/ui | Rapid development, consistent design system | Chakra UI (heavier) |
-| **Wallet Integration** | @solana/wallet-adapter-react | Official solution, supports Phantom/Solflare/etc | Custom (more work) |
+| **Wallet Integration** | @solana/wallet-adapter-react | Official Solana solution, supports Phantom/Solflare/etc, free, no vendor lock-in | dynamic.xyz (overkill — paid, multi-chain focus, adds vendor dependency for crypto-native audience that already has wallets) |
 | **State Management** | Zustand + React Query | Lightweight, good for async state | Redux (overkill) |
+| **Linting & Formatting** | **Biome + Ultracite** | Single Rust-based tool replaces ESLint + Prettier, fast, zero-config with Ultracite preset. Covers `app/`, `house-ai/`, `scripts/` | ESLint + Prettier (slower, two tools, more config), oxlint (less mature) |
 | **AI Agent Runtime** | Node.js 20 + TypeScript | Same language as frontend, good Solana SDK | Python (different ecosystem) |
 | **Development** | Docker + Solana CLI + pnpm | Reproducible builds, version control, fast package manager | Anchor CLI (not needed with Pinocchio) |
 | **Testing** | **LiteSVM** (integration) + **Mollusk** (unit) | Fast in-process Solana VM, no validator needed, purpose-built for native programs | Anchor test (requires Anchor), solana-test-validator (slower) |
@@ -1539,7 +1568,7 @@ Set up the Vite + React frontend in the `app/` directory:
 1. Initialize Vite project with React + TypeScript:
    - Use: pnpm create vite app --template react-ts
    - Configure Tailwind CSS
-   - Set up ESLint
+   - Set up Biome with Ultracite preset (NOT ESLint/Prettier)
 
 2. Install dependencies:
    - @solana/kit (official next-gen SDK, NOT legacy @solana/web3.js)
@@ -2380,10 +2409,10 @@ Final cleanup and testing:
 
 1. Code quality:
    - Run clippy on Rust code, fix warnings
-   - Run eslint on TypeScript, fix issues
+   - Run biome check on TypeScript, fix issues
    - Remove console.logs (except intentional)
    - Remove commented-out code
-   - Ensure consistent formatting (prettier/rustfmt)
+   - Ensure consistent formatting (biome/rustfmt)
 
 2. Security review:
    - Check for exposed secrets

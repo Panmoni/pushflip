@@ -12,7 +12,7 @@
   - ZK-proof deck verification using Groth16 + Poseidon Merkle trees for provably fair shuffling
   - Working token economy with stake/burn mechanics
   - AI opponent ("The House") that plays autonomously
-  - Clean, interactive frontend with wallet integration (Kit/Gill)
+  - Clean, interactive frontend with wallet integration (@solana/kit + Kit Plugins)
   - Comprehensive documentation suitable for portfolio presentation
   - Demonstrates deep Solana internals knowledge (zero-copy accounts, CPI, PDA signing, ZK verification)
 
@@ -25,7 +25,7 @@
 4. Basic bounty system
 5. "The House" AI opponent + ZK dealer service
 6. "Flip Advisor" probability assistant (frontend)
-7. Vite + React frontend with **@solana/kit + Gill** (NOT legacy web3.js or Anchor TS client)
+7. Vite + React frontend with **@solana/kit + Kit Plugins** (NOT legacy web3.js, Anchor TS client, or Gill)
 8. IDL generated via **Shank**, TypeScript client generated via **Codama**
 
 ### Post-MVP Features
@@ -59,7 +59,8 @@
 │                  ▼                                                  │
 │         ┌───────────────┐                                           │
 │         │ @solana/kit   │                                           │
-│         │ + Gill + Codama│                                          │
+│         │ + Kit Plugins │                                           │
+│         │ + Codama      │                                           │
 │         └───────┬───────┘                                           │
 └─────────────────┼───────────────────────────────────────────────────┘
                   │
@@ -162,7 +163,7 @@ sequenceDiagram
 | **ZK Hashing** | **light-poseidon** + Poseidon syscall | ZK-friendly hash, native Solana syscall support, Circom-compatible BN254 params | SHA-256 (10x more constraints in-circuit), Keccak |
 | **Token Standard** | SPL Token | Native Solana token standard | Token-2022 (overkill for MVP) |
 | **Frontend Framework** | Vite 5 + React 18 | Fast dev server, perfect for SPAs, lightweight, excellent DX | Next.js (unnecessary SSR/routing overhead for dApp) |
-| **Solana Client (JS)** | **@solana/kit + Gill** | Official next-gen SDK (tree-shakable, 78% smaller bundles, 900% faster crypto), Gill adds React hooks | Legacy @solana/web3.js 1.x (deprecated), @coral-xyz/anchor TS (requires Anchor) |
+| **Solana Client (JS)** | **@solana/kit + Kit Plugins** | Official next-gen SDK (tree-shakable, 83% smaller bundles, 900% faster crypto), Kit Plugins add composable client presets (RPC, payer, tx planning, LiteSVM) | Legacy @solana/web3.js 1.x (deprecated), @coral-xyz/anchor TS (requires Anchor), Gill (unnecessary wrapper) |
 | **Styling** | Tailwind CSS + shadcn/ui | Rapid development, consistent design system | Chakra UI (heavier) |
 | **Wallet Integration** | @solana/wallet-adapter-react | Official solution, supports Phantom/Solflare/etc | Custom (more work) |
 | **State Management** | Zustand + React Query | Lightweight, good for async state | Redux (overkill) |
@@ -1521,11 +1522,11 @@ Extend LiteSVM tests with Phase 2 tests:
 
 ### Phase 3: Frontend Development (Days 15-20)
 
-**Goal:** Build interactive Vite + React frontend with @solana/kit + Gill + Codama-generated client.
+**Goal:** Build interactive Vite + React frontend with @solana/kit + Kit Plugins + Codama-generated client.
 
 #### Task 3.1: Vite + React Project Setup (2-3 hours)
 
-**Deliverable:** Configured Vite + React app with Kit/Gill dependencies
+**Deliverable:** Configured Vite + React app with Kit + Kit Plugins dependencies
 
 **Claude Code Prompt:**
 ```
@@ -1538,18 +1539,22 @@ Set up the Vite + React frontend in the `app/` directory:
 
 2. Install dependencies:
    - @solana/kit (official next-gen SDK, NOT legacy @solana/web3.js)
-   - gill + @gillsdk/react (ergonomic Kit wrapper with React hooks)
+   - @solana/kit-client-rpc (pre-configured RPC client preset)
+   - @solana/kit-plugin-rpc (RPC plugins: airdrop, tx planner, etc.)
+   - @solana/kit-plugin-payer (fee payer management)
+   - @solana/kit-plugin-instruction-plan (tx planning & execution)
    - @solana/wallet-adapter-react
    - @solana/wallet-adapter-react-ui
    - @solana/wallet-adapter-wallets (phantom, solflare)
    - @tanstack/react-query
    - zustand
    - Install shadcn/ui and add: button, card, dialog, toast
-   - Do NOT install @coral-xyz/anchor or @solana/web3.js
+   - Do NOT install @coral-xyz/anchor, @solana/web3.js, or gill
 
 3. Create `src/providers/WalletProvider.tsx`:
    - WalletProvider with Phantom and Solflare
    - Connection to devnet via Kit's createSolanaRpc()
+   - Create Kit client using createClient() from @solana/kit-client-rpc
 
 4. Create `src/providers/QueryProvider.tsx`:
    - QueryClientProvider wrapper
@@ -1867,7 +1872,7 @@ Set up the House AI agent in `house-ai/` directory:
 
 1. Initialize Node.js project:
    - TypeScript configuration
-   - Dependencies: @solana/kit, gill, Codama-generated client, dotenv
+   - Dependencies: @solana/kit, @solana/kit-client-rpc, @solana/kit-plugin-rpc, @solana/kit-plugin-payer, Codama-generated client, dotenv
 
 2. `src/config.ts`:
    - Load environment variables
@@ -2645,7 +2650,7 @@ The ZK shuffle system introduces a **dealer role** (initially the House AI, late
 6. **Day 10-11**: Token integration (stake, distribute via pinocchio-token CPI)
 7. **Day 12-13**: Burn mechanics, Protocol effects, bounties
 8. **Day 14**: Circom ZK circuit + trusted setup + dealer service MVP
-9. **Day 15-16**: Frontend setup (Kit/Gill/Codama), wallet integration
+9. **Day 15-16**: Frontend setup (Kit/Kit Plugins/Codama), wallet integration
 10. **Day 17-18**: Game UI components
 11. **Day 19-20**: Flip Advisor, real-time updates, ZK "provably fair" badge, polish
 12. **Day 21-22**: House AI agent + dealer service integration
@@ -2734,22 +2739,24 @@ This verifies a Poseidon Merkle proof for the revealed card — NOT popping from
 CU budget: ~50K per Merkle verify (Poseidon syscall)
 ```
 
-### Prompt: Create Vite + React Frontend Setup (Kit/Gill)
+### Prompt: Create Vite + React Frontend Setup (Kit + Kit Plugins)
 ```
 Set up a Vite + React frontend in the app/ directory:
 
 1. pnpm create vite app --template react-ts
-2. Install: @solana/kit, gill, @gillsdk/react, @solana/wallet-adapter-react,
-   @tanstack/react-query, zustand, shadcn/ui
-3. Do NOT install @coral-xyz/anchor or @solana/web3.js
+2. Install: @solana/kit, @solana/kit-client-rpc, @solana/kit-plugin-rpc,
+   @solana/kit-plugin-payer, @solana/kit-plugin-instruction-plan,
+   @solana/wallet-adapter-react, @tanstack/react-query, zustand, shadcn/ui
+3. Do NOT install @coral-xyz/anchor, @solana/web3.js, or gill
 4. Import Codama-generated client from clients/js/
-5. Use Kit's createSolanaRpc() and Gill's React hooks
-6. No Buffer polyfills needed (Kit is tree-shakable)
+5. Use Kit's createSolanaRpc() and createClient() from @solana/kit-client-rpc
+6. Compose client capabilities using Kit Plugins (.use() chaining)
+7. No Buffer polyfills needed (Kit is tree-shakable)
 ```
 
 ### Prompt: Create House AI Agent + Dealer Integration
 ```
-Create a Node.js/TypeScript AI agent in house-ai/ using @solana/kit + Codama client:
+Create a Node.js/TypeScript AI agent in house-ai/ using @solana/kit + Kit Plugins + Codama client:
 
 The agent integrates with the ZK dealer service:
 1. On round start: dealer generates shuffle + Groth16 proof + submits commit_deck
@@ -2767,14 +2774,14 @@ This execution plan provides a complete roadmap for building PushFlip with Claud
 
 1. **Phase 1 (Days 1-7)**: Core game engine with Pinocchio + ZK verification module
 2. **Phase 2 (Days 8-14)**: Token economy + ZK circuit (Circom) + dealer service
-3. **Phase 3 (Days 15-20)**: Frontend with Kit/Gill/Codama
+3. **Phase 3 (Days 15-20)**: Frontend with Kit/Kit Plugins/Codama
 4. **Phase 4 (Days 21-23)**: House AI + dealer integration
 5. **Phase 5 (Days 24-27)**: Deployment and documentation
 
 **Key differentiators for portfolio:**
 - **Pinocchio** (not Anchor) — demonstrates deep Solana internals: zero-copy accounts, manual account validation, raw byte manipulation, PDA signing via invoke_signed
 - **ZK-SNARK provably fair shuffling** — Groth16 proof verification on-chain (~200K CU), Poseidon Merkle proofs for card reveals (~50K CU), Circom circuit design
-- **Modern client stack** — @solana/kit + Gill (not deprecated web3.js), Codama-generated clients from Shank IDL
+- **Modern client stack** — @solana/kit + Kit Plugins (not deprecated web3.js or Gill), Codama-generated clients from Shank IDL
 - **Full-stack architecture** — on-chain program + ZK circuit + off-chain dealer + AI agent + frontend
 
 Start with Task 1.1 (Pinocchio Environment Setup) and work through sequentially.

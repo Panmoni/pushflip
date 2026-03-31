@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo build:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo run:*)",
+      "Bash(solana:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git ls-files:*)",
+      "Bash(gh:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(cat .env*)",
+      "Bash(cat *secrets*)"
+    ],
+    "additionalDirectories": [
+      "/home/george9874/repos"
+    ]
+  }
+}

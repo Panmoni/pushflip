@@ -172,13 +172,13 @@ The ZK Dealer is an off-chain service that chooses the shuffle order, generates 
 
 #### Strengthening options (in order of complexity)
 
-1. **Player-contributed entropy (recommended for MVP)** — Player commits `hash(player_seed)` during `join_round`. Dealer commits `hash(dealer_seed)`. Final shuffle seed = `hash(player_seed || dealer_seed)`. The Circom circuit proves the shuffle was derived from this combined seed. Neither party alone controls the shuffle.
+1. **Player-contributed entropy (post-MVP)** — Player commits `hash(player_seed)` during `join_round`. Dealer commits `hash(dealer_seed)`. Final shuffle seed = `hash(player_seed || dealer_seed)`. The Circom circuit proves the shuffle was derived from this combined seed. Neither party alone controls the shuffle.
 
 2. **Verifiable delay function (VDF)** — Adds a time-locked computation on top of the combined seed so no one can predict the output fast enough to manipulate it. Higher complexity, stronger guarantees.
 
 3. **Decentralized dealer (threshold cryptography)** — Multiple independent parties each contribute a secret share. The shuffle can only be reconstructed when enough shares are combined. Eliminates single-dealer trust entirely. (Already listed as Post-MVP feature.)
 
-> **Decision needed**: Should we implement Option 1 (player-contributed entropy) in Phase 2 to make the "provably fair" claim genuinely defensible, or ship the single-dealer model first and upgrade later?
+> **Decision (resolved)**: Ship the single-dealer ZK model first. Player-contributed entropy (Option 1) is deferred to post-MVP. The single-dealer model already proves deep ZK competence (Circom circuits, Groth16 on-chain verification, Poseidon Merkle proofs). Adding player entropy changes the game loop UX significantly — it adds a commit-reveal round-trip before the game starts, introducing latency that hurts the demo experience. Document the trust assumption clearly in the README under "Known Limitations / V2 Roadmap."
 
 ## Technology Stack
 
@@ -718,6 +718,42 @@ Implement `From<PushFlipError> for ProgramError` mapping each to a custom error 
 
 ---
 
+#### Task 1.3b: ZK Circuit Prototype (Early De-Risk)
+
+> **Rationale**: The Circom circuit is the highest-risk component in the project. The byte layouts and canonical deck it depends on are stable after Task 1.3. Starting a skeleton circuit now — even a trivial 4-card version — surfaces compilation issues, Poseidon parameter mismatches, and toolchain problems on Day 3-5 instead of Day 14-15. This does NOT replace the full circuit work in Phase 2; it's a smoke test.
+
+##### 1.3b.1: Install Circom and snarkjs early (~15 min)
+**Do**: Install the ZK toolchain now (same steps as 2.8.1):
+1. `npm install -g circom` (or build from source)
+2. `npm install -g snarkjs`
+3. Verify: `circom --version`, `snarkjs --version`
+**Done when**: Both tools installed and version commands work.
+
+##### 1.3b.2: Write a minimal 4-card circuit prototype (~30 min)
+**Do**: Create `zk-circuits/circuits/shuffle_verify_mini.circom`:
+1. Import Poseidon from `circomlib`
+2. Define a 4-card permutation check (each index 0-3 appears exactly once)
+3. Build a depth-2 Poseidon Merkle tree over the 4 shuffled cards
+4. Constrain: computed merkle_root == public merkle_root
+**Why 4 cards**: Minimal circuit that exercises the full proof pipeline (permutation check + Poseidon Merkle tree) without the constraint overhead of 94 cards. If this compiles and proves, the full circuit is a matter of scaling up.
+**Done when**: `circom shuffle_verify_mini.circom --r1cs --wasm --sym` compiles without errors. Note the constraint count.
+
+##### 1.3b.3: Generate a test proof and verify it locally (~20 min)
+**Do**:
+1. Run a quick Powers of Tau ceremony (small size, just for testing)
+2. Run circuit-specific Phase 2 setup
+3. Generate a witness for a known 4-card permutation
+4. Generate a Groth16 proof with `snarkjs`
+5. Verify the proof locally with `snarkjs groth16 verify`
+**Done when**: Local proof generation and verification succeeds. You now have confidence the full circuit pipeline works.
+
+##### 1.3b.4: Prepare a 52-card fallback circuit skeleton (~15 min)
+**Do**: Create `zk-circuits/circuits/shuffle_verify_52.circom` — same structure as the mini circuit but with 52-card Alpha-only permutation and depth-6 Merkle tree (64 leaves, 52 used + 12 padded).
+**Why**: If the full 94-card circuit hits constraint issues or Poseidon hashing gets unwieldy in Phase 2, this 52-card version lets you demo real ZK proofs end-to-end with the core Alpha deck. Low cost to prepare, high insurance value.
+**Done when**: Compiles with `circom --r1cs`. Does not need to generate proofs yet — just validates the constraint structure.
+
+---
+
 #### Task 1.4: Implement Scoring Logic
 
 ##### 1.4.1: Implement hand scoring (~20 min)
@@ -793,8 +829,11 @@ Add a comment: "Generated during trusted setup (Phase 2, Task 2.8). Replace with
    - At each level, determine left/right by checking the bit of `leaf_index` at that position
    - Hash the pair: `Poseidon(left, right)`
 3. Compare final hash to the stored `root`
+
+**Leaf padding strategy**: Depth 7 gives 128 leaves but the deck only uses 94 cards (indices 0-93). Leaves 94-127 **must be padded with `Poseidon(0, 0, 0, leaf_index)`** (zero-valued card fields with the real leaf index). This padding must be identical in three places: on-chain Merkle verifier, off-chain dealer tree builder, and the Circom circuit. Define `PADDING_LEAF_HASH` as a constant and add a cross-validation test (see 1.3b).
+
 **Learn**: A Merkle tree lets you prove a specific element exists in a committed set by providing just 7 hashes (the "proof path"). This is how we verify each card without revealing the whole deck.
-**Done when**: Unit test with a manually computed 3-level Merkle tree passes.
+**Done when**: Unit test with a manually computed 3-level Merkle tree passes. Padding leaves hash to the expected constant.
 
 ##### 1.5.5: Write Merkle proof unit tests (~20 min)
 **Do**: Create a test that:
@@ -915,6 +954,7 @@ Validate the data length is exactly 160 bytes.
 5. Reset `draw_counter = 0`
 6. Emit `DeckCommitted { game_id, merkle_root }` event
 **Learn**: This is where the ZK magic happens. The Groth16 proof (~200K CU to verify) cryptographically guarantees the deck is a valid permutation. After this, the merkle_root is the "committed truth" for the entire round.
+**Important**: Groth16 verification uses ~200K CU, which is also Solana's default per-transaction compute limit. The `commit_deck` transaction **must** include a `ComputeBudgetInstruction::set_compute_unit_limit` (e.g., 300K-400K CU) or it will fail with `ComputeBudgetExceeded`. This applies to both the dealer service and any test code that submits this instruction.
 **Done when**: Handler compiles. Add to entrypoint: discriminator `1 => process_commit_deck`.
 
 ##### 1.7.4: Write a unit test with mock proof (~15 min)
@@ -1102,9 +1142,10 @@ Validate: `leaf_index == game_session.draw_counter()` (cards must be drawn in or
 
 ##### 1.13.2: Implement leave_game (~15 min)
 **Do**: Create `instructions/leave_game.rs` (discriminator 8):
-1. If round NOT active: remove player from turn_order, close PlayerState, refund
-2. If round IS active: forfeit (score = 0, is_active = false, inactive_reason = 1)
-**Done when**: Both paths compile and are added to entrypoint.
+1. If round NOT active AND `deck_committed == false`: remove player from turn_order, close PlayerState, refund. This also covers the **dealer-goes-offline** case — if a player joined but the dealer never committed a deck, the player can reclaim their stake.
+2. If round NOT active AND `deck_committed == true`: remove player, close PlayerState, refund (between-rounds leave).
+3. If round IS active: forfeit (score = 0, is_active = false, inactive_reason = 1)
+**Done when**: All 3 paths compile and are added to entrypoint.
 
 ##### 1.13.3: Write lifecycle tests (~15 min)
 **Do**: Test:
@@ -1112,7 +1153,8 @@ Validate: `leaf_index == game_session.draw_counter()` (cards must be drawn in or
 2. Close game when round active → error
 3. Leave between rounds → refund
 4. Leave mid-round → forfeit
-**Done when**: All 4 tests pass.
+5. Leave after joining but before deck committed (dealer offline) → refund
+**Done when**: All 5 tests pass.
 
 ---
 
@@ -1258,8 +1300,11 @@ pub const TREASURY_FEE_BPS: u16 = 200; // 2%
 1. **Winner exists**: `rake = pot * bps / 10000`. CPI Transfer vault→treasury (rake). CPI Transfer vault→winner (pot - rake). Use `invoke_signed` with vault PDA seeds. Reset pot = 0, rollover = 0.
 2. **All busted, rollover < 10**: Increment rollover_count. No transfers.
 3. **All busted, rollover == 10**: Return stakes proportionally. Reset.
+
+**Dev-mode invariant check**: After every token CPI in this handler (and in `join_round`, `burn_second_chance`), add a `#[cfg(debug_assertions)]` block that re-reads the vault token account balance and asserts it equals the updated `pot_amount`. This catches silent transfer failures or accounting bugs on devnet before they become ghost balance issues in the demo. Zero cost in release builds.
+
 **Learn**: `invoke_signed` is the PDA equivalent of a regular signature. The vault PDA "signs" the transfer by proving the program derived its address from the known seeds.
-**Done when**: All three paths compile. Test: winner gets pot minus 2% rake.
+**Done when**: All three paths compile. Test: winner gets pot minus 2% rake. Dev-mode assertions fire on balance mismatch.
 
 ##### 2.3.3: Write payout tests (~20 min)
 **Do**: Test:
@@ -1431,20 +1476,22 @@ pub const TREASURY_FEE_BPS: u16 = 200; // 2%
 **Learn**: The off-chain Merkle tree must use the exact same hash function and parameters as the on-chain verifier. If they diverge, proofs will fail.
 **Done when**: Build tree for a test deck, get root and proof for leaf 0.
 
-##### 2.8.8: Implement the Groth16 prover (~20 min)
+##### 2.8.8: Implement the Groth16 prover (~30 min)
 **Do**: In `dealer/src/prover.ts`:
 1. Load the WASM witness generator and zkey from the trusted setup
 2. Function: `generateProof(permutation, seed) -> { proof, publicSignals }`
 3. Compress proof to 128 bytes (Solana-compatible format)
 4. Verify locally before submitting: `snarkjs.groth16.verify(vk, publicSignals, proof)`
-**Done when**: Generate a proof for a known permutation, verify it locally.
+**Gotcha — endianness and byte formatting**: `snarkjs` outputs proof elements as big-endian hex strings, but `groth16-solana` expects little-endian byte arrays. You must reverse the byte order of each 32-byte field (A.x, A.y, B.x1, B.x2, B.y1, B.y2, C.x, C.y) when serializing the proof for on-chain submission. The same applies to public inputs. This mismatch is a notorious time-sink — test with a known proof/verifying key pair before integrating with the full circuit.
+**Done when**: Generate a proof for a known permutation, verify it locally, AND confirm the serialized bytes match what the on-chain verifier expects.
 
 ##### 2.8.9: Implement the dealer class (~25 min)
 **Do**: In `dealer/src/dealer.ts`:
 1. `shuffle()`: Fisher-Yates shuffle of canonical deck, return permutation
-2. `commitDeck()`: shuffle → build Merkle tree → generate Groth16 proof → submit `commit_deck` transaction
+2. `commitDeck()`: shuffle → build Merkle tree → generate Groth16 proof → submit `commit_deck` transaction (must prepend `ComputeBudgetInstruction::set_compute_unit_limit(400_000)` to avoid `ComputeBudgetExceeded`)
 3. `revealCard(index)`: return card data + Merkle proof for the given index
-**Done when**: Dealer can shuffle, commit, and reveal cards. Test end-to-end with a local validator.
+4. Track a `nextLeafIndex` counter internally. `revealCard` must enforce sequential access — reject or error if called with an index that doesn't match `nextLeafIndex`, then increment. This prevents out-of-order reveals that the on-chain program would reject, avoiding confusing UX errors.
+**Done when**: Dealer can shuffle, commit, and reveal cards sequentially. Test end-to-end with a local validator. Test that out-of-order reveal requests are rejected.
 
 ##### 2.8.10: End-to-end ZK test (~30 min)
 **Do**: Write a test that:
@@ -2046,10 +2093,11 @@ Each action: `useMutation` from React Query, success/error toasts, auto-refetch 
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| ZK circuit complexity | Medium | High | Circom circuit for 94-card permutation (~59K constraints); mitigate with thorough test vectors and reference implementations |
+| ZK circuit complexity | Medium | High | Circom circuit for 94-card permutation (~59K constraints); mitigated by front-loaded 4-card prototype (Day 3-4) + 52-card fallback skeleton; full circuit has early smoke test before Phase 2 |
+| snarkjs ↔ groth16-solana byte format | High | High | Endianness mismatch between JS (big-endian hex) and Rust (little-endian bytes) for proof elements and public inputs. Mitigate by writing explicit serialization tests with known proof vectors before full integration |
 | Groth16 trusted setup | Low | Medium | Requires ceremony; use existing Powers of Tau, circuit-specific phase 2 is straightforward |
 | Pinocchio learning curve | Medium | Medium | No Anchor macros means more manual code; mitigate with Pinocchio resource guide and example repos |
-| Solana RPC rate limits | Medium | Medium | Use paid RPC provider (Helius free tier) |
+| Solana RPC rate limits | Medium | Medium | Use Helius/QuickNode free-tier devnet RPC for the House AI and dealer service — public devnet RPCs aggressively rate-limit polling and will ban IPs that poll every 2 seconds |
 | Account size limits | Low | High | Careful space calculations, test with max data |
 | Transaction failures | Medium | Low | Retry logic, proper error handling |
 | WebSocket disconnections | High | Low | Polling fallback, reconnection logic |
@@ -2103,20 +2151,20 @@ Each action: `useMutation` from React Query, success/error toasts, auto-refetch 
 ### Recommended Order of Operations
 
 1. **Day 1-2**: Environment setup (Pinocchio, Shank, Codama, LiteSVM), state structures
-2. **Day 3-4**: ZK verification module (Groth16 + Poseidon Merkle), deck utilities
+2. **Day 3-4**: ZK verification module (Groth16 + Poseidon Merkle), deck utilities, **ZK circuit prototype** (4-card mini circuit + 52-card fallback skeleton — early de-risk)
 3. **Day 5-6**: Core instructions (initialize, commit_deck, join_round, start_round)
 4. **Day 7**: Hit instruction (with Merkle proof verification) and stay
 5. **Day 8-9**: End round, game lifecycle, Phase 1 LiteSVM tests
-6. **Day 10-11**: Token integration (stake, distribute via pinocchio-token CPI)
+6. **Day 10-11**: Token integration (stake, distribute via pinocchio-token CPI, dev-mode vault assertions)
 7. **Day 12-13**: Burn mechanics, Protocol effects, bounties
-8. **Day 14**: Circom ZK circuit + trusted setup + dealer service MVP
-9. **Day 15-16**: Frontend setup (Kit/Kit Plugins/Codama), wallet integration
-10. **Day 17-18**: Game UI components
-11. **Day 19-20**: Flip Advisor, real-time updates, ZK "provably fair" badge, polish
-12. **Day 21-22**: House AI agent + dealer service integration
-13. **Day 23**: AI strategy and testing
-14. **Day 24-25**: Deployment (program, frontend, dealer, AI)
-15. **Day 26-27**: Documentation, cleanup, final testing
+8. **Day 14-15**: Full 94-card Circom ZK circuit + trusted setup + dealer service MVP (extra day budgeted for snarkjs ↔ groth16-solana byte-format debugging; if 94-card circuit stalls, fall back to 52-card skeleton from Day 3)
+9. **Day 16-17**: Frontend setup (Kit/Kit Plugins/Codama), wallet integration
+10. **Day 18-19**: Game UI components
+11. **Day 20-21**: Flip Advisor, real-time updates, ZK "provably fair" badge, polish
+12. **Day 22-23**: House AI agent + dealer service integration
+13. **Day 24**: AI strategy and testing
+14. **Day 25-26**: Deployment (program, frontend, dealer, AI)
+15. **Day 27-29**: Documentation, cleanup, final testing
 
 ### Testing Strategy
 

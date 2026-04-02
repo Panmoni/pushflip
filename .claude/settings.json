@@ -17,7 +17,17 @@
       "Bash(psql -h localhost -U openbrain -d open_brain_pushflip -c :*)",
       "Bash(find /home/george9874/repos/pushflip -type f \\\\\\(-name *.env* -o -name *.yml -o -name *.yaml -o -name *.toml -o -name *.json \\\\\\))",
       "Read(//dev/**)",
-      "Bash(for commit:*)"
+      "Bash(for commit:*)",
+      "Bash(code --list-extensions)",
+      "Read(//home/vscode/.vscode-server/extensions/**)",
+      "Read(//var/run/**)",
+      "Read(//proc/1/**)",
+      "Bash(cargo --version)",
+      "Bash(rustc --version)",
+      "Bash(cargo-build-sbf --version)",
+      "Bash(pnpm --version)",
+      "Bash(circom --version)",
+      "Bash(snarkjs --version)"
     ],
     "deny": [
       "Bash(rm -rf *)",
@@ -26,7 +36,8 @@
     ],
     "additionalDirectories": [
       "/home/george9874/repos",
-      "/home/george9874/tools/open-brain-mcp/src"
+      "/home/george9874/tools/open-brain-mcp/src",
+      "/home/george9874/repos/pushflip"
     ]
   }
 }

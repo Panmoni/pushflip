@@ -489,13 +489,67 @@ Every task below is broken into **micro-tasks of ~15-30 minutes**. Each micro-ta
 
 ---
 
+## Progress Tracker
+
+### Decisions Log
+
+| Date | Decision | Rationale |
+|------|----------|-----------|
+| 2026-04-02 | Develop on host, not in a dev container | Claude Code conversation history is lost when containers stop/restart. Host already has all required toolchain. Container approach reserved for CI/reproducible builds later. |
+| 2026-04-02 | No `.devcontainer/` in repo | Removed after switching to host-based development. Will add a CI Dockerfile when needed. |
+| 2026-04-02 | `package-lock.json` gitignored | Project uses pnpm (`pnpm-lock.yaml`), npm lock file is noise. |
+| 2026-04-02 | Pinocchio 0.10 API (breaking changes from plan) | 0.10 renamed: `AccountInfo` → `AccountView`, `Pubkey` → `Address`, `pinocchio::pubkey` → `pinocchio::address`, `pinocchio::program_error` → `pinocchio::error`. Also using `pinocchio-groth16` 0.3 instead of `groth16-solana` 0.2. |
+| 2026-04-02 | Solana CLI set to devnet | Was defaulting to mainnet. Switched for development. |
+| 2026-04-02 | Security review: bounds checks + length validation in state accessors | 3-pass review found critical buffer overflow risks in `card_at()`, `turn_order_slot()`, `push_card()`. Fixed with bounds assertions and `from_bytes()` length validation. 14 tests (5 new boundary tests). |
+
+### Environment Status
+
+All toolchain verified on host (2026-04-02):
+
+| Tool | Version | Status |
+|------|---------|--------|
+| Rust (stable) + clippy + rustfmt | 1.92.0 | Installed |
+| Solana CLI + cargo-build-sbf | 3.0.13 (Agave) | Installed |
+| Node.js | 20.19.4 | Installed |
+| pnpm | 10.28.0 | Installed |
+| Circom | 2.2.2 | Installed |
+| snarkjs | latest | Installed |
+| just | 1.48.1 | Installed |
+
+### Task Progress
+
+- [x] **1.1** Environment Setup (completed 2026-04-02)
+  - [x] 1.1.1 Create workspace Cargo.toml
+  - [x] 1.1.2 Set up program Cargo.toml
+  - [x] 1.1.3 Create program entrypoint
+  - [x] 1.1.4 Create folder structure
+  - [x] 1.1.5 Create justfile
+  - [x] 1.1.6 Create pnpm workspace
+  - [x] 1.1.7 Verify full toolchain
+- [x] **1.2** Define State Structures (completed 2026-04-02)
+- [x] **1.3** Implement Deck Utilities (completed 2026-04-02)
+- [ ] **1.3b** ZK Circuit Prototype (Early De-Risk)
+- [x] **1.4** Implement Scoring Logic (completed 2026-04-02)
+- [ ] **1.5** ZK Verification Module
+- [ ] **1.6** Initialize Instruction
+- [ ] **1.7** Commit Deck Instruction
+- [ ] **1.8** Join Round Instruction
+- [ ] **1.9** Start Round Instruction
+- [ ] **1.10** Hit Instruction
+- [ ] **1.11** Stay Instruction
+- [ ] **1.12** End Round Instruction
+- [ ] **1.13** Game Lifecycle Instructions
+- [ ] **1.14** Integration Tests with LiteSVM
+
+---
+
 ## Implementation Phases
 
 ### Phase 1: Foundation & Core Game Engine (Days 1-10)
 
 **Goal:** Get a playable on-chain card game working with Pinocchio (no Anchor), including ZK deck commitment infrastructure. No tokens or special abilities yet.
 
-**Prerequisites:** Rust installed, Solana CLI installed, a funded devnet wallet.
+**Prerequisites:** Rust installed, Solana CLI installed, a funded devnet wallet. ~~All verified 2026-04-02.~~
 
 ---
 
@@ -508,14 +562,14 @@ Every task below is broken into **micro-tasks of ~15-30 minutes**. Each micro-ta
 
 ##### 1.1.2: Set up the program Cargo.toml (~15 min)
 **Do**: Create `program/Cargo.toml` with these dependencies:
-- `pinocchio = "0.11"` — the zero-dependency Solana framework (replaces `solana-program`)
-- `pinocchio-system = "0.4"` — CPI helpers for the System Program
-- `pinocchio-token = "0.4"` — CPI helpers for SPL Token
-- `pinocchio-log = "0.3"` — efficient logging
+- `pinocchio = "0.10"` — the zero-dependency Solana framework (replaces `solana-program`). **Note:** 0.10 renames `AccountInfo` → `AccountView`, `Pubkey` → `Address`
+- `pinocchio-system = "0.5"` — CPI helpers for the System Program
+- `pinocchio-token = "0.5"` — CPI helpers for SPL Token
+- `pinocchio-log = "0.5"` — efficient logging
 - `pinocchio-pubkey = "0.3"` — pubkey utilities and `declare_id!`
 - `shank = "0.4"` — IDL generation via derive macros
-- `groth16-solana = "0.2"` — on-chain Groth16 proof verifier
-- `light-poseidon = "0.2"` — Poseidon hash (ZK-friendly)
+- `pinocchio-groth16 = "0.3"` — on-chain Groth16 proof verifier (Pinocchio-native wrapper around groth16-solana)
+- `light-poseidon = "0.4"` — Poseidon hash (ZK-friendly)
 
 Set `crate-type = ["cdylib", "lib"]` under `[lib]`.
 **Learn**: `cdylib` tells Rust to compile a C-compatible dynamic library — this is what Solana's BPF loader expects. `lib` allows unit tests to import the crate normally.

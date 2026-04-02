@@ -500,7 +500,9 @@ Every task below is broken into **micro-tasks of ~15-30 minutes**. Each micro-ta
 | 2026-04-02 | `package-lock.json` gitignored | Project uses pnpm (`pnpm-lock.yaml`), npm lock file is noise. |
 | 2026-04-02 | Pinocchio 0.10 API (breaking changes from plan) | 0.10 renamed: `AccountInfo` → `AccountView`, `Pubkey` → `Address`, `pinocchio::pubkey` → `pinocchio::address`, `pinocchio::program_error` → `pinocchio::error`. Also using `pinocchio-groth16` 0.3 instead of `groth16-solana` 0.2. |
 | 2026-04-02 | Solana CLI set to devnet | Was defaulting to mainnet. Switched for development. |
-| 2026-04-02 | Security review: bounds checks + length validation in state accessors | 3-pass review found critical buffer overflow risks in `card_at()`, `turn_order_slot()`, `push_card()`. Fixed with bounds assertions and `from_bytes()` length validation. 14 tests (5 new boundary tests). |
+| 2026-04-02 | Security review #1: bounds checks + length validation in state accessors | 3-pass review found critical buffer overflow risks in `card_at()`, `turn_order_slot()`, `push_card()`. Fixed with bounds assertions and `from_bytes()` length validation. 14 tests (5 new boundary tests). |
+| 2026-04-02 | Security review #2: instruction handler hardening | 3-pass review found critical player-state-account spoofing in start_round/end_round — attacker could pass fake PlayerState accounts. Fixed with turn_order cross-check. Also: treasury_fee_bps bounds, leaf_index bounds, end_round caller restriction, specific error codes, rollover=10 no longer zeroes pot. |
+| 2026-04-02 | Task 1.3b deferred — early de-risk already achieved via Task 1.5 | The ZK verification module (Poseidon Merkle proofs + Groth16 wrapper) was built and tested in Task 1.5, surfacing the key integration risks: light-poseidon needs ark-bn254 (std dependency works on BPF), big-endian encoding for Poseidon inputs, depth-7 tree with 128 leaves and padding strategy. The Circom circuit prototype (1.3b) is still needed but is no longer a blocking risk — the on-chain side is proven. Defer to Phase 2 where it's naturally sequenced. |
 
 ### Environment Status
 
@@ -528,7 +530,7 @@ All toolchain verified on host (2026-04-02):
   - [x] 1.1.7 Verify full toolchain
 - [x] **1.2** Define State Structures (completed 2026-04-02)
 - [x] **1.3** Implement Deck Utilities (completed 2026-04-02)
-- [ ] **1.3b** ZK Circuit Prototype (Early De-Risk)
+- [~] **1.3b** ZK Circuit Prototype — deferred to Phase 2 (de-risked by Task 1.5, see decisions log)
 - [x] **1.4** Implement Scoring Logic (completed 2026-04-02)
 - [x] **1.5** ZK Verification Module (completed 2026-04-02)
 - [x] **1.6** Initialize Instruction (completed 2026-04-02)
@@ -539,8 +541,8 @@ All toolchain verified on host (2026-04-02):
 - [x] **1.11** Stay Instruction (completed 2026-04-02)
 - [x] **1.12** End Round Instruction (completed 2026-04-02)
 - [x] **1.13** Game Lifecycle Instructions (completed 2026-04-02)
-- [ ] **CHECKPOINT: /heavy-duty-review** — all instruction handlers + state complete, before integration tests
-- [ ] **CHECKPOINT: /propose-commits** — commit instruction handlers in logical groups
+- [x] **CHECKPOINT: /heavy-duty-review** — completed 2026-04-02 (9 findings, all fixed)
+- [x] **CHECKPOINT: /propose-commits** — completed 2026-04-02 (4 commits)
 - [ ] **1.14** Integration Tests with LiteSVM
 - [ ] **CHECKPOINT: /update-after-change** — sync plan, docs, lints after Phase 1 complete
 - [ ] **CHECKPOINT: /propose-commits** — commit integration tests + Phase 1 wrap-up

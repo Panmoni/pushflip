@@ -6,3 +6,4 @@ node_modules/
 program/keypair.json
 .env*
 !.env.example
+zk-circuits/build/

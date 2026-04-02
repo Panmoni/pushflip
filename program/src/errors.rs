@@ -25,6 +25,12 @@ pub enum PushFlipError {
     InvalidDealerSigner,
     InvalidCardIndex,
     ArithmeticOverflow,
+    InvalidTreasuryFeeBps,
+    PlayerStateMismatch,
+    PlayersStillActive,
+    PotNotEmpty,
+    InvalidTurnIndex,
+    LeafIndexOutOfRange,
 }
 
 impl From<PushFlipError> for ProgramError {

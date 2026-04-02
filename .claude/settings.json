@@ -27,7 +27,13 @@
       "Bash(cargo-build-sbf --version)",
       "Bash(pnpm --version)",
       "Bash(circom --version)",
-      "Bash(snarkjs --version)"
+      "Bash(snarkjs --version)",
+      "Bash(cargo search:*)",
+      "Bash(cargo build-sbf:*)",
+      "Bash(solana-keygen new:*)",
+      "Bash(solana-keygen pubkey:*)",
+      "Bash(pnpm install:*)",
+      "Bash(just --version)"
     ],
     "deny": [
       "Bash(rm -rf *)",

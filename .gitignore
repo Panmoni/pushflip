@@ -1,2 +1,8 @@
 .vscode/
 package-lock.json
+target/
+node_modules/
+*.so
+program/keypair.json
+.env*
+!.env.example

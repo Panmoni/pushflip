@@ -3,9 +3,9 @@ use pinocchio::{error::ProgramError, AccountView, ProgramResult};
 use crate::{
     errors::PushFlipError,
     state::{
-        card::Card,
+        card::{Card, ALPHA, PROTOCOL, RUG_PULL, VAMPIRE_ATTACK},
         game_session::{GameSession, GameSessionMut, GAME_SESSION_DISCRIMINATOR, MAX_PLAYERS},
-        player_state::{PlayerStateMut, BUST, PLAYER_STATE_DISCRIMINATOR},
+        player_state::{PlayerState, PlayerStateMut, BUST, PLAYER_STATE_DISCRIMINATOR},
     },
     utils::{
         accounts::{verify_account_owner, verify_signer, verify_writable},
@@ -26,22 +26,25 @@ const HIT_DATA_LEN: usize = 228;
 /// Process the Hit instruction.
 ///
 /// Draws a card by verifying a Merkle proof, adds it to the player's hand,
-/// and checks for bust.
+/// checks for bust, and applies protocol card effects.
 ///
 /// Accounts:
 ///   0. `[writable]` game_session
 ///   1. `[writable]` player_state
 ///   2. `[signer]`   player
+///   3..N (optional)  remaining accounts for protocol effects:
+///     - For RUG_PULL/VAMPIRE_ATTACK: [target_player_state, ...]
+///     - For AIRDROP: effect is skipped on-chain (off-chain bonus)
 pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     if accounts.len() < 3 {
         return Err(ProgramError::NotEnoughAccountKeys);
     }
 
-    let [game_session, player_state, player] = &accounts[..3] else {
-        return Err(ProgramError::NotEnoughAccountKeys);
-    };
+    let game_session = &accounts[0];
+    let player_state = &accounts[1];
+    let player = &accounts[2];
+    let remaining_accounts = &accounts[3..];
 
-    // --- Parse instruction data ---
     if data.len() < HIT_DATA_LEN {
         return Err(ProgramError::InvalidInstructionData);
     }
@@ -58,12 +61,10 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
 
     let leaf_index = data[227];
 
-    // Validate leaf_index is within the Merkle tree bounds
     if leaf_index as usize >= TOTAL_LEAVES {
         return Err(PushFlipError::LeafIndexOutOfRange.into());
     }
 
-    // --- Validate accounts ---
     let owner = pinocchio::Address::new_from_array(ID);
     verify_account_owner(game_session, &owner)?;
     verify_writable(game_session)?;
@@ -71,7 +72,6 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     verify_writable(player_state)?;
     verify_signer(player)?;
 
-    // --- Validate game state ---
     let merkle_root;
     let draw_counter;
     let player_count;
@@ -86,7 +86,6 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
             return Err(PushFlipError::RoundNotActive.into());
         }
 
-        // Validate current_turn_index before using as array index
         let current_idx = gs.current_turn_index() as usize;
         player_count = gs.player_count() as usize;
         if current_idx >= player_count || current_idx >= MAX_PLAYERS {
@@ -101,12 +100,10 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
         draw_counter = gs.draw_counter();
     }
 
-    // Verify sequential card draw
     if leaf_index != draw_counter {
         return Err(PushFlipError::InvalidCardIndex.into());
     }
 
-    // --- Verify Merkle proof ---
     verify_merkle_proof(
         card_value,
         card_type,
@@ -120,6 +117,7 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     let card = Card::new(card_value, card_type, card_suit);
     let is_bust;
     let bust_value;
+    let player_address;
     {
         let mut ps_data = player_state.try_borrow_mut()?;
         if ps_data[0] != PLAYER_STATE_DISCRIMINATOR {
@@ -135,9 +133,9 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
             return Err(PushFlipError::PlayerNotActive.into());
         }
 
+        player_address = *ps.as_ref().player();
         ps.push_card(&card);
 
-        // Check bust
         let hand_size = ps.as_ref().hand_size();
         let mut hand = [Card::new(0, 0, 0); 10];
         for i in 0..hand_size as usize {
@@ -152,6 +150,18 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
             ps.set_inactive_reason(BUST);
             ps.set_bust_card_value(bust_value.unwrap());
         }
+    }
+    // player_state borrow is dropped here
+
+    // --- Apply protocol card effects (only if not busted) ---
+    if !is_bust && card_type == PROTOCOL {
+        apply_protocol_effect(
+            card_value,
+            player_state,
+            &player_address,
+            remaining_accounts,
+            &owner,
+        )?;
     }
 
     // --- Update game state ---
@@ -169,11 +179,108 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     Ok(())
 }
 
-/// Advance to the next player in turn order. Simply rotates the index —
-/// inactive players will fail validation when they attempt to hit/stay,
-/// and end_round should be called once all players are inactive.
-/// This is intentional: the on-chain program doesn't have access to
-/// PlayerState accounts here, so it can't skip inactive players.
+/// Apply a protocol card effect.
+/// - RUG_PULL: Remove the highest Alpha card from a valid target
+/// - AIRDROP: Skipped on-chain (off-chain dealer handles token bonus)
+/// - VAMPIRE_ATTACK: Steal a card from a valid target
+fn apply_protocol_effect(
+    effect: u8,
+    player_state: &AccountView,
+    player_address: &[u8; 32],
+    remaining: &[AccountView],
+    owner: &pinocchio::Address,
+) -> ProgramResult {
+    match effect {
+        RUG_PULL => {
+            if let Some(target) = find_valid_target(remaining, owner, player_address)? {
+                let mut target_data = target.try_borrow_mut()?;
+                let mut target_ps = PlayerStateMut::from_bytes(&mut target_data);
+
+                let hand_size = target_ps.as_ref().hand_size();
+                let mut best_idx = None;
+                let mut best_val = 0u8;
+                for i in 0..hand_size as usize {
+                    let c = target_ps.as_ref().card_at(i);
+                    if c.card_type == ALPHA && c.value > best_val {
+                        best_val = c.value;
+                        best_idx = Some(i);
+                    }
+                }
+
+                if let Some(idx) = best_idx {
+                    for i in idx..(hand_size as usize - 1) {
+                        let next = target_ps.as_ref().card_at(i + 1);
+                        target_ps.set_card_at(i, &next);
+                    }
+                    target_ps.set_hand_size(hand_size - 1);
+                }
+            }
+        }
+        crate::state::card::AIRDROP => {
+            // Airdrop bonus is handled off-chain by the dealer service.
+            // On-chain, drawing the card is the only effect. The dealer
+            // watches for Airdrop cards in transaction logs and credits
+            // the player's token account directly.
+        }
+        VAMPIRE_ATTACK => {
+            if let Some(target) = find_valid_target(remaining, owner, player_address)? {
+                // Read the stolen card from target FIRST, then drop target borrow,
+                // then borrow player_state to add it. This avoids double-borrow
+                // if target == player_state (which find_valid_target prevents,
+                // but we're defensive).
+                let stolen;
+                {
+                    let mut target_data = target.try_borrow_mut()?;
+                    let mut target_ps = PlayerStateMut::from_bytes(&mut target_data);
+
+                    let target_hand_size = target_ps.as_ref().hand_size();
+                    if target_hand_size == 0 {
+                        return Ok(());
+                    }
+                    stolen = target_ps.as_ref().card_at(target_hand_size as usize - 1);
+                    target_ps.set_hand_size(target_hand_size - 1);
+                }
+                // target borrow dropped
+
+                let mut ps_data = player_state.try_borrow_mut()?;
+                let mut ps = PlayerStateMut::from_bytes(&mut ps_data);
+                ps.push_card(&stolen);
+            }
+        }
+        _ => {} // Unknown protocol effect — skip
+    }
+
+    Ok(())
+}
+
+/// Find the first account in remaining that is a valid, active PlayerState
+/// owned by the program and NOT the current player.
+fn find_valid_target<'a>(
+    remaining: &'a [AccountView],
+    owner: &pinocchio::Address,
+    player_address: &[u8; 32],
+) -> Result<Option<&'a AccountView>, ProgramError> {
+    for account in remaining {
+        if !account.owned_by(owner) {
+            continue;
+        }
+        let data = account.try_borrow_mut()?;
+        if data.len() < 110 || data[0] != PLAYER_STATE_DISCRIMINATOR {
+            continue;
+        }
+        let ps = PlayerState::from_bytes(&data);
+        // Skip the current player (prevents self-targeting and double-borrow)
+        if ps.player() == player_address {
+            continue;
+        }
+        if ps.is_active() {
+            drop(data);
+            return Ok(Some(account));
+        }
+    }
+    Ok(None)
+}
+
 fn advance_turn(gs: &mut GameSessionMut<'_>, player_count: usize) {
     if player_count == 0 {
         return;

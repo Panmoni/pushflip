@@ -1,4 +1,5 @@
-use pinocchio::{error::ProgramError, AccountView, ProgramResult};
+use pinocchio::{cpi::Seed, error::ProgramError, AccountView, ProgramResult};
+use pinocchio_token::instructions::Transfer;
 
 use crate::{
     errors::PushFlipError,
@@ -6,34 +7,53 @@ use crate::{
         game_session::{GameSession, GameSessionMut, GAME_SESSION_DISCRIMINATOR},
         player_state::{PlayerState, PLAYER_STATE_DISCRIMINATOR, STAYED},
     },
-    utils::accounts::{verify_account_owner, verify_signer, verify_writable},
+    utils::{
+        accounts::{verify_account_owner, verify_signer, verify_writable},
+        constants::VAULT_SEED,
+    },
     ID,
 };
 
 /// Process the EndRound instruction.
 ///
-/// Determines the winner and resets round state.
-/// Token distribution will be added in Phase 2.
+/// Determines the winner, distributes the pot (minus treasury rake),
+/// and resets round state.
 ///
 /// Accounts:
-///   0. `[writable]` game_session
-///   1. `[signer]`   caller — must be authority, dealer, or a player in turn_order
-///   2..N `[]`       player_states — must match turn_order in order
+///   0. `[writable]`  game_session
+///   1. `[signer]`    caller — must be authority, dealer, or a player in turn_order
+///   2. `[writable]`  vault — game's token vault PDA (for payout transfers)
+///   3. `[writable]`  winner_token_account — winner's $FLIP ATA (or zero-address if all busted)
+///   4. `[writable]`  treasury_token_account — treasury $FLIP ATA
+///   5. `[]`          token_program
+///   6..N `[]`        player_states — must match turn_order in order
 pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
-    if accounts.len() < 2 {
+    if accounts.len() < 6 {
         return Err(ProgramError::NotEnoughAccountKeys);
     }
 
     let game_session = &accounts[0];
     let caller = &accounts[1];
-    let player_accounts = &accounts[2..];
+    let vault = &accounts[2];
+    let winner_token_account = &accounts[3];
+    let treasury_token_account = &accounts[4];
+    let token_program = &accounts[5];
+    let player_accounts = &accounts[6..];
 
     let owner = pinocchio::Address::new_from_array(ID);
     verify_account_owner(game_session, &owner)?;
     verify_writable(game_session)?;
     verify_signer(caller)?;
+    verify_writable(vault)?;
+
+    if token_program.address() != &pinocchio_token::ID {
+        return Err(ProgramError::IncorrectProgramId);
+    }
 
     let player_count;
+    let pot_amount;
+    let treasury_fee_bps;
+    let vault_bump;
     {
         let gs_data = game_session.try_borrow_mut()?;
         let gs = GameSession::from_bytes(&gs_data);
@@ -50,7 +70,7 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
             return Err(ProgramError::NotEnoughAccountKeys);
         }
 
-        // Verify caller is authority, dealer, or a player in turn_order
+        // Verify caller authorization
         let caller_addr = caller.address().as_array();
         let is_authorized = caller_addr == gs.authority()
             || caller_addr == gs.dealer()
@@ -60,16 +80,26 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
             return Err(ProgramError::MissingRequiredSignature);
         }
 
-        // Verify each player_state account matches the corresponding turn_order slot
+        // Verify player_state accounts match turn_order
         for i in 0..player_count {
             if player_accounts[i].address().as_array() != gs.turn_order_slot(i) {
                 return Err(PushFlipError::PlayerStateMismatch.into());
             }
         }
+
+        // Verify vault matches stored vault
+        if gs.vault() != &[0u8; 32] && vault.address().as_array() != gs.vault() {
+            return Err(ProgramError::InvalidAccountData);
+        }
+
+        pot_amount = gs.pot_amount();
+        treasury_fee_bps = gs.treasury_fee_bps();
+        vault_bump = gs.vault_bump();
     }
 
     // --- Check all players are inactive, find winner ---
     let mut highest_score: u64 = 0;
+    let mut _winner_index: Option<usize> = None;
     let mut all_busted = true;
 
     for i in 0..player_count {
@@ -91,7 +121,54 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
             let score = ps.score();
             if score > highest_score {
                 highest_score = score;
+                _winner_index = Some(i);
             }
+        }
+    }
+
+    // --- Distribute tokens ---
+    if !all_busted && pot_amount > 0 {
+        // Calculate rake
+        let rake = pot_amount
+            .checked_mul(treasury_fee_bps as u64)
+            .ok_or(PushFlipError::ArithmeticOverflow)?
+            / 10_000;
+        let winner_payout = pot_amount
+            .checked_sub(rake)
+            .ok_or(PushFlipError::ArithmeticOverflow)?;
+
+        // Build vault PDA signer seeds
+        let game_session_key = *game_session.address().as_array();
+        let vault_bump_bytes = [vault_bump];
+        let vault_seeds: [Seed; 3] = [
+            Seed::from(VAULT_SEED),
+            Seed::from(game_session_key.as_slice()),
+            Seed::from(vault_bump_bytes.as_slice()),
+        ];
+        let vault_signer: [pinocchio::cpi::Signer; 1] = [(&vault_seeds).into()];
+
+        // Transfer rake to treasury
+        if rake > 0 {
+            verify_writable(treasury_token_account)?;
+            Transfer {
+                from: vault,
+                to: treasury_token_account,
+                authority: vault,
+                amount: rake,
+            }
+            .invoke_signed(&vault_signer)?;
+        }
+
+        // Transfer winnings to winner
+        if winner_payout > 0 {
+            verify_writable(winner_token_account)?;
+            Transfer {
+                from: vault,
+                to: winner_token_account,
+                authority: vault,
+                amount: winner_payout,
+            }
+            .invoke_signed(&vault_signer)?;
         }
     }
 
@@ -103,19 +180,18 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         if all_busted {
             let rollover = gs.as_ref().rollover_count();
             if rollover >= 10 {
-                // Cap reached: stakes must be returned proportionally.
-                // Phase 2 will add token CPI here. For now, reset accounting
-                // so the game doesn't deadlock. The pot is NOT silently lost —
-                // tokens remain in the vault until Phase 2 distribution is added.
+                // Cap reached: return stakes proportionally to all players.
+                // For now, tokens stay in vault. A separate claim instruction
+                // or manual return by authority is needed.
+                // TODO: Implement proportional return CPI in a future task.
                 gs.set_rollover_count(0);
-                // NOTE: pot_amount is NOT zeroed here. It stays in the vault.
-                // Phase 2 must implement proportional return before clearing.
             } else {
                 gs.set_rollover_count(rollover.saturating_add(1));
             }
         } else {
+            // Winner paid out above — reset pot
+            gs.set_pot_amount(0);
             gs.set_rollover_count(0);
-            // Phase 2: distribute pot to winner via token CPI
         }
 
         gs.set_round_active(false);

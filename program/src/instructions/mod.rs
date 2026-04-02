@@ -1,3 +1,5 @@
+pub mod burn_scry;
+pub mod burn_second_chance;
 pub mod close_game;
 pub mod commit_deck;
 pub mod end_round;

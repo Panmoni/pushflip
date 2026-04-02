@@ -5,7 +5,10 @@ use crate::{
     state::game_session::{
         GameSessionMut, GAME_SEED, GAME_SESSION_DISCRIMINATOR, GAME_SESSION_SIZE, MAX_PLAYERS,
     },
-    utils::accounts::{verify_signer, verify_writable},
+    utils::{
+        accounts::{verify_signer, verify_writable},
+        constants::{DEFAULT_TREASURY_FEE_BPS, VAULT_SEED},
+    },
     ID,
 };
 
@@ -17,6 +20,7 @@ use crate::{
 /// Process the Initialize instruction.
 ///
 /// Creates a new GameSession PDA account and sets initial state.
+/// Derives the vault PDA address and stores it + bump for later use.
 ///
 /// Accounts:
 ///   0. `[writable, signer]` authority — pays for account creation
@@ -27,7 +31,6 @@ use crate::{
 ///   5. `[]`                 token_mint — $FLIP token mint
 ///   6. `[]`                 system_program
 pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
-    // --- Parse accounts ---
     if accounts.len() < 7 {
         return Err(ProgramError::NotEnoughAccountKeys);
     }
@@ -38,24 +41,23 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
 
-    // --- Parse instruction data ---
-    if data.len() < 9 {
+    if data.len() < 10 {
         return Err(ProgramError::InvalidInstructionData);
     }
     let game_id = u64::from_le_bytes(data[..8].try_into().unwrap());
     let bump = data[8];
+    let vault_bump = data[9];
 
-    let treasury_fee_bps: u16 = if data.len() >= 11 {
-        u16::from_le_bytes(data[9..11].try_into().unwrap())
+    let treasury_fee_bps: u16 = if data.len() >= 12 {
+        u16::from_le_bytes(data[10..12].try_into().unwrap())
     } else {
-        200
+        DEFAULT_TREASURY_FEE_BPS
     };
 
     if treasury_fee_bps > 9999 {
         return Err(PushFlipError::InvalidTreasuryFeeBps.into());
     }
 
-    // --- Validate accounts ---
     verify_signer(authority)?;
     verify_writable(authority)?;
     verify_writable(game_session)?;
@@ -64,8 +66,7 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
         return Err(ProgramError::IncorrectProgramId);
     }
 
-    // Derive PDA with the provided bump and verify it matches.
-    // Uses solana_address::Address::derive_address (SHA-256 based, no syscall).
+    // Derive game PDA
     let program_id = solana_address::Address::new_from_array(ID);
     let game_id_bytes = game_id.to_le_bytes();
     let expected_pda = solana_address::Address::derive_address(
@@ -77,6 +78,15 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     if game_session.address().as_array() != expected_pda.as_array() {
         return Err(PushFlipError::InvalidPda.into());
     }
+
+    // Derive vault PDA address using client-provided bump
+    // Seeds: ["vault", game_session_address]
+    let game_session_key = *expected_pda.as_array();
+    let vault_pda = solana_address::Address::derive_address(
+        &[VAULT_SEED, &game_session_key],
+        Some(vault_bump),
+        &program_id,
+    );
 
     // --- Create the GameSession PDA account ---
     let owner = Address::new_from_array(ID);
@@ -108,8 +118,9 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     gs.set_dealer(dealer.address().as_array());
     gs.set_treasury(treasury.address().as_array());
     gs.set_token_mint(token_mint.address().as_array());
-    gs.set_vault(&[0u8; 32]); // Set when token accounts are created (Phase 2)
-    gs.set_player_count(1); // House is player 0
+    gs.set_vault(vault_pda.as_array());
+    gs.set_vault_bump(vault_bump);
+    gs.set_player_count(1);
     gs.set_turn_order_slot(0, house.address().as_array());
     for i in 1..MAX_PLAYERS {
         gs.set_turn_order_slot(i, &[0u8; 32]);

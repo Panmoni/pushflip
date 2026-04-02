@@ -35,8 +35,8 @@ pub fn process_instruction(
         6 => instructions::end_round::process(_accounts, &instruction_data[1..]),
         7 => instructions::close_game::process(_accounts, &instruction_data[1..]),
         8 => instructions::leave_game::process(_accounts, &instruction_data[1..]),
-        // 9 => instructions::burn_second_chance::process(_accounts, &instruction_data[1..]),
-        // 10 => instructions::burn_scry::process(_accounts, &instruction_data[1..]),
+        9 => instructions::burn_second_chance::process(_accounts, &instruction_data[1..]),
+        10 => instructions::burn_scry::process(_accounts, &instruction_data[1..]),
         _ => Err(ProgramError::InvalidInstructionData),
     }
 }

@@ -16,6 +16,9 @@ pinocchio-pubkey = "0.3"
 shank = "0.4"
 pinocchio-groth16 = "0.3"
 light-poseidon = "0.4"
+ark-bn254 = "0.5"
+ark-ff = "0.5"
+solana-address = { version = "2.0", features = ["sha2"] }
 
 [features]
 bpf-entrypoint = []

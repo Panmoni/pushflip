@@ -544,8 +544,8 @@ All toolchain verified on host (2026-04-02):
 - [x] **CHECKPOINT: /heavy-duty-review** — completed 2026-04-02 (9 findings, all fixed)
 - [x] **CHECKPOINT: /propose-commits** — completed 2026-04-02 (4 commits)
 - [x] **1.14** Integration Tests with LiteSVM (completed 2026-04-02)
-- [ ] **CHECKPOINT: /update-after-change** — sync plan, docs, lints after Phase 1 complete
-- [ ] **CHECKPOINT: /propose-commits** — commit integration tests + Phase 1 wrap-up
+- [x] **CHECKPOINT: /update-after-change** — completed 2026-04-02 (fmt, clippy, 47 tests green)
+- [x] **CHECKPOINT: /propose-commits** — completed 2026-04-02 (4 commits)
 
 ### Phase 1 Summary (completed 2026-04-02)
 - 38 unit tests + 9 LiteSVM integration tests = **47 tests passing**
@@ -553,11 +553,28 @@ All toolchain verified on host (2026-04-02):
 - 2 security reviews completed, all findings fixed
 - Integration tests in separate `tests/` crate to avoid BPF/edition2024 dep conflicts
 
-### Phase 2 Checkpoints (planned)
-- After 2.3 (prize distribution): **/heavy-duty-review** — financial logic (staking, payout, rake, token burns) is highest-risk code
-- After 2.6 (protocol card effects): **/propose-commits** — bundle protocol effects
-- After 2.8 (ZK circuit + dealer): **/heavy-duty-review** — cryptographic code (Circom circuit, proof generation, Merkle tree consistency)
+### Phase 2 Task Progress
+- [~] **2.1** Create SPL Token ($FLIP) — constants done; scripts deferred to deployment
+- [x] **2.2** Update Join Round with Staking (completed 2026-04-02)
+- [x] **2.3** Update End Round with Prize Distribution (completed 2026-04-02)
+- [x] **CHECKPOINT: /heavy-duty-review** — completed 2026-04-02 (7 findings, all fixed)
+- [ ] **CHECKPOINT: /propose-commits** — bundle Phase 2 on-chain work
+- [x] **2.4** Burn for Second Chance (completed 2026-04-02)
+- [x] **2.5** Burn for Scry (completed 2026-04-02)
+- [x] **2.6** Protocol Card Effects (completed 2026-04-02)
+- [x] **2.7** Basic Bounty System — state only (completed 2026-04-02)
+- [~] **2.8** ZK Circuit + Dealer Service — circuit compiles (120K constraints), trusted setup in progress
+- [ ] **CHECKPOINT: /heavy-duty-review** — cryptographic code (Circom circuit, proof generation, Merkle tree consistency)
 - End of Phase 2: **/update-after-change** — sync plan, docs, lints
+
+### Phase 2 Decisions Log
+| Date | Decision | Rationale |
+|------|----------|-----------|
+| 2026-04-02 | Vault PDA derived at initialize, bump stored in GameSession | Security review found end_round was using GameSession bump instead of vault bump for invoke_signed. Added vault_bump field at offset 394. |
+| 2026-04-02 | Pot/staked_amount only updated when vault has data | Prevents phantom pot — accounting must match actual token transfers. `vault_ready = stored_vault != [0;32] && vault.data_len() > 0`. |
+| 2026-04-02 | Airdrop bonus handled off-chain, not via on-chain CPI | On-chain Transfer with unverified authority was broken by design. Dealer service credits player's token account directly when Airdrop card is drawn. |
+| 2026-04-02 | find_valid_target excludes current player | Prevents self-targeting (double-borrow panic in VampireAttack, self-harm in RUG_PULL). |
+| 2026-04-02 | VampireAttack: steal card into local, drop target borrow, then borrow player | Eliminates double-borrow risk even if find_valid_target somehow returns self. |
 
 ---
 

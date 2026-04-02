@@ -543,9 +543,15 @@ All toolchain verified on host (2026-04-02):
 - [x] **1.13** Game Lifecycle Instructions (completed 2026-04-02)
 - [x] **CHECKPOINT: /heavy-duty-review** — completed 2026-04-02 (9 findings, all fixed)
 - [x] **CHECKPOINT: /propose-commits** — completed 2026-04-02 (4 commits)
-- [ ] **1.14** Integration Tests with LiteSVM
+- [x] **1.14** Integration Tests with LiteSVM (completed 2026-04-02)
 - [ ] **CHECKPOINT: /update-after-change** — sync plan, docs, lints after Phase 1 complete
 - [ ] **CHECKPOINT: /propose-commits** — commit integration tests + Phase 1 wrap-up
+
+### Phase 1 Summary (completed 2026-04-02)
+- 38 unit tests + 9 LiteSVM integration tests = **47 tests passing**
+- BPF build clean (stack warning from light-poseidon, non-blocking)
+- 2 security reviews completed, all findings fixed
+- Integration tests in separate `tests/` crate to avoid BPF/edition2024 dep conflicts
 
 ### Phase 2 Checkpoints (planned)
 - After 2.3 (prize distribution): **/heavy-duty-review** — financial logic (staking, payout, rake, token burns) is highest-risk code

@@ -13,7 +13,7 @@ use crate::{
 /// [0..8]   game_id (u64, little-endian)
 /// [8]      bump — PDA bump seed (client derives this off-chain)
 /// [9..11]  treasury_fee_bps (u16, LE) — optional, defaults to 200 (2%)
-
+///
 /// Process the Initialize instruction.
 ///
 /// Creates a new GameSession PDA account and sets initial state.

@@ -1,6 +1,4 @@
-use crate::state::card::{
-    Card, AIRDROP, ALPHA, MULTIPLIER, PROTOCOL, RUG_PULL, VAMPIRE_ATTACK,
-};
+use crate::state::card::{Card, AIRDROP, ALPHA, MULTIPLIER, PROTOCOL, RUG_PULL, VAMPIRE_ATTACK};
 
 /// Total cards in the deck
 pub const DECK_SIZE: usize = 94;

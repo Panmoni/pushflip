@@ -29,7 +29,7 @@ const DRAW_COUNTER: usize = 382; // u8
 const TREASURY_FEE_BPS: usize = 383; // u16 (2 bytes)
 const ROLLOVER_COUNT: usize = 385; // u8
 const LAST_ACTION_SLOT: usize = 386; // u64 (8 bytes)
-// Total used: 394 bytes, padded to 512
+                                     // Total used: 394 bytes, padded to 512
 
 /// Minimum valid data length for a GameSession account
 const MIN_DATA_LEN: usize = LAST_ACTION_SLOT + 8; // 394

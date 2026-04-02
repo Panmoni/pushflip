@@ -1,6 +1,6 @@
 use pinocchio::{
-    error::ProgramError, default_allocator, default_panic_handler, program_entrypoint,
-    AccountView, Address, ProgramResult,
+    default_allocator, default_panic_handler, error::ProgramError, program_entrypoint, AccountView,
+    Address, ProgramResult,
 };
 
 mod errors;

@@ -2,10 +2,18 @@
 
 # Build the Solana program
 build:
-    cargo build-sbf
+    CARGO_TARGET_DIR=target cargo build-sbf -- -p pushflip
+
+# Run unit tests (program crate only)
+test:
+    cargo test -p pushflip
+
+# Run integration tests (requires `just build` first)
+test-integration:
+    cargo test -p pushflip-tests
 
 # Run all tests
-test:
+test-all: build
     cargo test
 
 # Run clippy lints

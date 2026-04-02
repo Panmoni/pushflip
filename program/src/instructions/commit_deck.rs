@@ -4,7 +4,6 @@ use crate::{
     errors::PushFlipError,
     state::game_session::{GameSession, GameSessionMut, GAME_SESSION_DISCRIMINATOR},
     utils::accounts::{verify_account_owner, verify_signer, verify_writable},
-    zk::groth16::verify_shuffle_proof,
     zk::verifying_key::VERIFYING_KEY_BYTES,
     ID,
 };
@@ -77,7 +76,7 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
         // until the ZK circuit is built (Phase 2, Task 2.8).
         let _ = (proof_a, proof_b, proof_c);
         let _canonical_hash = [0u8; 32]; // placeholder
-        // verify_shuffle_proof(proof_a, proof_b, proof_c, &[merkle_root, canonical_hash], &vk)?;
+                                         // verify_shuffle_proof(proof_a, proof_b, proof_c, &[merkle_root, canonical_hash], &vk)?;
     }
 
     // --- Store the Merkle root ---

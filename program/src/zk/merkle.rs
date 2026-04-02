@@ -98,11 +98,7 @@ mod tests {
             let mut next = Vec::new();
             for chunk in current.chunks(2) {
                 let left = &chunk[0];
-                let right = if chunk.len() == 2 {
-                    &chunk[1]
-                } else {
-                    left
-                };
+                let right = if chunk.len() == 2 { &chunk[1] } else { left };
                 next.push(hash_pair(left, right));
             }
             levels.push(next.clone());
@@ -113,10 +109,7 @@ mod tests {
     }
 
     /// Extract a Merkle proof for a given leaf index from a built tree.
-    fn extract_proof<const D: usize>(
-        levels: &[Vec<[u8; 32]>],
-        leaf_index: usize,
-    ) -> [[u8; 32]; D] {
+    fn extract_proof<const D: usize>(levels: &[Vec<[u8; 32]>], leaf_index: usize) -> [[u8; 32]; D] {
         let mut proof = [[0u8; 32]; D];
         let mut idx = leaf_index;
 
@@ -150,9 +143,7 @@ mod tests {
     #[test]
     fn test_merkle_proof_8_leaves() {
         // Build an 8-leaf tree (depth 3)
-        let leaves: Vec<[u8; 32]> = (0..8u8)
-            .map(|i| hash_card_leaf(i + 1, 0, 0, i))
-            .collect();
+        let leaves: Vec<[u8; 32]> = (0..8u8).map(|i| hash_card_leaf(i + 1, 0, 0, i)).collect();
 
         let (root, levels) = build_tree(&leaves);
         let proof = extract_proof::<3>(&levels, 3);
@@ -173,9 +164,7 @@ mod tests {
 
     #[test]
     fn test_merkle_proof_tampered_fails() {
-        let leaves: Vec<[u8; 32]> = (0..8u8)
-            .map(|i| hash_card_leaf(i + 1, 0, 0, i))
-            .collect();
+        let leaves: Vec<[u8; 32]> = (0..8u8).map(|i| hash_card_leaf(i + 1, 0, 0, i)).collect();
 
         let (root, levels) = build_tree(&leaves);
         let mut proof = extract_proof::<3>(&levels, 3);
@@ -198,9 +187,7 @@ mod tests {
 
     #[test]
     fn test_merkle_proof_wrong_index_fails() {
-        let leaves: Vec<[u8; 32]> = (0..8u8)
-            .map(|i| hash_card_leaf(i + 1, 0, 0, i))
-            .collect();
+        let leaves: Vec<[u8; 32]> = (0..8u8).map(|i| hash_card_leaf(i + 1, 0, 0, i)).collect();
 
         let (root, levels) = build_tree(&leaves);
         let proof = extract_proof::<3>(&levels, 3);

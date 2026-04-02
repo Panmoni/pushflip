@@ -25,7 +25,7 @@ const HAS_USED_SECOND_CHANCE: usize = 92; // bool (u8)
 const HAS_USED_SCRY: usize = 93; // bool (u8)
 const TOTAL_WINS: usize = 94; // u64 (8 bytes)
 const TOTAL_GAMES: usize = 102; // u64 (8 bytes)
-// Total used: 110 bytes, padded to 256
+                                // Total used: 110 bytes, padded to 256
 
 /// Minimum valid data length for a PlayerState account
 const MIN_DATA_LEN: usize = TOTAL_GAMES + 8; // 110

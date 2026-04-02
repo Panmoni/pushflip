@@ -11,8 +11,12 @@ fn program_id() -> Address {
 }
 
 const SYSTEM_PROGRAM: Address = Address::from_str_const("11111111111111111111111111111111");
+const TOKEN_PROGRAM: Address =
+    Address::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const GAME_SEED: &[u8] = b"game";
 const PLAYER_SEED: &[u8] = b"player";
+const VAULT_SEED: &[u8] = b"vault";
+const MIN_STAKE: u64 = 100_000_000_000;
 
 const IX_INITIALIZE: u8 = 0;
 const IX_COMMIT_DECK: u8 = 1;
@@ -58,9 +62,12 @@ fn init_game(
     dealer: &Address,
 ) -> (Address, u8) {
     let (pda, bump) = derive_game_pda(game_id);
+    let (_vault_pda, vault_bump) =
+        Address::find_program_address(&[VAULT_SEED, pda.as_ref()], &program_id());
     let mut data = vec![IX_INITIALIZE];
     data.extend_from_slice(&game_id.to_le_bytes());
     data.push(bump);
+    data.push(vault_bump);
     let ix = Instruction {
         program_id: program_id(),
         accounts: vec![
@@ -104,10 +111,13 @@ fn test_initialize_rejects_bad_fee() {
     let (mut svm, authority) = setup();
     let game_id: u64 = 2;
     let (pda, bump) = derive_game_pda(game_id);
+    let (_vault_pda, vault_bump) =
+        Address::find_program_address(&[VAULT_SEED, pda.as_ref()], &program_id());
 
     let mut data = vec![IX_INITIALIZE];
     data.extend_from_slice(&game_id.to_le_bytes());
     data.push(bump);
+    data.push(vault_bump);
     data.extend_from_slice(&10000u16.to_le_bytes());
 
     let ix = Instruction {
@@ -126,6 +136,32 @@ fn test_initialize_rejects_bad_fee() {
     assert!(send_tx(&mut svm, ix, &[&authority]).is_err());
 }
 
+fn build_join_data(bump: u8, stake: u64) -> Vec<u8> {
+    let mut data = vec![IX_JOIN_ROUND, bump];
+    data.extend_from_slice(&stake.to_le_bytes());
+    data
+}
+
+fn join_round_ix(game_pda: &Address, ps: &Address, player: &Address, bump: u8) -> Instruction {
+    // Derive the vault PDA to match what initialize stored
+    let (vault_pda, _) =
+        Address::find_program_address(&[VAULT_SEED, game_pda.as_ref()], &program_id());
+
+    Instruction {
+        program_id: program_id(),
+        accounts: vec![
+            AccountMeta::new(*game_pda, false),
+            AccountMeta::new(*ps, false),
+            AccountMeta::new(*player, true),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
+            AccountMeta::new(Address::new_unique(), false), // player_token_account (dummy)
+            AccountMeta::new(vault_pda, false),             // vault (correct PDA)
+            AccountMeta::new_readonly(TOKEN_PROGRAM, false),
+        ],
+        data: build_join_data(bump, MIN_STAKE),
+    }
+}
+
 #[test]
 fn test_join_round() {
     let (mut svm, authority) = setup();
@@ -138,16 +174,7 @@ fn test_join_round() {
 
     send_tx(
         &mut svm,
-        Instruction {
-            program_id: program_id(),
-            accounts: vec![
-                AccountMeta::new(game_pda, false),
-                AccountMeta::new(ps1, false),
-                AccountMeta::new(player1.pubkey(), true),
-                AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
-            ],
-            data: vec![IX_JOIN_ROUND, ps1_bump],
-        },
+        join_round_ix(&game_pda, &ps1, &player1.pubkey(), ps1_bump),
         &[&player1],
     )
     .unwrap();
@@ -168,18 +195,18 @@ fn test_duplicate_join_rejected() {
     let (game_pda, _) = init_game(&mut svm, &authority, game_id, &Address::new_unique());
     let (ps1, ps1_bump) = derive_player_pda(game_id, &player1.pubkey());
 
-    let ix = Instruction {
-        program_id: program_id(),
-        accounts: vec![
-            AccountMeta::new(game_pda, false),
-            AccountMeta::new(ps1, false),
-            AccountMeta::new(player1.pubkey(), true),
-            AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
-        ],
-        data: vec![IX_JOIN_ROUND, ps1_bump],
-    };
-    send_tx(&mut svm, ix.clone(), &[&player1]).unwrap();
-    assert!(send_tx(&mut svm, ix, &[&player1]).is_err());
+    send_tx(
+        &mut svm,
+        join_round_ix(&game_pda, &ps1, &player1.pubkey(), ps1_bump),
+        &[&player1],
+    )
+    .unwrap();
+    assert!(send_tx(
+        &mut svm,
+        join_round_ix(&game_pda, &ps1, &player1.pubkey(), ps1_bump),
+        &[&player1]
+    )
+    .is_err());
 }
 
 #[test]
@@ -255,16 +282,7 @@ fn test_leave_game_between_rounds() {
 
     send_tx(
         &mut svm,
-        Instruction {
-            program_id: program_id(),
-            accounts: vec![
-                AccountMeta::new(game_pda, false),
-                AccountMeta::new(ps1, false),
-                AccountMeta::new(player1.pubkey(), true),
-                AccountMeta::new_readonly(SYSTEM_PROGRAM, false),
-            ],
-            data: vec![IX_JOIN_ROUND, ps1_bump],
-        },
+        join_round_ix(&game_pda, &ps1, &player1.pubkey(), ps1_bump),
         &[&player1],
     )
     .unwrap();

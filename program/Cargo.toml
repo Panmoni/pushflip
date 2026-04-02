@@ -1,0 +1,21 @@
+[package]
+name = "pushflip"
+version = "0.1.0"
+edition = "2021"
+description = "A crypto-native push-your-luck card game on Solana with ZK-proof deck verification"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+pinocchio = "0.10"
+pinocchio-system = "0.5"
+pinocchio-token = "0.5"
+pinocchio-log = "0.5"
+pinocchio-pubkey = "0.3"
+shank = "0.4"
+pinocchio-groth16 = "0.3"
+light-poseidon = "0.4"
+
+[features]
+bpf-entrypoint = []

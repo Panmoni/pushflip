@@ -1,0 +1,7 @@
+packages:
+  - app
+  - house-ai
+  - dealer
+  - clients/js
+  - zk-circuits
+  - scripts

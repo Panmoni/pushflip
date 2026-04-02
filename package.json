@@ -1,0 +1,11 @@
+{
+  "name": "pushflip",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A crypto-native push-your-luck card game on Solana",
+  "scripts": {
+    "build": "just build",
+    "test": "just test",
+    "lint": "just lint"
+  }
+}

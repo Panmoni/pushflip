@@ -530,16 +530,26 @@ All toolchain verified on host (2026-04-02):
 - [x] **1.3** Implement Deck Utilities (completed 2026-04-02)
 - [ ] **1.3b** ZK Circuit Prototype (Early De-Risk)
 - [x] **1.4** Implement Scoring Logic (completed 2026-04-02)
-- [ ] **1.5** ZK Verification Module
-- [ ] **1.6** Initialize Instruction
-- [ ] **1.7** Commit Deck Instruction
-- [ ] **1.8** Join Round Instruction
-- [ ] **1.9** Start Round Instruction
-- [ ] **1.10** Hit Instruction
-- [ ] **1.11** Stay Instruction
-- [ ] **1.12** End Round Instruction
-- [ ] **1.13** Game Lifecycle Instructions
+- [x] **1.5** ZK Verification Module (completed 2026-04-02)
+- [x] **1.6** Initialize Instruction (completed 2026-04-02)
+- [x] **1.7** Commit Deck Instruction (completed 2026-04-02)
+- [x] **1.8** Join Round Instruction (completed 2026-04-02)
+- [x] **1.9** Start Round Instruction (completed 2026-04-02)
+- [x] **1.10** Hit Instruction (completed 2026-04-02)
+- [x] **1.11** Stay Instruction (completed 2026-04-02)
+- [x] **1.12** End Round Instruction (completed 2026-04-02)
+- [x] **1.13** Game Lifecycle Instructions (completed 2026-04-02)
+- [ ] **CHECKPOINT: /heavy-duty-review** — all instruction handlers + state complete, before integration tests
+- [ ] **CHECKPOINT: /propose-commits** — commit instruction handlers in logical groups
 - [ ] **1.14** Integration Tests with LiteSVM
+- [ ] **CHECKPOINT: /update-after-change** — sync plan, docs, lints after Phase 1 complete
+- [ ] **CHECKPOINT: /propose-commits** — commit integration tests + Phase 1 wrap-up
+
+### Phase 2 Checkpoints (planned)
+- After 2.3 (prize distribution): **/heavy-duty-review** — financial logic (staking, payout, rake, token burns) is highest-risk code
+- After 2.6 (protocol card effects): **/propose-commits** — bundle protocol effects
+- After 2.8 (ZK circuit + dealer): **/heavy-duty-review** — cryptographic code (Circom circuit, proof generation, Merkle tree consistency)
+- End of Phase 2: **/update-after-change** — sync plan, docs, lints
 
 ---
 

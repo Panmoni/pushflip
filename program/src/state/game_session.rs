@@ -29,10 +29,11 @@ const DRAW_COUNTER: usize = 382; // u8
 const TREASURY_FEE_BPS: usize = 383; // u16 (2 bytes)
 const ROLLOVER_COUNT: usize = 385; // u8
 const LAST_ACTION_SLOT: usize = 386; // u64 (8 bytes)
-                                     // Total used: 394 bytes, padded to 512
+const VAULT_BUMP: usize = 394; // u8
+                               // Total used: 395 bytes, padded to 512
 
 /// Minimum valid data length for a GameSession account
-const MIN_DATA_LEN: usize = LAST_ACTION_SLOT + 8; // 394
+const MIN_DATA_LEN: usize = VAULT_BUMP + 1; // 395
 
 /// PDA seeds: ["game", game_id.to_le_bytes()]
 pub const GAME_SEED: &[u8] = b"game";
@@ -167,6 +168,10 @@ impl<'a> GameSession<'a> {
     pub fn last_action_slot(&self) -> u64 {
         read_u64(self.data, LAST_ACTION_SLOT)
     }
+
+    pub fn vault_bump(&self) -> u8 {
+        self.data[VAULT_BUMP]
+    }
 }
 
 // Mutable accessors
@@ -270,6 +275,10 @@ impl<'a> GameSessionMut<'a> {
 
     pub fn set_last_action_slot(&mut self, val: u64) {
         self.data[LAST_ACTION_SLOT..LAST_ACTION_SLOT + 8].copy_from_slice(&val.to_le_bytes());
+    }
+
+    pub fn set_vault_bump(&mut self, val: u8) {
+        self.data[VAULT_BUMP] = val;
     }
 }
 

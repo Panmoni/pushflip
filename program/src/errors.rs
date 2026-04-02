@@ -31,6 +31,8 @@ pub enum PushFlipError {
     PotNotEmpty,
     InvalidTurnIndex,
     LeafIndexOutOfRange,
+    ScryAlreadyUsed,
+    VaultNotInitialized,
 }
 
 impl From<PushFlipError> for ProgramError {

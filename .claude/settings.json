@@ -33,7 +33,9 @@
       "Bash(solana-keygen new:*)",
       "Bash(solana-keygen pubkey:*)",
       "Bash(pnpm install:*)",
-      "Bash(just --version)"
+      "Bash(just --version)",
+      "Bash(just build:*)",
+      "Bash(CARGO_TARGET_DIR=/home/george9874/repos/pushflip/target cargo build-sbf -- -p pushflip)"
     ],
     "deny": [
       "Bash(rm -rf *)",

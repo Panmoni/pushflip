@@ -1,3 +1,8 @@
 [workspace]
 members = ["program", "tests"]
 resolver = "2"
+
+# Pin proc-macro-crate to avoid toml_parser 1.1.2 which requires edition2024
+# (incompatible with BPF toolchain Cargo 1.84)
+[workspace.dependencies]
+proc-macro-crate = "=3.2.0"

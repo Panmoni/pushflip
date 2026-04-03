@@ -39,7 +39,18 @@
       "Bash(cargo clean:*)",
       "Bash(snarkjs groth16:*)",
       "Bash(pnpm add:*)",
-      "Bash(circom circuits/shuffle_verify.circom --r1cs --wasm --sym -o build/)"
+      "Bash(circom circuits/shuffle_verify.circom --r1cs --wasm --sym -o build/)",
+      "Bash(du -sh /home/george9874/repos/pushflip/zk-circuits/build/*)",
+      "Bash(snarkjs powersoftau:*)",
+      "Bash(kill 542284)",
+      "Read(//home/george9874/repos/pushflip/dealer/**)",
+      "Read(//home/george9874/repos/pushflip/**)",
+      "Bash(snarkjs zkey:*)",
+      "Bash(cargo info:*)",
+      "Bash(cargo update:*)",
+      "Bash(circom circuits/shuffle_verify.circom --r1cs --sym -o build/)",
+      "Bash(circom circuits/shuffle_verify.circom --wasm -o build/)",
+      "Read(//home/george9874/repos/pushflip/zk-circuits/**)"
     ],
     "deny": [
       "Bash(rm -rf *)",

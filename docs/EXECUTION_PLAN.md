@@ -553,19 +553,33 @@ All toolchain verified on host (2026-04-02):
 - 2 security reviews completed, all findings fixed
 - Integration tests in separate `tests/` crate to avoid BPF/edition2024 dep conflicts
 
+### Phase 2 Summary (completed 2026-04-03)
+- 41 unit tests + 9 Phase 1 integration tests + 11 Phase 2 integration tests = **61 Rust tests passing**
+- 8 dealer JS tests (Merkle tree, canonical hash cross-validation, bigint conversion)
+- **69 total tests across Rust + TypeScript**
+- Circom circuit: 362K constraints, grand product permutation check, constrained multiplexer lookups
+- Trusted setup: ptau size 19, Phase 2 zkey + verification key generated
+- End-to-end ZK proof generation + local snarkjs verification: PASSED
+- Dealer service: TypeScript (deck, merkle, prover, dealer class) — full shuffle → commit → reveal pipeline
+- BPF build: 356K .so (stack warning from light-poseidon, non-blocking)
+- 3 security reviews completed (2 from Phase 1 + 1 crypto-focused), all findings fixed
+- Groth16 verification controlled by `skip-zk-verify` feature flag (default: ON)
+
 ### Phase 2 Task Progress
 - [~] **2.1** Create SPL Token ($FLIP) — constants done; scripts deferred to deployment
 - [x] **2.2** Update Join Round with Staking (completed 2026-04-02)
 - [x] **2.3** Update End Round with Prize Distribution (completed 2026-04-02)
 - [x] **CHECKPOINT: /heavy-duty-review** — completed 2026-04-02 (7 findings, all fixed)
-- [ ] **CHECKPOINT: /propose-commits** — bundle Phase 2 on-chain work
+- [~] **CHECKPOINT: /propose-commits** — deferred; bundled into end-of-Phase-2 commit
 - [x] **2.4** Burn for Second Chance (completed 2026-04-02)
 - [x] **2.5** Burn for Scry (completed 2026-04-02)
 - [x] **2.6** Protocol Card Effects (completed 2026-04-02)
 - [x] **2.7** Basic Bounty System — state only (completed 2026-04-02)
-- [~] **2.8** ZK Circuit + Dealer Service — circuit compiles (120K constraints), trusted setup in progress
-- [ ] **CHECKPOINT: /heavy-duty-review** — cryptographic code (Circom circuit, proof generation, Merkle tree consistency)
-- End of Phase 2: **/update-after-change** — sync plan, docs, lints
+- [x] **2.8** ZK Circuit + Dealer Service (completed 2026-04-03) — circuit compiled (362K constraints after security hardening), trusted setup complete (ptau 19), dealer service implemented, real verifying key + canonical hash on-chain, end-to-end proof generation verified
+- [x] **2.9** Phase 2 Integration Tests (completed 2026-04-03) — 11 tests: token flows (3), burn mechanics (6), protocol cards + bounty (2)
+- [x] **CHECKPOINT: /heavy-duty-review** — completed 2026-04-03 (3 critical + 1 high + 3 medium; ALL fixed same session)
+- [x] **CHECKPOINT: /update-after-change** — completed 2026-04-03 (fmt, clippy, 61 Rust tests + 8 JS tests green)
+- [ ] **CHECKPOINT: /propose-commits** — bundle all Phase 2 work
 
 ### Phase 2 Decisions Log
 | Date | Decision | Rationale |
@@ -575,6 +589,12 @@ All toolchain verified on host (2026-04-02):
 | 2026-04-02 | Airdrop bonus handled off-chain, not via on-chain CPI | On-chain Transfer with unverified authority was broken by design. Dealer service credits player's token account directly when Airdrop card is drawn. |
 | 2026-04-02 | find_valid_target excludes current player | Prevents self-targeting (double-borrow panic in VampireAttack, self-harm in RUG_PULL). |
 | 2026-04-02 | VampireAttack: steal card into local, drop target borrow, then borrow player | Eliminates double-borrow risk even if find_valid_target somehow returns self. |
+| 2026-04-03 | Trusted setup requires ptau size 19 (not 18) | Circuit has 277K constraints > 2^18 (262K). Updated setup.sh. |
+| 2026-04-03 | Groth16 verification controlled by feature flag `skip-zk-verify` | Default: verification ON. Integration tests build with `--features skip-zk-verify`. Prevents accidental deployment with verification off. |
+| 2026-04-03 | start_round/end_round match PlayerState by stored `player` field, not PDA address | turn_order stores wallet addresses; PlayerState PDA addresses differ. Fixed matching to read `ps.player()` instead of comparing account address. |
+| 2026-04-03 | hit rejects leaf_index >= DECK_SIZE (94), not TOTAL_LEAVES (128) | Prevents drawing padding leaves (indices 94-127) which would decode as invalid cards. |
+| 2026-04-03 | Circom permutation check upgraded: grand product + LessThan + Multiplexer | Security review found 3 critical issues: sum-only check (not bijection), unconstrained `<--` range check, unconstrained shuffled deck. Fixed with: (1) grand product argument via Fiat-Shamir Poseidon challenge, (2) circomlib `LessThan(7)` for range check, (3) circomlib `Multiplexer(3, 94)` for constrained array lookup. Circuit grew from 277K → 362K constraints. |
+| 2026-04-03 | Rollover cap (10 all-bust rounds) sweeps pot to treasury | Security review found tokens permanently locked after 10 rollovers. Now transfers pot to treasury when cap reached; authority can redistribute manually. |
 
 ---
 

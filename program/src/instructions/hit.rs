@@ -7,11 +7,12 @@ use crate::{
         game_session::{GameSession, GameSessionMut, GAME_SESSION_DISCRIMINATOR, MAX_PLAYERS},
         player_state::{PlayerState, PlayerStateMut, BUST, PLAYER_STATE_DISCRIMINATOR},
     },
+    utils::deck::DECK_SIZE,
     utils::{
         accounts::{verify_account_owner, verify_signer, verify_writable},
         scoring::check_bust,
     },
-    zk::merkle::{verify_merkle_proof, MERKLE_DEPTH, TOTAL_LEAVES},
+    zk::merkle::{verify_merkle_proof, MERKLE_DEPTH},
     ID,
 };
 
@@ -61,7 +62,8 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
 
     let leaf_index = data[227];
 
-    if leaf_index as usize >= TOTAL_LEAVES {
+    // Reject padding leaves (94-127) — only real cards (0-93) are drawable
+    if leaf_index as usize >= DECK_SIZE {
         return Err(PushFlipError::LeafIndexOutOfRange.into());
     }
 

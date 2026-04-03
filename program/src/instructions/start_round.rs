@@ -60,9 +60,15 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
             return Err(ProgramError::NotEnoughAccountKeys);
         }
 
-        // Verify each player_state account matches the corresponding turn_order slot
+        // Verify each player_state's stored player key matches the turn_order slot.
+        // turn_order stores wallet addresses; PlayerState stores the same in its `player` field.
         for i in 0..player_count {
-            if player_accounts[i].address().as_array() != gs.turn_order_slot(i) {
+            let ps_data = player_accounts[i].try_borrow_mut()?;
+            if ps_data.len() < 34 || ps_data[0] != PLAYER_STATE_DISCRIMINATOR {
+                return Err(ProgramError::InvalidAccountData);
+            }
+            let stored_player: &[u8] = &ps_data[2..34]; // PLAYER field offset
+            if stored_player != gs.turn_order_slot(i) {
                 return Err(PushFlipError::PlayerStateMismatch.into());
             }
         }

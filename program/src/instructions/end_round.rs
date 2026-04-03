@@ -80,9 +80,14 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
             return Err(ProgramError::MissingRequiredSignature);
         }
 
-        // Verify player_state accounts match turn_order
+        // Verify each player_state's stored player key matches turn_order
         for i in 0..player_count {
-            if player_accounts[i].address().as_array() != gs.turn_order_slot(i) {
+            let ps_data = player_accounts[i].try_borrow_mut()?;
+            if ps_data.len() < 34 || ps_data[0] != PLAYER_STATE_DISCRIMINATOR {
+                return Err(ProgramError::InvalidAccountData);
+            }
+            let stored_player: &[u8] = &ps_data[2..34];
+            if stored_player != gs.turn_order_slot(i) {
                 return Err(PushFlipError::PlayerStateMismatch.into());
             }
         }
@@ -180,10 +185,29 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         if all_busted {
             let rollover = gs.as_ref().rollover_count();
             if rollover >= 10 {
-                // Cap reached: return stakes proportionally to all players.
-                // For now, tokens stay in vault. A separate claim instruction
-                // or manual return by authority is needed.
-                // TODO: Implement proportional return CPI in a future task.
+                // Rollover cap reached — sweep pot to treasury to prevent
+                // permanent token lock. Authority can redistribute manually.
+                if pot_amount > 0 {
+                    let game_session_key = *game_session.address().as_array();
+                    let vault_bump_bytes = [vault_bump];
+                    let vault_seeds: [Seed; 3] = [
+                        Seed::from(VAULT_SEED),
+                        Seed::from(game_session_key.as_slice()),
+                        Seed::from(vault_bump_bytes.as_slice()),
+                    ];
+                    let vault_signer: [pinocchio::cpi::Signer; 1] =
+                        [(&vault_seeds).into()];
+
+                    verify_writable(treasury_token_account)?;
+                    Transfer {
+                        from: vault,
+                        to: treasury_token_account,
+                        authority: vault,
+                        amount: pot_amount,
+                    }
+                    .invoke_signed(&vault_signer)?;
+                }
+                gs.set_pot_amount(0);
                 gs.set_rollover_count(0);
             } else {
                 gs.set_rollover_count(rollover.saturating_add(1));

@@ -1,16 +1,95 @@
 /// Groth16 verifying key for the shuffle verification circuit.
 ///
-/// Generated during trusted setup (Phase 2, Task 2.8).
-/// Replace with real key after circuit compilation with:
-///   snarkjs zkey export verificationkey circuit.zkey vk.json
-///   then convert to Rust bytes with the groth16-solana JS helper.
+/// Generated from trusted setup. Do not edit manually.
+/// Re-generate with: node zk-circuits/scripts/export_vk_rust.mjs
 ///
-/// The verifying key is specific to the circuit — if the circuit
-/// changes, a new trusted setup and key are required.
-///
-/// Format: pinocchio-groth16 Groth16Verifyingkey fields serialized as bytes.
-/// Fields: nr_pubinputs, vk_alpha_g1 (64), vk_beta_g2 (128),
-///         vk_gamma_g2 (128), vk_delta_g2 (128), vk_ic (N × 64)
-///
-/// Placeholder: empty slice. Will fail at verification until replaced.
+/// Public inputs: 2 (merkle_root, canonical_hash)
+use pinocchio_groth16::groth16::Groth16Verifyingkey;
+
+/// Marker: non-empty signals that Groth16 verification is enabled.
+/// Non-empty = Groth16 verification enabled. Empty = skip (testing only).
+#[cfg(not(feature = "skip-zk-verify"))]
+pub const VERIFYING_KEY_BYTES: &[u8] = &[1];
+#[cfg(feature = "skip-zk-verify")]
 pub const VERIFYING_KEY_BYTES: &[u8] = &[];
+
+/// Precomputed Poseidon hash of the canonical 94-card deck.
+/// Computed by chaining: Poseidon(h_prev, Poseidon(value, type, suit, index))
+/// for each card in canonical order.
+///
+/// Cross-validated: Rust test_canonical_deck_hash_matches_js confirms this
+/// matches the JS circomlibjs Poseidon output.
+pub const CANONICAL_DECK_HASH: [u8; 32] = [
+    11, 204, 204, 236, 237, 116, 74, 11, 99, 195, 140, 133, 89, 130, 233, 205, 43, 50, 81, 205,
+    237, 209, 209, 149, 0, 42, 79, 138, 91, 69, 188, 253,
+];
+
+pub const NR_PUBLIC_INPUTS: usize = 2;
+
+pub const VK_ALPHA_G1: [u8; 64] = [
+    35, 111, 126, 42, 97, 192, 107, 70, 217, 13, 171, 67, 112, 30, 83, 53, 37, 39, 74, 90, 21, 129,
+    60, 70, 207, 229, 151, 150, 79, 27, 80, 140, 0, 86, 232, 192, 198, 175, 17, 247, 83, 92, 66,
+    55, 13, 7, 206, 63, 249, 26, 186, 79, 152, 74, 39, 5, 36, 183, 222, 18, 93, 22, 181, 37,
+];
+
+pub const VK_BETA_G2: [u8; 128] = [
+    43, 194, 55, 173, 162, 244, 147, 61, 106, 110, 124, 223, 156, 135, 2, 125, 244, 197, 9, 229,
+    168, 202, 100, 41, 4, 36, 169, 221, 190, 240, 224, 43, 8, 32, 177, 40, 67, 118, 70, 215, 76,
+    191, 202, 84, 231, 220, 70, 240, 86, 176, 80, 100, 248, 133, 29, 15, 55, 66, 223, 222, 119, 76,
+    121, 2, 10, 222, 145, 215, 138, 148, 64, 49, 87, 109, 165, 245, 216, 156, 15, 22, 154, 76, 232,
+    4, 217, 209, 121, 150, 21, 212, 164, 242, 52, 50, 30, 87, 17, 57, 215, 5, 119, 44, 169, 54,
+    194, 67, 48, 220, 121, 233, 43, 134, 114, 195, 125, 253, 212, 55, 205, 207, 56, 71, 110, 26,
+    20, 186, 177, 240,
+];
+
+pub const VK_GAMMA_G2: [u8; 128] = [
+    24, 0, 222, 239, 18, 31, 30, 118, 66, 106, 0, 102, 94, 92, 68, 121, 103, 67, 34, 212, 247, 94,
+    218, 221, 70, 222, 189, 92, 217, 146, 246, 237, 25, 142, 147, 147, 146, 13, 72, 58, 114, 96,
+    191, 183, 49, 251, 93, 37, 241, 170, 73, 51, 53, 169, 231, 18, 151, 228, 133, 183, 174, 243,
+    18, 194, 18, 200, 94, 165, 219, 140, 109, 235, 74, 171, 113, 128, 141, 203, 64, 143, 227, 209,
+    231, 105, 12, 67, 211, 123, 76, 230, 204, 1, 102, 250, 125, 170, 9, 6, 137, 208, 88, 95, 240,
+    117, 236, 158, 153, 173, 105, 12, 51, 149, 188, 75, 49, 51, 112, 179, 142, 243, 85, 172, 218,
+    220, 209, 34, 151, 91,
+];
+
+pub const VK_DELTA_G2: [u8; 128] = [
+    40, 134, 192, 61, 125, 208, 85, 204, 67, 241, 168, 21, 63, 15, 205, 53, 92, 127, 106, 41, 66,
+    137, 6, 50, 27, 96, 252, 42, 226, 5, 107, 14, 42, 13, 42, 146, 62, 140, 102, 133, 215, 131,
+    216, 110, 27, 142, 70, 146, 40, 212, 70, 135, 234, 238, 32, 176, 241, 36, 250, 178, 159, 36,
+    12, 255, 36, 243, 157, 55, 162, 29, 159, 164, 11, 204, 218, 180, 23, 209, 86, 61, 119, 37,
+    233, 182, 14, 89, 142, 98, 229, 205, 79, 21, 170, 132, 183, 210, 17, 199, 156, 7, 141, 255,
+    236, 167, 214, 71, 139, 125, 112, 28, 124, 45, 123, 213, 27, 211, 148, 235, 62, 224, 139, 98,
+    125, 5, 246, 78, 141, 1,
+];
+
+pub const VK_IC: [[u8; 64]; 3] = [
+    [
+        9, 215, 244, 182, 189, 196, 40, 167, 86, 29, 79, 145, 227, 128, 156, 146, 235, 96, 184,
+        178, 161, 211, 73, 126, 189, 101, 56, 179, 192, 1, 196, 112, 45, 150, 138, 89, 57, 30, 85,
+        239, 144, 97, 66, 79, 44, 13, 37, 198, 150, 198, 87, 153, 175, 185, 129, 179, 127, 111,
+        195, 82, 236, 210, 5, 198,
+    ],
+    [
+        10, 191, 77, 131, 233, 114, 166, 250, 69, 79, 190, 254, 197, 125, 165, 205, 174, 223, 235,
+        47, 76, 152, 239, 150, 185, 74, 206, 68, 191, 68, 87, 76, 21, 156, 15, 165, 133, 212, 157,
+        54, 168, 41, 245, 85, 186, 43, 161, 40, 215, 141, 19, 218, 84, 1, 102, 11, 14, 117, 236,
+        120, 86, 140, 146, 5,
+    ],
+    [
+        33, 236, 142, 172, 135, 84, 54, 183, 53, 110, 123, 153, 29, 41, 9, 99, 202, 133, 249, 198,
+        157, 208, 16, 78, 12, 12, 1, 253, 253, 189, 125, 239, 16, 206, 59, 190, 194, 73, 223, 201,
+        5, 21, 60, 205, 127, 203, 176, 53, 29, 140, 252, 124, 168, 234, 213, 189, 144, 76, 111,
+        111, 160, 102, 7, 206,
+    ],
+];
+
+pub fn verifying_key() -> Groth16Verifyingkey<'static> {
+    Groth16Verifyingkey {
+        nr_pubinputs: NR_PUBLIC_INPUTS,
+        vk_alpha_g1: VK_ALPHA_G1,
+        vk_beta_g2: VK_BETA_G2,
+        vk_gamma_g2: VK_GAMMA_G2,
+        vk_delta_g2: VK_DELTA_G2,
+        vk_ic: &VK_IC,
+    }
+}

@@ -4,7 +4,10 @@ use crate::{
     errors::PushFlipError,
     state::game_session::{GameSession, GameSessionMut, GAME_SESSION_DISCRIMINATOR},
     utils::accounts::{verify_account_owner, verify_signer, verify_writable},
-    zk::verifying_key::VERIFYING_KEY_BYTES,
+    zk::{
+        groth16::verify_shuffle_proof,
+        verifying_key::{CANONICAL_DECK_HASH, VERIFYING_KEY_BYTES},
+    },
     ID,
 };
 
@@ -71,12 +74,9 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     // Skip verification if verifying key is not yet set (placeholder).
     // In production, this MUST be enforced.
     if !VERIFYING_KEY_BYTES.is_empty() {
-        // TODO: Parse VERIFYING_KEY_BYTES into Groth16Verifyingkey struct
-        // and compute canonical_hash. For now, verification is deferred
-        // until the ZK circuit is built (Phase 2, Task 2.8).
-        let _ = (proof_a, proof_b, proof_c);
-        let _canonical_hash = [0u8; 32]; // placeholder
-                                         // verify_shuffle_proof(proof_a, proof_b, proof_c, &[merkle_root, canonical_hash], &vk)?;
+        let vk = crate::zk::verifying_key::verifying_key();
+        let public_inputs = [merkle_root, CANONICAL_DECK_HASH];
+        verify_shuffle_proof(proof_a, proof_b, proof_c, &public_inputs, &vk)?;
     }
 
     // --- Store the Merkle root ---

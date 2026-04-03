@@ -215,6 +215,36 @@ mod tests {
     }
 
     #[test]
+    fn test_canonical_deck_hash_matches_js() {
+        // Cross-validate: this hash must match the JS computation in
+        // zk-circuits/scripts/compute_canonical_hash.mjs
+        use crate::utils::deck::{create_canonical_deck, DECK_SIZE};
+
+        let deck = create_canonical_deck();
+        let mut card_hashes = Vec::with_capacity(DECK_SIZE);
+        for (i, card) in deck.iter().enumerate() {
+            card_hashes.push(hash_card_leaf(
+                card.value,
+                card.card_type,
+                card.suit,
+                i as u8,
+            ));
+        }
+
+        // Chain hash: Poseidon(h_prev, h_next)
+        let mut running = card_hashes[0];
+        for hash in &card_hashes[1..] {
+            running = hash_pair(&running, hash);
+        }
+
+        let expected = crate::zk::verifying_key::CANONICAL_DECK_HASH;
+        assert_eq!(
+            running, expected,
+            "Rust canonical hash doesn't match JS — Poseidon params diverged!"
+        );
+    }
+
+    #[test]
     fn test_verify_merkle_proof_full_depth() {
         // Build a depth-7 tree (128 leaves) with 8 real + 120 padding
         let mut leaves = Vec::with_capacity(TOTAL_LEAVES);

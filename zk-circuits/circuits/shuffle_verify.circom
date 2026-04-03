@@ -1,6 +1,8 @@
 pragma circom 2.1.0;
 
 include "../node_modules/circomlib/circuits/poseidon.circom";
+include "../node_modules/circomlib/circuits/comparators.circom";
+include "../node_modules/circomlib/circuits/multiplexer.circom";
 
 /// ShuffleVerify: Proves a shuffled deck is a valid permutation of the
 /// canonical deck, and that the Poseidon Merkle tree over the shuffled
@@ -12,6 +14,7 @@ include "../node_modules/circomlib/circuits/poseidon.circom";
 ///
 /// Private inputs:
 ///   - permutation[DECK_SIZE]: indices mapping canonical → shuffled positions
+///     perm[i] = index of canonical card placed at shuffled position i
 ///   - canonical_values[DECK_SIZE]: card value for each canonical card
 ///   - canonical_types[DECK_SIZE]: card type for each canonical card
 ///   - canonical_suits[DECK_SIZE]: card suit for each canonical card
@@ -19,60 +22,89 @@ include "../node_modules/circomlib/circuits/poseidon.circom";
 // Deck size: 94 cards (52 Alpha + 30 Protocol + 12 Multiplier)
 // Tree depth: 7 (128 leaves, 94 used + 34 padding)
 
+/// PermutationCheck: Verifies that perm[] is a valid bijection on [0, N-1].
+///
+/// Uses the grand product argument:
+///   For a random challenge alpha (derived via Fiat-Shamir from permutation),
+///   prod_{i=0}^{N-1} (alpha + perm[i]) == prod_{i=0}^{N-1} (alpha + i)
+///
+/// This proves the multiset {perm[i]} == {0, 1, ..., N-1} with overwhelming
+/// probability (soundness error ≤ N / p, negligible for BN254).
+///
+/// Additionally, each perm[i] is range-checked to [0, N-1] using LessThan.
 template PermutationCheck(N) {
     signal input perm[N];
 
-    // Each value in perm must be in range [0, N-1]
-    // and each value must appear exactly once (bijection).
-    // We use the "frequency count" approach:
-    // For each position i, compute a selector for each value j,
-    // then sum selectors per value and assert sum == 1.
-
-    // Simpler approach: verify the permutation produces a valid
-    // rearrangement by checking that sorting perm gives [0,1,...,N-1].
-    // We use the product-of-differences approach:
-    // prod(perm[i] - j) for all i,j where i!=j should equal
-    // prod(i - j) for all i,j where i!=j.
-    // This is equivalent to checking that the multiset {perm[i]} == {0,...,N-1}.
-
-    // Efficient approach: use polynomial identity.
-    // prod_{i=0}^{N-1} (X - perm[i]) == prod_{i=0}^{N-1} (X - i)
-    // We evaluate at a random challenge point. For ZK circuits,
-    // we use a Fiat-Shamir-style challenge derived from the inputs.
-
-    // Simplest correct approach for a circuit: accumulate a running product
-    // (perm[i] + 1) and verify it equals N! ... but N! overflows for N=94.
-
-    // Most practical: verify each perm[i] is in [0, N-1] using range checks,
-    // then verify all perm[i] are distinct using a sorting network or
-    // the grand product argument.
-
-    // Grand product argument:
-    // prod_{i=0}^{N-1} (alpha - perm[i]) == prod_{i=0}^{N-1} (alpha - i)
-    // where alpha is a random challenge. In a non-interactive circuit,
-    // we derive alpha from the Poseidon hash of all perm[i].
-
-    // For now, we use a simpler constraint: verify the sum and sum-of-squares
-    // match. This is NOT cryptographically sound for a full proof
-    // (collisions exist), but it's a placeholder for the circuit structure.
-    // The full implementation should use the grand product argument.
-
-    // Range check: each perm[i] < N
-    signal range_ok[N];
+    // --- Range check: each perm[i] must be in [0, N-1] ---
+    // Uses circomlib's LessThan(n) which does proper bit decomposition.
+    // 7 bits suffices since N=94 < 128 = 2^7.
+    component range_check[N];
     for (var i = 0; i < N; i++) {
-        // perm[i] must be non-negative (field element) and < N
-        // In circom, we check via bit decomposition
-        range_ok[i] <-- (perm[i] < N) ? 1 : 0;
-        range_ok[i] === 1;
+        range_check[i] = LessThan(7);
+        range_check[i].in[0] <== perm[i];
+        range_check[i].in[1] <== N;
+        range_check[i].out === 1;
     }
 
-    // Sum check: sum(perm[i]) == sum(0..N-1) = N*(N-1)/2
-    signal running_sum[N + 1];
-    running_sum[0] <== 0;
-    for (var i = 0; i < N; i++) {
-        running_sum[i + 1] <== running_sum[i] + perm[i];
+    // --- Grand product argument ---
+    // Derive challenge alpha from the permutation via Poseidon hash chain.
+    // alpha = Poseidon(Poseidon(...Poseidon(perm[0], perm[1])..., perm[N-2]), perm[N-1])
+    component challenge_hash[N - 1];
+    signal challenge_chain[N];
+    challenge_chain[0] <== perm[0];
+    for (var i = 1; i < N; i++) {
+        challenge_hash[i - 1] = Poseidon(2);
+        challenge_hash[i - 1].inputs[0] <== challenge_chain[i - 1];
+        challenge_hash[i - 1].inputs[1] <== perm[i];
+        challenge_chain[i] <== challenge_hash[i - 1].out;
     }
-    running_sum[N] === N * (N - 1) / 2;
+    signal alpha <== challenge_chain[N - 1];
+
+    // Compute prod(alpha + perm[i])
+    signal perm_terms[N];
+    signal perm_product[N + 1];
+    perm_product[0] <== 1;
+    for (var i = 0; i < N; i++) {
+        perm_terms[i] <== alpha + perm[i];
+        perm_product[i + 1] <== perm_product[i] * perm_terms[i];
+    }
+
+    // Compute prod(alpha + i)
+    signal identity_terms[N];
+    signal identity_product[N + 1];
+    identity_product[0] <== 1;
+    for (var i = 0; i < N; i++) {
+        identity_terms[i] <== alpha + i;
+        identity_product[i + 1] <== identity_product[i] * identity_terms[i];
+    }
+
+    // Grand product constraint
+    perm_product[N] === identity_product[N];
+}
+
+/// CardLookup: Given an index `sel` and arrays of card fields,
+/// outputs the card fields at position `sel`.
+/// Uses circomlib Multiplexer for constrained array lookup.
+template CardLookup(N) {
+    signal input sel;
+    signal input values[N];
+    signal input types[N];
+    signal input suits[N];
+    signal output out_value;
+    signal output out_type;
+    signal output out_suit;
+
+    // Pack the 3 card fields as a width-3 multiplexer with N inputs
+    component mux = Multiplexer(3, N);
+    mux.sel <== sel;
+    for (var i = 0; i < N; i++) {
+        mux.inp[i][0] <== values[i];
+        mux.inp[i][1] <== types[i];
+        mux.inp[i][2] <== suits[i];
+    }
+    out_value <== mux.out[0];
+    out_type <== mux.out[1];
+    out_suit <== mux.out[2];
 }
 
 template CardHash() {
@@ -161,7 +193,7 @@ template ShuffleVerify(DECK_SIZE, TREE_DEPTH) {
     signal input canonical_types[DECK_SIZE];
     signal input canonical_suits[DECK_SIZE];
 
-    // 1. Verify permutation is valid
+    // 1. Verify permutation is a valid bijection (grand product + range check)
     component perm_check = PermutationCheck(DECK_SIZE);
     for (var i = 0; i < DECK_SIZE; i++) {
         perm_check.perm[i] <== permutation[i];
@@ -176,31 +208,25 @@ template ShuffleVerify(DECK_SIZE, TREE_DEPTH) {
     }
     canonical_hash === canon_hash.hash;
 
-    // 3. Apply permutation to get shuffled deck
-    // shuffled[permutation[i]] = canonical[i]
-    // We need: for each shuffled position j, find which canonical card maps to it
-    // This requires an inverse permutation lookup, which is expensive in circuits.
-    // Instead: hash each card at its shuffled position.
-
-    // For each canonical card i, it goes to position permutation[i].
-    // We compute leaf_hash[permutation[i]] = Poseidon(canonical_values[i], canonical_types[i], canonical_suits[i], permutation[i])
-    // But we can't dynamically index into an array in circom.
-
-    // Alternative: compute ALL leaf hashes and verify the sum matches.
-    // Actually, for a Merkle tree we need each leaf at a specific position.
-    // The standard approach: provide the shuffled deck as witness,
-    // verify it's a permutation, and hash it directly.
-
-    // Provide shuffled deck fields as computed witness
+    // 3. Apply permutation to get shuffled deck (CONSTRAINED)
+    // shuffled[i] = canonical[permutation[i]] (forward mapping)
+    // Uses Multiplexer for constrained array lookup.
     signal shuffled_values[DECK_SIZE];
     signal shuffled_types[DECK_SIZE];
     signal shuffled_suits[DECK_SIZE];
 
+    component lookups[DECK_SIZE];
     for (var i = 0; i < DECK_SIZE; i++) {
-        // The witness generator fills these from permutation
-        shuffled_values[i] <-- canonical_values[permutation[i]];
-        shuffled_types[i] <-- canonical_types[permutation[i]];
-        shuffled_suits[i] <-- canonical_suits[permutation[i]];
+        lookups[i] = CardLookup(DECK_SIZE);
+        lookups[i].sel <== permutation[i];
+        for (var j = 0; j < DECK_SIZE; j++) {
+            lookups[i].values[j] <== canonical_values[j];
+            lookups[i].types[j] <== canonical_types[j];
+            lookups[i].suits[j] <== canonical_suits[j];
+        }
+        shuffled_values[i] <== lookups[i].out_value;
+        shuffled_types[i] <== lookups[i].out_type;
+        shuffled_suits[i] <== lookups[i].out_suit;
     }
 
     // 4. Hash shuffled cards into leaf hashes

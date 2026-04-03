@@ -6,7 +6,7 @@ set -euo pipefail
 
 BUILD_DIR="build"
 CIRCUIT="shuffle_verify"
-PTAU_SIZE=18  # 2^18 = 262144 constraints (enough for ~120K)
+PTAU_SIZE=19  # 2^19 = 524288 constraints (circuit has ~277K)
 
 echo "=== Phase 1: Powers of Tau ==="
 if [ ! -f "$BUILD_DIR/pot${PTAU_SIZE}_0001.ptau" ]; then

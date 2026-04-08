@@ -90,3 +90,7 @@ The magic: the court (on-chain verifier) can confirm the document is valid witho
 ### Known Limitations
 
 The current system uses a **single trusted dealer** that chooses the shuffle. The ZK proof proves the deck is a *valid* permutation but does NOT prove it was shuffled *randomly*. Players must trust the dealer shuffled honestly. See the [execution plan](docs/EXECUTION_PLAN.md) for the roadmap to player-contributed entropy and decentralized dealing.
+
+## Development
+
+This repo is AI-assisted via Claude Code and ships a set of [Claude Code hooks](docs/CLAUDE_HOOKS.md) as a safety net: protected-file guards for program keypairs / ZK artifacts / [notes.md](notes.md), blocked-command patterns for irreversible Solana and git operations, auto-format (`rustfmt` / `prettier`), `cargo check` feedback after edits, and a pre-PR test gate. See [docs/CLAUDE_HOOKS.md](docs/CLAUDE_HOOKS.md) for the full list.

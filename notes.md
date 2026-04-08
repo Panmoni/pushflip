@@ -3,5 +3,5 @@
 ## ToDo
 - register https://arena.colosseum.org/hackathon
 
-### Future
+### Futurea
 - should have a powers of tau ceremony involving humans at some point

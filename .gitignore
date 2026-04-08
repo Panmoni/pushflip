@@ -7,3 +7,4 @@ program/keypair.json
 .env*
 !.env.example
 zk-circuits/build/
+.claude/command-log.txt

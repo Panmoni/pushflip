@@ -12,7 +12,7 @@ use solana_transaction::Transaction;
 use spl_token_interface::state::{Account as TokenAccount, AccountState, Mint};
 
 fn program_id() -> Address {
-    Address::from_str_const("3UvVHnAbb1UtWVzDh4SK2RvFc3Fhe49ub7e8CHz8LkEo")
+    Address::from_str_const("HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px")
 }
 
 const SYSTEM_PROGRAM: Address = Address::from_str_const("11111111111111111111111111111111");
@@ -755,7 +755,7 @@ fn test_burn_second_chance_recovers_from_bust() {
     let ix = Instruction {
         program_id: program_id(),
         accounts: vec![
-            AccountMeta::new(game.game_pda, false),
+            AccountMeta::new_readonly(game.game_pda, false),
             AccountMeta::new(ps, false),
             AccountMeta::new_readonly(player.pubkey(), true),
             AccountMeta::new(p_ata, false),
@@ -795,7 +795,7 @@ fn test_burn_second_chance_rejects_non_busted() {
     let ix = Instruction {
         program_id: program_id(),
         accounts: vec![
-            AccountMeta::new(game.game_pda, false),
+            AccountMeta::new_readonly(game.game_pda, false),
             AccountMeta::new(ps, false),
             AccountMeta::new_readonly(player.pubkey(), true),
             AccountMeta::new(p_ata, false),
@@ -820,7 +820,7 @@ fn test_burn_second_chance_rejects_double_use() {
     let ix = Instruction {
         program_id: program_id(),
         accounts: vec![
-            AccountMeta::new(game.game_pda, false),
+            AccountMeta::new_readonly(game.game_pda, false),
             AccountMeta::new(ps, false),
             AccountMeta::new_readonly(player.pubkey(), true),
             AccountMeta::new(p_ata, false),
@@ -936,7 +936,7 @@ fn test_token_supply_decreases_after_burns() {
     let ix = Instruction {
         program_id: program_id(),
         accounts: vec![
-            AccountMeta::new(game.game_pda, false),
+            AccountMeta::new_readonly(game.game_pda, false),
             AccountMeta::new(ps, false),
             AccountMeta::new_readonly(player.pubkey(), true),
             AccountMeta::new(p_ata, false),

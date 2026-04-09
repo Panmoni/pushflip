@@ -53,7 +53,7 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
 
     // Verify game is active and it's this player's turn
     {
-        let gs_data = game_session.try_borrow_mut()?;
+        let gs_data = game_session.try_borrow()?;
         let gs = GameSession::from_bytes(&gs_data);
         if gs.discriminator() != GAME_SESSION_DISCRIMINATOR {
             return Err(ProgramError::InvalidAccountData);

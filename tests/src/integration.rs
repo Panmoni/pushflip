@@ -7,7 +7,7 @@ use solana_signer::Signer;
 use solana_transaction::Transaction;
 
 fn program_id() -> Address {
-    Address::from_str_const("3UvVHnAbb1UtWVzDh4SK2RvFc3Fhe49ub7e8CHz8LkEo")
+    Address::from_str_const("HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px")
 }
 
 const SYSTEM_PROGRAM: Address = Address::from_str_const("11111111111111111111111111111111");

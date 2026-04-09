@@ -20,7 +20,7 @@ use crate::{
 /// sets them back to active.
 ///
 /// Accounts:
-///   0. `[writable]` game_session
+///   0. `[]`         game_session — read only; only checked for round_active
 ///   1. `[writable]` player_state
 ///   2. `[signer]`   player
 ///   3. `[writable]` player_token_account — player's $FLIP ATA
@@ -52,7 +52,7 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
 
     // Verify game is in an active round
     {
-        let gs_data = game_session.try_borrow_mut()?;
+        let gs_data = game_session.try_borrow()?;
         let gs = GameSession::from_bytes(&gs_data);
         if gs.discriminator() != GAME_SESSION_DISCRIMINATOR {
             return Err(ProgramError::InvalidAccountData);

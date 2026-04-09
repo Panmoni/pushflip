@@ -131,6 +131,16 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         }
     }
 
+    // --- Build vault PDA signer (used by both distribution and rollover-sweep paths) ---
+    let game_session_key = *game_session.address().as_array();
+    let vault_bump_bytes = [vault_bump];
+    let vault_seeds: [Seed; 3] = [
+        Seed::from(VAULT_SEED),
+        Seed::from(game_session_key.as_slice()),
+        Seed::from(vault_bump_bytes.as_slice()),
+    ];
+    let vault_signer: [pinocchio::cpi::Signer; 1] = [(&vault_seeds).into()];
+
     // --- Distribute tokens ---
     if !all_busted && pot_amount > 0 {
         // Calculate rake
@@ -141,16 +151,6 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         let winner_payout = pot_amount
             .checked_sub(rake)
             .ok_or(PushFlipError::ArithmeticOverflow)?;
-
-        // Build vault PDA signer seeds
-        let game_session_key = *game_session.address().as_array();
-        let vault_bump_bytes = [vault_bump];
-        let vault_seeds: [Seed; 3] = [
-            Seed::from(VAULT_SEED),
-            Seed::from(game_session_key.as_slice()),
-            Seed::from(vault_bump_bytes.as_slice()),
-        ];
-        let vault_signer: [pinocchio::cpi::Signer; 1] = [(&vault_seeds).into()];
 
         // Transfer rake to treasury
         if rake > 0 {
@@ -188,16 +188,6 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
                 // Rollover cap reached — sweep pot to treasury to prevent
                 // permanent token lock. Authority can redistribute manually.
                 if pot_amount > 0 {
-                    let game_session_key = *game_session.address().as_array();
-                    let vault_bump_bytes = [vault_bump];
-                    let vault_seeds: [Seed; 3] = [
-                        Seed::from(VAULT_SEED),
-                        Seed::from(game_session_key.as_slice()),
-                        Seed::from(vault_bump_bytes.as_slice()),
-                    ];
-                    let vault_signer: [pinocchio::cpi::Signer; 1] =
-                        [(&vault_seeds).into()];
-
                     verify_writable(treasury_token_account)?;
                     Transfer {
                         from: vault,

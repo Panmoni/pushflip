@@ -10,7 +10,7 @@ mod state;
 mod utils;
 mod zk;
 
-pinocchio_pubkey::declare_id!("3UvVHnAbb1UtWVzDh4SK2RvFc3Fhe49ub7e8CHz8LkEo");
+pinocchio_pubkey::declare_id!("HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px");
 
 default_allocator!();
 default_panic_handler!();

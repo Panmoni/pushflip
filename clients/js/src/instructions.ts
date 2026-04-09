@@ -1,0 +1,387 @@
+/**
+ * Instruction builders for the pushflip program.
+ *
+ * Each builder returns an `Instruction` ready for use with @solana/kit's
+ * transaction builder. Account orders and data layouts must match
+ * program/src/instructions/*.rs exactly.
+ */
+
+import {
+  AccountRole,
+  type Address,
+  type IInstruction,
+  type IInstructionWithAccounts,
+  type IInstructionWithData,
+} from "@solana/kit";
+
+import { concatBytes, u16Le, u64Le } from "./bytes.js";
+import {
+  Instructions,
+  PUSHFLIP_PROGRAM_ID,
+  SYSTEM_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+} from "./constants.js";
+
+type PushflipInstruction = IInstruction<typeof PUSHFLIP_PROGRAM_ID> &
+  IInstructionWithAccounts<readonly { address: Address; role: AccountRole }[]> &
+  IInstructionWithData<Uint8Array>;
+
+function buildIx(
+  data: Uint8Array,
+  accounts: { address: Address; role: AccountRole }[],
+): PushflipInstruction {
+  return {
+    programAddress: PUSHFLIP_PROGRAM_ID,
+    accounts,
+    data,
+  } as PushflipInstruction;
+}
+
+// --- 0: Initialize ---
+
+export interface InitializeAccounts {
+  authority: Address;
+  gameSession: Address;
+  house: Address;
+  dealer: Address;
+  treasury: Address;
+  tokenMint: Address;
+}
+
+export interface InitializeData {
+  gameId: bigint;
+  bump: number;
+  vaultBump: number;
+  /** Optional treasury fee basis points (0-9999). Defaults to 200 (2%). */
+  treasuryFeeBps?: number;
+}
+
+export function getInitializeInstruction(
+  accounts: InitializeAccounts,
+  data: InitializeData,
+): PushflipInstruction {
+  const parts: Uint8Array[] = [
+    new Uint8Array([Instructions.Initialize]),
+    u64Le(data.gameId),
+    new Uint8Array([data.bump, data.vaultBump]),
+  ];
+  if (data.treasuryFeeBps !== undefined) {
+    parts.push(u16Le(data.treasuryFeeBps));
+  }
+
+  return buildIx(concatBytes(...parts), [
+    { address: accounts.authority, role: AccountRole.WRITABLE_SIGNER },
+    { address: accounts.gameSession, role: AccountRole.WRITABLE },
+    { address: accounts.house, role: AccountRole.READONLY },
+    { address: accounts.dealer, role: AccountRole.READONLY },
+    { address: accounts.treasury, role: AccountRole.READONLY },
+    { address: accounts.tokenMint, role: AccountRole.READONLY },
+    { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+  ]);
+}
+
+// --- 1: CommitDeck ---
+
+export interface CommitDeckAccounts {
+  gameSession: Address;
+  dealer: Address;
+}
+
+export interface CommitDeckData {
+  /** 32 bytes */
+  merkleRoot: Uint8Array;
+  /** 64 bytes (G1, negated, big-endian) */
+  proofA: Uint8Array;
+  /** 128 bytes (G2, big-endian) */
+  proofB: Uint8Array;
+  /** 64 bytes (G1, big-endian) */
+  proofC: Uint8Array;
+}
+
+export function getCommitDeckInstruction(
+  accounts: CommitDeckAccounts,
+  data: CommitDeckData,
+): PushflipInstruction {
+  if (data.merkleRoot.length !== 32) {
+    throw new Error(`merkleRoot must be 32 bytes, got ${data.merkleRoot.length}`);
+  }
+  if (data.proofA.length !== 64) {
+    throw new Error(`proofA must be 64 bytes, got ${data.proofA.length}`);
+  }
+  if (data.proofB.length !== 128) {
+    throw new Error(`proofB must be 128 bytes, got ${data.proofB.length}`);
+  }
+  if (data.proofC.length !== 64) {
+    throw new Error(`proofC must be 64 bytes, got ${data.proofC.length}`);
+  }
+
+  const ixData = concatBytes(
+    new Uint8Array([Instructions.CommitDeck]),
+    data.merkleRoot,
+    data.proofA,
+    data.proofB,
+    data.proofC,
+  );
+
+  return buildIx(ixData, [
+    { address: accounts.gameSession, role: AccountRole.WRITABLE },
+    { address: accounts.dealer, role: AccountRole.READONLY_SIGNER },
+  ]);
+}
+
+// --- 2: JoinRound ---
+
+export interface JoinRoundAccounts {
+  gameSession: Address;
+  playerState: Address;
+  player: Address;
+  playerTokenAccount: Address;
+  vault: Address;
+}
+
+export interface JoinRoundData {
+  /** PlayerState PDA bump */
+  bump: number;
+  /** Stake amount in base units */
+  stakeAmount: bigint;
+}
+
+export function getJoinRoundInstruction(
+  accounts: JoinRoundAccounts,
+  data: JoinRoundData,
+): PushflipInstruction {
+  const ixData = concatBytes(
+    new Uint8Array([Instructions.JoinRound, data.bump]),
+    u64Le(data.stakeAmount),
+  );
+
+  return buildIx(ixData, [
+    { address: accounts.gameSession, role: AccountRole.WRITABLE },
+    { address: accounts.playerState, role: AccountRole.WRITABLE },
+    { address: accounts.player, role: AccountRole.WRITABLE_SIGNER },
+    { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+    { address: accounts.playerTokenAccount, role: AccountRole.WRITABLE },
+    { address: accounts.vault, role: AccountRole.WRITABLE },
+    { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY },
+  ]);
+}
+
+// --- 3: StartRound ---
+
+export interface StartRoundAccounts {
+  gameSession: Address;
+  authority: Address;
+  /** Player state accounts in turn_order order (length === playerCount). */
+  playerStates: Address[];
+}
+
+export function getStartRoundInstruction(
+  accounts: StartRoundAccounts,
+): PushflipInstruction {
+  const accountMetas = [
+    { address: accounts.gameSession, role: AccountRole.WRITABLE },
+    { address: accounts.authority, role: AccountRole.READONLY_SIGNER },
+    ...accounts.playerStates.map((address) => ({
+      address,
+      role: AccountRole.WRITABLE,
+    })),
+  ];
+
+  return buildIx(new Uint8Array([Instructions.StartRound]), accountMetas);
+}
+
+// --- 4: Hit ---
+
+export interface HitAccounts {
+  gameSession: Address;
+  playerState: Address;
+  player: Address;
+  /**
+   * Optional accounts for protocol card effects (RUG_PULL, VAMPIRE_ATTACK).
+   * Pass other player_state PDAs in turn_order if any may be targeted.
+   */
+  remainingAccounts?: Address[];
+}
+
+export interface HitData {
+  cardValue: number;
+  cardType: number;
+  cardSuit: number;
+  /** 7 sibling hashes, 32 bytes each = 224 bytes total */
+  merkleProof: Uint8Array[];
+  leafIndex: number;
+}
+
+export function getHitInstruction(
+  accounts: HitAccounts,
+  data: HitData,
+): PushflipInstruction {
+  if (data.merkleProof.length !== 7) {
+    throw new Error(
+      `merkleProof must have 7 siblings, got ${data.merkleProof.length}`,
+    );
+  }
+  for (const [i, sibling] of data.merkleProof.entries()) {
+    if (sibling.length !== 32) {
+      throw new Error(
+        `merkleProof[${i}] must be 32 bytes, got ${sibling.length}`,
+      );
+    }
+  }
+
+  const ixData = concatBytes(
+    new Uint8Array([
+      Instructions.Hit,
+      data.cardValue,
+      data.cardType,
+      data.cardSuit,
+    ]),
+    ...data.merkleProof,
+    new Uint8Array([data.leafIndex]),
+  );
+
+  const accountMetas = [
+    { address: accounts.gameSession, role: AccountRole.WRITABLE },
+    { address: accounts.playerState, role: AccountRole.WRITABLE },
+    { address: accounts.player, role: AccountRole.READONLY_SIGNER },
+    ...(accounts.remainingAccounts ?? []).map((address) => ({
+      address,
+      role: AccountRole.WRITABLE,
+    })),
+  ];
+
+  return buildIx(ixData, accountMetas);
+}
+
+// --- 5: Stay ---
+
+export interface StayAccounts {
+  gameSession: Address;
+  playerState: Address;
+  player: Address;
+}
+
+export function getStayInstruction(
+  accounts: StayAccounts,
+): PushflipInstruction {
+  return buildIx(new Uint8Array([Instructions.Stay]), [
+    { address: accounts.gameSession, role: AccountRole.WRITABLE },
+    { address: accounts.playerState, role: AccountRole.WRITABLE },
+    { address: accounts.player, role: AccountRole.READONLY_SIGNER },
+  ]);
+}
+
+// --- 6: EndRound ---
+
+export interface EndRoundAccounts {
+  gameSession: Address;
+  caller: Address;
+  vault: Address;
+  winnerTokenAccount: Address;
+  treasuryTokenAccount: Address;
+  /** Player state accounts in turn_order order. */
+  playerStates: Address[];
+}
+
+export function getEndRoundInstruction(
+  accounts: EndRoundAccounts,
+): PushflipInstruction {
+  const accountMetas = [
+    { address: accounts.gameSession, role: AccountRole.WRITABLE },
+    { address: accounts.caller, role: AccountRole.READONLY_SIGNER },
+    { address: accounts.vault, role: AccountRole.WRITABLE },
+    { address: accounts.winnerTokenAccount, role: AccountRole.WRITABLE },
+    { address: accounts.treasuryTokenAccount, role: AccountRole.WRITABLE },
+    { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY },
+    ...accounts.playerStates.map((address) => ({
+      address,
+      role: AccountRole.READONLY,
+    })),
+  ];
+
+  return buildIx(new Uint8Array([Instructions.EndRound]), accountMetas);
+}
+
+// --- 7: CloseGame ---
+
+export interface CloseGameAccounts {
+  gameSession: Address;
+  authority: Address;
+  recipient: Address;
+}
+
+export function getCloseGameInstruction(
+  accounts: CloseGameAccounts,
+): PushflipInstruction {
+  return buildIx(new Uint8Array([Instructions.CloseGame]), [
+    { address: accounts.gameSession, role: AccountRole.WRITABLE },
+    { address: accounts.authority, role: AccountRole.READONLY_SIGNER },
+    { address: accounts.recipient, role: AccountRole.WRITABLE },
+  ]);
+}
+
+// --- 8: LeaveGame ---
+
+export interface LeaveGameAccounts {
+  gameSession: Address;
+  playerState: Address;
+  player: Address;
+  recipient: Address;
+}
+
+export function getLeaveGameInstruction(
+  accounts: LeaveGameAccounts,
+): PushflipInstruction {
+  return buildIx(new Uint8Array([Instructions.LeaveGame]), [
+    { address: accounts.gameSession, role: AccountRole.WRITABLE },
+    { address: accounts.playerState, role: AccountRole.WRITABLE },
+    { address: accounts.player, role: AccountRole.READONLY_SIGNER },
+    { address: accounts.recipient, role: AccountRole.WRITABLE },
+  ]);
+}
+
+// --- 9: BurnSecondChance ---
+
+export interface BurnSecondChanceAccounts {
+  gameSession: Address;
+  playerState: Address;
+  player: Address;
+  playerTokenAccount: Address;
+  tokenMint: Address;
+}
+
+export function getBurnSecondChanceInstruction(
+  accounts: BurnSecondChanceAccounts,
+): PushflipInstruction {
+  return buildIx(new Uint8Array([Instructions.BurnSecondChance]), [
+    { address: accounts.gameSession, role: AccountRole.READONLY },
+    { address: accounts.playerState, role: AccountRole.WRITABLE },
+    { address: accounts.player, role: AccountRole.READONLY_SIGNER },
+    { address: accounts.playerTokenAccount, role: AccountRole.WRITABLE },
+    { address: accounts.tokenMint, role: AccountRole.WRITABLE },
+    { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY },
+  ]);
+}
+
+// --- 10: BurnScry ---
+
+export interface BurnScryAccounts {
+  gameSession: Address;
+  playerState: Address;
+  player: Address;
+  playerTokenAccount: Address;
+  tokenMint: Address;
+}
+
+export function getBurnScryInstruction(
+  accounts: BurnScryAccounts,
+): PushflipInstruction {
+  return buildIx(new Uint8Array([Instructions.BurnScry]), [
+    { address: accounts.gameSession, role: AccountRole.READONLY },
+    { address: accounts.playerState, role: AccountRole.WRITABLE },
+    { address: accounts.player, role: AccountRole.READONLY_SIGNER },
+    { address: accounts.playerTokenAccount, role: AccountRole.WRITABLE },
+    { address: accounts.tokenMint, role: AccountRole.WRITABLE },
+    { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY },
+  ]);
+}

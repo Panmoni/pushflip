@@ -50,7 +50,8 @@
       "Bash(cargo update:*)",
       "Bash(circom circuits/shuffle_verify.circom --r1cs --sym -o build/)",
       "Bash(circom circuits/shuffle_verify.circom --wasm -o build/)",
-      "Read(//home/george9874/repos/pushflip/zk-circuits/**)"
+      "Read(//home/george9874/repos/pushflip/zk-circuits/**)",
+      "Bash(./node_modules/.bin/tsc --noEmit)"
     ],
     "deny": [
       "Bash(rm -rf *)",
@@ -60,7 +61,8 @@
     "additionalDirectories": [
       "/home/george9874/repos",
       "/home/george9874/tools/open-brain-mcp/src",
-      "/home/george9874/repos/pushflip"
+      "/home/george9874/repos/pushflip",
+      "/home/george9874/repos/pushflip/clients/js/src"
     ]
   },
   "hooks": {
@@ -68,15 +70,27 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": ".claude/hooks/block-dangerous.sh" },
-          { "type": "command", "command": ".claude/hooks/log-commands.sh" },
-          { "type": "command", "command": ".claude/hooks/pre-pr-gate.sh" }
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-dangerous.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/log-commands.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/pre-pr-gate.sh"
+          }
         ]
       },
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
-          { "type": "command", "command": ".claude/hooks/protect-files.sh" }
+          {
+            "type": "command",
+            "command": ".claude/hooks/protect-files.sh"
+          }
         ]
       }
     ],
@@ -84,8 +98,14 @@
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
-          { "type": "command", "command": ".claude/hooks/format.sh" },
-          { "type": "command", "command": ".claude/hooks/lint.sh" }
+          {
+            "type": "command",
+            "command": ".claude/hooks/format.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/lint.sh"
+          }
         ]
       }
     ]

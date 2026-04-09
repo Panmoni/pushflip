@@ -91,6 +91,112 @@ The magic: the court (on-chain verifier) can confirm the document is valid witho
 
 The current system uses a **single trusted dealer** that chooses the shuffle. The ZK proof proves the deck is a *valid* permutation but does NOT prove it was shuffled *randomly*. Players must trust the dealer shuffled honestly. See the [execution plan](docs/EXECUTION_PLAN.md) for the roadmap to player-contributed entropy and decentralized dealing.
 
+## Deployment
+
+### Live Devnet Deployment
+
+| Field | Value |
+|-------|-------|
+| **Program ID** | `HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px` |
+| **Cluster** | Devnet |
+| **Loader** | BPF Loader Upgradeable |
+| **First deployed** | 2026-04-09 (slot 454396197) |
+| **Binary size** | ~364 KB |
+| **Rent** | ~2.6 SOL |
+
+Inspect on-chain with:
+
+```bash
+solana program show HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px --url devnet
+```
+
+### Deploying from Source
+
+These steps deploy a fresh build to devnet from a clean checkout. Run from the repo root.
+
+#### Prerequisites
+
+1. **Solana CLI** installed and configured for devnet:
+   ```bash
+   solana config set --url https://api.devnet.solana.com
+   solana config get
+   ```
+2. **A funded devnet wallet** at `~/.config/solana/id.json` with at least **3 SOL** (deployment costs ~2.6 SOL in rent plus tx fees). Top up with `solana airdrop 2` if needed.
+3. **The program keypair** at `target/deploy/pushflip-keypair.json`. This file is generated automatically by `cargo build-sbf` on first build. Its public key **must match** the address in `program/src/lib.rs` (`declare_id!(...)`). Verify with:
+   ```bash
+   solana-keygen pubkey target/deploy/pushflip-keypair.json
+   ```
+
+#### Build the BPF binary
+
+The deploy binary must be built **without** the `skip-zk-verify` feature flag, so that on-chain Groth16 verification is enabled:
+
+```bash
+rm -f target/sbpf-solana-solana/release/deps/pushflip.so target/deploy/pushflip.so
+cargo build-sbf --manifest-path program/Cargo.toml --sbf-out-dir target/deploy
+```
+
+> The `--manifest-path` flag is required because the workspace `tests/` crate pulls in dependencies that conflict with the BPF toolchain's older Cargo. Building only the `program/` crate avoids the conflict.
+>
+> A `Stack offset of 10960 exceeded max offset of 4096` warning from `light_poseidon` is expected during the build. Despite the "Error:" prefix, the build still finishes successfully and produces a valid binary. See [docs/POSEIDON_STACK_WARNING.md](docs/POSEIDON_STACK_WARNING.md) for the full explanation, why we believe it's harmless, and the planned smoke test to verify on real devnet.
+
+Verify the binary was produced:
+
+```bash
+ls -lh target/deploy/pushflip.so
+```
+
+#### Deploy
+
+```bash
+solana program deploy target/deploy/pushflip.so
+```
+
+This uploads the program in chunks (30 seconds to a few minutes depending on network). Successful output looks like:
+
+```
+Program Id: HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px
+Signature: <base58 transaction signature>
+```
+
+If the deploy fails partway through (network hiccup, RPC timeout), the CLI prints a recovery command of the form `solana program deploy --buffer <BUFFER_ADDRESS>`. **Save it** — re-running it resumes the deploy without losing the SOL already spent on the buffer account.
+
+#### Verify
+
+```bash
+solana program show HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px
+```
+
+Expect:
+- `Owner: BPFLoaderUpgradeab1e11111111111111111111111` (upgradeable, not the read-only loader)
+- `Authority: <your wallet pubkey>` (the deployer can ship upgrades)
+- `Data Length: ~372640` bytes
+- `Balance: ~2.6 SOL` (rent)
+
+#### Upgrading
+
+To deploy a new version of the program (same ID, new bytecode):
+
+```bash
+# Rebuild
+cargo build-sbf --manifest-path program/Cargo.toml --sbf-out-dir target/deploy
+
+# Upgrade — same command, Solana detects an existing program and upgrades it
+solana program deploy target/deploy/pushflip.so
+```
+
+The deploy authority (your wallet) is required to sign the upgrade. Upgrades cost a small tx fee but no additional rent.
+
+#### Reclaiming rent (closing the program)
+
+To recover the ~2.6 SOL rent from a deployed program:
+
+```bash
+solana program close HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px --bypass-warning
+```
+
+⚠️ This is **irreversible** — the program ID becomes permanently unusable. Only do this if you're abandoning the deployment.
+
 ## Development
 
 This repo is AI-assisted via Claude Code and ships a set of [Claude Code hooks](docs/CLAUDE_HOOKS.md) as a safety net: protected-file guards for program keypairs / ZK artifacts / [notes.md](notes.md), blocked-command patterns for irreversible Solana and git operations, auto-format (`rustfmt` / `prettier`), `cargo check` feedback after edits, and a pre-PR test gate. See [docs/CLAUDE_HOOKS.md](docs/CLAUDE_HOOKS.md) for the full list.

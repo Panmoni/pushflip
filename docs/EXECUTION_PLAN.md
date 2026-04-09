@@ -1642,9 +1642,66 @@ pub const TREASURY_FEE_BPS: u16 = 200; // 2%
 
 ### Phase 3: Frontend Development (Days 18-22)
 
-**Goal:** Build interactive Vite + React frontend with @solana/kit + Kit Plugins + Codama-generated client.
+**Goal:** Build interactive Vite + React frontend with @solana/kit + hand-written TypeScript client.
 
-**Prerequisites:** Phase 2 complete. Program deployed to devnet. Codama client generated.
+**Prerequisites:** Phase 2 complete ✅. Program deployed to devnet ✅. TypeScript client built ✅.
+
+### Phase 3 Prerequisites Status (completed 2026-04-09)
+- [x] **Devnet deployment** — Program ID `HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px`, deployed at slot 454396197, ~2.6 SOL rent, BPF Upgradeable Loader, authority = local devnet wallet
+- [x] **TypeScript client** (Path B chosen instead of Shank/Codama) — `clients/js/` package with @solana/kit, 11 instruction builders, 3 account deserializers (GameSession/PlayerState/BountyBoard), PDA helpers, byte utilities, 25 tests passing
+- [x] **Program ID realignment** — `declare_id!` and all source/test references updated to match the actual `target/deploy/pushflip-keypair.json` (was a mismatched placeholder before)
+- [x] **Test totals at end of Phase 2 prereqs**: 41 unit + 20 integration + 8 dealer + 25 client = **94 tests passing**
+
+### Phase 3 Decisions Log
+| Date | Decision | Rationale |
+|------|----------|-----------|
+| 2026-04-09 | Skip Shank/Codama; hand-write TypeScript client on @solana/kit | Pinocchio's manual byte layouts mean Shank attributes would be a parallel representation requiring synchronized maintenance. Hand-written client is ~700 LOC, fully typed, mirrors the Rust byte layouts directly, and is more portfolio-impressive than auto-generated code. |
+| 2026-04-09 | Use the auto-generated `target/deploy/pushflip-keypair.json` and update `declare_id!` to match | The original `declare_id!` used a placeholder address (`3UvVHnAbb...`) that didn't match the keypair Cargo generated. Updated source + tests + client constants to use `HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px`. |
+| 2026-04-09 | Deploy binary built without `skip-zk-verify` feature | Production deployment must enforce Groth16 verification. Integration tests continue to use a separate binary built with the flag for fast LiteSVM testing. |
+| 2026-04-09 | Defer light_poseidon stack warning verification to Task 3.0 (smoke test) | The 11 KB stack frame in `light_poseidon::parameters::bn254_x5::get_poseidon_parameters` exceeds Solana's 4 KB BPF stack limit on paper. LiteSVM tests pass, but this hasn't been verified against a real validator. See [POSEIDON_STACK_WARNING.md](POSEIDON_STACK_WARNING.md) for full analysis and three fix options if it does fire. |
+
+---
+
+#### Task 3.0: Devnet Smoke Test (Poseidon Stack Verification) ⚠️ blocking
+
+**Goal:** Verify on the live devnet program that the `light_poseidon` stack warning is actually harmless. This must pass before any frontend work in Phase 3 is meaningful.
+
+**Why this is blocking:** All 94 tests pass in LiteSVM, but LiteSVM simulates BPF execution and may differ from a real validator on edge cases like the stack frame check. The first time `hit` runs on real devnet is the moment the runtime stack check fires (or doesn't). If it fires, we need to switch Poseidon implementations *before* building the frontend on top.
+
+**Background:** See [POSEIDON_STACK_WARNING.md](POSEIDON_STACK_WARNING.md) for the full explanation of the warning, why it might not matter, why it might, and the fix options if it does.
+
+##### 3.0.1: Write a CLI smoke-test script (~30 min)
+**Do:** Create `scripts/smoke-test.ts` (using `@pushflip/client`) that, against the deployed devnet program:
+1. Initializes a new game session (`initialize`)
+2. Joins as a single player without staking (vault unset, so `vault_ready = false`)
+3. Calls `commit_deck` with a real Groth16 proof from the dealer service
+4. Calls `start_round`
+5. Calls `hit` once with a real Merkle proof for leaf 0
+6. Closes the game (`close_game`) to recover rent
+
+The `hit` call is the critical one — it exercises `verify_merkle_proof` which calls `light_poseidon::Poseidon::new_circom`, which is the function with the 11 KB stack frame.
+
+**Done when:** The script runs end-to-end against `HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px` on devnet without any `Stack offset exceeded` error and the player's hand contains the revealed card.
+
+##### 3.0.2: Decision point (~15 min)
+**If the smoke test passes:** Document the result in [POSEIDON_STACK_WARNING.md](POSEIDON_STACK_WARNING.md) and the decisions log. Proceed to Task 3.1.
+
+**If the smoke test fails with a stack overflow:** Pause Phase 3 frontend work. Implement one of the fixes from [POSEIDON_STACK_WARNING.md](POSEIDON_STACK_WARNING.md):
+1. **Preferred:** Write a `pinocchio-poseidon` wrapper around Solana's `sol_poseidon` syscall (portfolio-positive contribution to the Pinocchio ecosystem)
+2. **Fallback:** Vendor a fork of `light_poseidon` with `static` parameters
+3. **Rejected:** Implementing Poseidon by hand (too risky)
+
+After the fix, redeploy the program with `solana program deploy` and re-run 3.0.1.
+
+##### 3.0.3: Verify other Solana edge cases (~15 min, optional)
+**Do:** While the smoke test is running, also verify:
+- The deployed binary's data length matches what `solana program show` reports
+- The CU consumption for `hit` is within the 200K budget (not running into compute limits)
+- The Merkle proof verification path actually returns `Ok(())` (check transaction logs for any `InvalidMerkleProof` errors)
+
+**Done when:** All three checks pass and we have logs / transaction signatures for posterity.
+
+---
 
 ---
 

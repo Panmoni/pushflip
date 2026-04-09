@@ -12,10 +12,11 @@ gambling program using Pinocchio (the zero-dependency Solana framework by Anza).
 3. [Example Programs and Repositories](#3-example-programs-and-repositories)
 4. [IDL Generation (Shank + Codama)](#4-idl-generation-shank--codama)
 5. [PDAs and CPIs in Pinocchio](#5-pdas-and-cpis-in-pinocchio)
-6. [Testing with LiteSVM](#6-testing-with-litesvm)
-7. [Pinocchio vs Anchor Comparison](#7-pinocchio-vs-anchor-comparison)
-8. [Project Templates and Starters](#8-project-templates-and-starters)
-9. [Recommended Toolchain for PushFlip](#9-recommended-toolchain-for-pushflip)
+6. [Account Borrow Semantics & Gotchas](#6-account-borrow-semantics--gotchas)
+7. [Testing with LiteSVM](#7-testing-with-litesvm)
+8. [Pinocchio vs Anchor Comparison](#8-pinocchio-vs-anchor-comparison)
+9. [Project Templates and Starters](#9-project-templates-and-starters)
+10. [Recommended Toolchain for PushFlip](#10-recommended-toolchain-for-pushflip)
 
 ---
 
@@ -302,7 +303,88 @@ For program-owned accounts, you can directly modify lamports without CPI:
 
 ---
 
-## 6. Testing with LiteSVM
+## 6. Account Borrow Semantics & Gotchas
+
+### `try_borrow_mut()` does NOT enforce `is_writable`
+
+This is a non-obvious Pinocchio (and `solana-account-view`) behavior that bit us during a code review. **The runtime check for whether an account is writable is enforced post-execution, not at borrow time.** Specifically:
+
+| Layer | What it checks |
+|-------|---------------|
+| `AccountView::try_borrow_mut()` | Only checks the **borrow state** (whether the account is currently being borrowed by another in-program borrow). Does NOT check `AccountMeta.is_writable`. |
+| `AccountView::is_writable()` | Returns the flag, but you have to call it explicitly. |
+| `verify_writable(account)` | Wraps the explicit check above and returns an error. **You must call this yourself if you want runtime enforcement.** |
+| **Solana validator** | Compares each account's data + lamports before/after the program executes. If an account marked READONLY in the AccountMeta was actually modified, the entire transaction is reverted. |
+
+**The important consequence:** A program can call `try_borrow_mut()` on an account that the AccountMeta declared `READONLY`, the call will succeed, and the transaction will succeed too — *as long as the program never actually writes to the data*. The `try_borrow_mut()` succeeds because it only checks the in-program borrow state. The runtime allows the transaction to commit because no actual modification occurred.
+
+### Why this matters
+
+This affects three things:
+
+1. **Source of truth for client developers.** The `///   0. [writable]` docstring on the instruction is the closest thing to a spec. If the program borrows mut but never writes, the docstring should still say `[]` so clients pass the account as `READONLY`. This enables parallel reads in transactions and reduces the lock contention surface.
+
+2. **Code review can be misled.** Reviewers (or AI agents) reading the function body will see `try_borrow_mut()` and assume the account must be writable. They might flag a TS client passing `READONLY` as a critical bug. **It is not** — the transaction will work fine. But it IS a footgun because:
+
+3. **Future-proofing.** If you call `try_borrow_mut()` today with no actual writes, that works. But if a future contributor adds a `gs.set_*()` call inside that block without realizing the AccountMeta says `READONLY`, the runtime will silently revert the modification (or fail the transaction, depending on Solana version) — and the bug will only show up on devnet/mainnet, never in unit tests.
+
+### Best practice: match the borrow type to the actual usage
+
+**Always use `try_borrow()` when you only read.** `try_borrow_mut()` should be reserved for code paths that actually write to the data:
+
+```rust
+// BAD: borrows mut but only reads — misleading + footgun
+let gs_data = game_session.try_borrow_mut()?;
+let gs = GameSession::from_bytes(&gs_data);
+if !gs.round_active() {
+    return Err(PushFlipError::RoundNotActive.into());
+}
+
+// GOOD: borrow type matches usage
+let gs_data = game_session.try_borrow()?;
+let gs = GameSession::from_bytes(&gs_data);
+if !gs.round_active() {
+    return Err(PushFlipError::RoundNotActive.into());
+}
+```
+
+This makes the intent obvious to reviewers and aligns with the AccountMeta marking. If the docstring says `[]`, the code should `try_borrow()`. If the docstring says `[writable]`, the code can `try_borrow_mut()` AND should actually write to it (otherwise demote the docstring).
+
+### Use `verify_writable()` when you DO need to enforce it
+
+If your function genuinely requires the account to be writable (e.g. you're going to mutate state and expect those mutations to persist), call `verify_writable()` explicitly:
+
+```rust
+verify_writable(player_state)?;  // Fails fast if AccountMeta says READONLY
+let mut ps_data = player_state.try_borrow_mut()?;
+let mut ps = PlayerStateMut::from_bytes(&mut ps_data);
+ps.set_score(new_score);  // Will actually persist
+```
+
+Without the `verify_writable()` check, a misconfigured client could pass `READONLY` and the program would silently lose the write.
+
+### Empirical evidence from PushFlip
+
+This guidance comes from a real-world test in the PushFlip codebase. In Phase 2, the `burn_second_chance` instruction was discovered to have:
+
+- Docstring: `[writable] game_session`
+- Code: `try_borrow_mut()` followed by reads only (no writes)
+- Integration test: `AccountMeta::new(...)` (writable)
+- TS client: `AccountRole.READONLY`
+
+After fixing both burn instructions to use `try_borrow()`, updating the docstring to `[]`, and changing all 4 integration test sites to `AccountMeta::new_readonly(...)`, **all 4 burn_second_chance integration tests still passed**. This empirically confirms that the runtime allows `READONLY` accounts to be borrowed mut as long as no actual write occurs.
+
+See: [program/src/instructions/burn_second_chance.rs](../program/src/instructions/burn_second_chance.rs), [program/src/instructions/burn_scry.rs](../program/src/instructions/burn_scry.rs), [tests/src/phase2.rs](../tests/src/phase2.rs) test_burn_second_chance_*.
+
+### Related: `verify_account_owner()` is also separate
+
+Same pattern applies to ownership: `try_borrow_mut()` does not check that the account is owned by your program. You must call `verify_account_owner(account, &expected_owner)?` explicitly. Forgetting this is a classic Solana vulnerability — a malicious user could pass an account they own (with attacker-chosen data) and the program would deserialize it as if it were one of yours.
+
+**Always verify ownership before deserializing program state.** The discriminator check helps but is not sufficient — an attacker can craft an account with the right discriminator byte.
+
+---
+
+## 7. Testing with LiteSVM
 
 ### Overview
 - **URL**: https://github.com/LiteSVM/litesvm
@@ -387,7 +469,7 @@ svm.expire_blockhash();
 
 ---
 
-## 7. Pinocchio vs Anchor Comparison
+## 8. Pinocchio vs Anchor Comparison
 
 ### Performance Benchmarks
 
@@ -434,7 +516,7 @@ svm.expire_blockhash();
 
 ---
 
-## 8. Project Templates and Starters
+## 9. Project Templates and Starters
 
 ### Official Pinocchio Counter Template (RECOMMENDED STARTING POINT)
 - **URL**: https://solana.com/developers/templates/pinocchio-counter
@@ -476,7 +558,7 @@ svm.expire_blockhash();
 
 ---
 
-## 9. Recommended Toolchain for PushFlip
+## 10. Recommended Toolchain for PushFlip
 
 Based on all research, here is the recommended stack for the PushFlip gambling dApp:
 

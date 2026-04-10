@@ -1,0 +1,70 @@
+name: Telegram commit notify
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram message
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PUSHER: ${{ github.event.pusher.name }}
+          BRANCH: ${{ github.ref_name }}
+          COMPARE_URL: ${{ github.event.compare }}
+          COMMITS_JSON: ${{ toJSON(github.event.commits) }}
+        run: |
+          set -euo pipefail
+
+          # HTML-escape only the three characters Telegram's HTML parse mode cares about.
+          html_escape() {
+            sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+          }
+
+          COUNT=$(printf '%s' "$COMMITS_JSON" | jq 'length')
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No commits in push event (branch delete or empty push). Skipping."
+            exit 0
+          fi
+
+          PUSHER_ESC=$(printf '%s' "$PUSHER" | html_escape)
+          BRANCH_ESC=$(printf '%s' "$BRANCH" | html_escape)
+
+          # Build commit list. Keep ≤5 fully; otherwise show first 3 + "and N more".
+          if [ "$COUNT" -le 5 ]; then
+            COMMITS_TEXT=$(printf '%s' "$COMMITS_JSON" \
+              | jq -r '.[] | "• " + (.message | split("\n")[0]) + " (" + .id[0:7] + ")"')
+          else
+            FIRST=$(printf '%s' "$COMMITS_JSON" \
+              | jq -r '.[0:3] | .[] | "• " + (.message | split("\n")[0]) + " (" + .id[0:7] + ")"')
+            REMAINING=$((COUNT - 3))
+            COMMITS_TEXT=$(printf '%s\n• ... and %d more' "$FIRST" "$REMAINING")
+          fi
+
+          COMMITS_ESC=$(printf '%s' "$COMMITS_TEXT" | html_escape)
+
+          MESSAGE=$(printf '🟢 <b>%s</b> pushed %d commit(s) to <b>%s</b>\n\n%s\n\n→ <a href="%s">View diff</a>' \
+            "$PUSHER_ESC" "$COUNT" "$BRANCH_ESC" "$COMMITS_ESC" "$COMPARE_URL")
+
+          # Build JSON payload via jq so all special chars (quotes, newlines, unicode) are encoded correctly.
+          PAYLOAD=$(jq -n \
+            --arg chat_id "$TELEGRAM_CHAT_ID" \
+            --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, parse_mode: "HTML", disable_web_page_preview: true, text: $text}')
+
+          RESPONSE=$(curl -sS -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD")
+
+          # Print the response for debugging (token is auto-redacted by GitHub Actions).
+          printf '%s\n' "$RESPONSE" | jq .
+
+          # Fail the run loudly if Telegram rejected the message — otherwise a broken
+          # parse mode would silently swallow notifications and we'd never know.
+          printf '%s\n' "$RESPONSE" | jq -e '.ok == true' > /dev/null

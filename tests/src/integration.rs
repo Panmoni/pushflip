@@ -26,11 +26,12 @@ const IX_LEAVE_GAME: u8 = 8;
 
 fn setup() -> (LiteSVM, Keypair) {
     let mut svm = LiteSVM::new();
-    // Path relative to tests/src/ → ../../target/deploy/pushflip.so
-    svm.add_program(
-        program_id(),
-        include_bytes!("../../target/deploy/pushflip.so"),
-    );
+    // `PUSHFLIP_TEST_SBF_PATH` is set by `tests/build.rs`, which rebuilds
+    // the program with `--features skip-zk-verify` into
+    // `target/deploy-test/pushflip.so` before each `cargo test` run. The
+    // production deploy artifact at `target/deploy/pushflip.so` is never
+    // used by tests, so the two builds cannot clobber each other.
+    let _ = svm.add_program(program_id(), include_bytes!(env!("PUSHFLIP_TEST_SBF_PATH")));
     let authority = Keypair::new();
     svm.airdrop(&authority.pubkey(), 10_000_000_000).unwrap();
     (svm, authority)
@@ -101,7 +102,7 @@ fn test_initialize_game() {
     assert_eq!(d[0], 1); // discriminator
     assert_eq!(d[1], bump);
     assert_eq!(u64::from_le_bytes(d[2..10].try_into().unwrap()), game_id);
-    assert_eq!(d[202], 1); // player_count
+    assert_eq!(d[202], 0); // player_count — initialize creates an empty turn_order
     assert_eq!(d[332], 0); // round_active
     assert_eq!(d[381], 0); // deck_committed
 }
@@ -179,7 +180,7 @@ fn test_join_round() {
     )
     .unwrap();
 
-    assert_eq!(read_data(&svm, &game_pda)[202], 2);
+    assert_eq!(read_data(&svm, &game_pda)[202], 1); // 1 player after join
     let ps = read_data(&svm, &ps1);
     assert_eq!(ps[0], 2); // discriminator
     assert_eq!(ps[73], 1); // is_active
@@ -287,7 +288,7 @@ fn test_leave_game_between_rounds() {
     )
     .unwrap();
 
-    assert_eq!(read_data(&svm, &game_pda)[202], 2);
+    assert_eq!(read_data(&svm, &game_pda)[202], 1); // 1 player after join
 
     send_tx(
         &mut svm,
@@ -305,7 +306,7 @@ fn test_leave_game_between_rounds() {
     )
     .unwrap();
 
-    assert_eq!(read_data(&svm, &game_pda)[202], 1);
+    assert_eq!(read_data(&svm, &game_pda)[202], 0); // empty after leave
     assert!(svm.get_account(&ps1).is_none());
 }
 

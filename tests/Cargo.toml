@@ -3,6 +3,12 @@ name = "pushflip-tests"
 version = "0.1.0"
 edition = "2021"
 publish = false
+# build.rs runs `cargo build-sbf --features skip-zk-verify` into
+# `target/deploy-test/pushflip.so` on every `cargo test` and exports the
+# resolved path via the `PUSHFLIP_TEST_SBF_PATH` env var. This keeps the
+# test binary isolated from the production deploy artifact at
+# `target/deploy/pushflip.so`. See build.rs for the full rationale.
+build = "build.rs"
 
 [[test]]
 name = "integration"

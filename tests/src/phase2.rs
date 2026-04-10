@@ -37,10 +37,9 @@ const INITIAL_SUPPLY: u64 = 10_000_000_000_000; // 10,000 $FLIP
 
 fn setup() -> (LiteSVM, Keypair) {
     let mut svm = LiteSVM::new();
-    svm.add_program(
-        program_id(),
-        include_bytes!("../../target/deploy/pushflip.so"),
-    );
+    // `PUSHFLIP_TEST_SBF_PATH` is exported by `tests/build.rs`; see
+    // integration.rs for the full rationale.
+    let _ = svm.add_program(program_id(), include_bytes!(env!("PUSHFLIP_TEST_SBF_PATH")));
     let authority = Keypair::new();
     svm.airdrop(&authority.pubkey(), 50_000_000_000).unwrap();
     (svm, authority)
@@ -342,19 +341,6 @@ fn start_round(svm: &mut LiteSVM, authority: &Keypair, game: &TestGame, player_s
     send_tx(svm, ix, &[authority]).unwrap();
 }
 
-/// Create a minimal PlayerState data blob for manual account injection.
-fn create_player_state_data(bump: u8, player: &[u8; 32], game_id: u64) -> Vec<u8> {
-    let mut data = vec![0u8; 256]; // PLAYER_STATE_SIZE
-    data[0] = 2; // PLAYER_STATE_DISCRIMINATOR
-    data[1] = bump;
-    data[2..34].copy_from_slice(player); // PLAYER
-    data[34..42].copy_from_slice(&game_id.to_le_bytes()); // GAME_ID
-    data[42] = 0; // hand_size
-    data[73] = 1; // is_active = true
-    data[74] = 0; // inactive_reason = ACTIVE
-    data
-}
-
 // --- Token Flow Tests (2.9.1) ---
 
 #[test]
@@ -390,90 +376,19 @@ fn test_full_round_with_prize_distribution() {
     let dealer = Keypair::new();
     svm.airdrop(&dealer.pubkey(), 5_000_000_000).unwrap();
 
-    let house = Keypair::new();
     let game = init_game_with_tokens(&mut svm, &authority, 101, &dealer.pubkey());
 
-    // House needs to join (it's in turn_order[0] from initialize)
-    // The house keypair must match the "house" address passed to initialize.
-    // Since init_game_with_tokens creates a random house, we need to read it.
-    let gs_data = read_data(&svm, &game.game_pda);
-    // house is at offset 42 (after discriminator(1) + bump(1) + game_id(8) + authority(32))
-    let house_key: [u8; 32] = gs_data[42..74].try_into().unwrap();
-
-    // Create a PlayerState for the House at the correct PDA
-    let (house_ps, house_ps_bump) =
-        derive_player_pda(game.game_id, &Address::new_from_array(house_key));
-
-    // House "joins" via the join instruction — we need a signer matching the house key.
-    // Since we don't have the house keypair, let's use a different approach:
-    // Create a PlayerState manually for the House.
-    let house_ps_data = create_player_state_data(house_ps_bump, &house_key, game.game_id);
-    let rent = svm.minimum_balance_for_rent_exemption(house_ps_data.len());
-    svm.set_account(
-        house_ps,
-        solana_account::Account {
-            lamports: rent,
-            data: house_ps_data,
-            owner: program_id(),
-            executable: false,
-            rent_epoch: 0,
-        },
-    )
-    .unwrap();
-
+    // Two real players legitimately join — turn_order = [player1, player2]
     let player1 = Keypair::new();
     let player2 = Keypair::new();
-
     let (ps1, p1_ata, _) = join_game(&mut svm, &authority, &game, &player1, MIN_STAKE);
-    let (ps2, p2_ata, _) = join_game(&mut svm, &authority, &game, &player2, MIN_STAKE);
+    let (ps2, _p2_ata, _) = join_game(&mut svm, &authority, &game, &player2, MIN_STAKE);
 
-    // Commit deck and start round — include house_ps in player states
+    // Commit deck and start round
     commit_deck(&mut svm, &game, &dealer);
-    start_round(&mut svm, &authority, &game, &[house_ps, ps1, ps2]);
+    start_round(&mut svm, &authority, &game, &[ps1, ps2]);
 
-    // House stays (first in turn order), then both players stay
-    // Actually stay only works for signers who match the player in the PS.
-    // The House AI would call stay. For testing, let's skip house turn
-    // and just have the human players stay.
-    // Actually, the stay instruction checks current_turn_index matches the player.
-    // The House is at turn 0. We need to process the House's turn too.
-    // For now, let's simplify: have authority call stay for the house by
-    // manipulating state to advance past the house turn.
-
-    // Advance past house turn: set house PS to inactive (STAYED)
-    {
-        let mut ps_data = svm.get_account(&house_ps).unwrap().data.clone();
-        ps_data[73] = 0; // is_active = false
-        ps_data[74] = 2; // inactive_reason = STAYED
-        let rent = svm.minimum_balance_for_rent_exemption(ps_data.len());
-        svm.set_account(
-            house_ps,
-            solana_account::Account {
-                lamports: rent,
-                data: ps_data,
-                owner: program_id(),
-                executable: false,
-                rent_epoch: 0,
-            },
-        )
-        .unwrap();
-        // Advance turn index
-        let mut gs_data = svm.get_account(&game.game_pda).unwrap().data.clone();
-        gs_data[331] = 1; // current_turn_index = 1 (offset CURRENT_TURN_INDEX)
-        let gs_rent = svm.minimum_balance_for_rent_exemption(gs_data.len());
-        svm.set_account(
-            game.game_pda,
-            solana_account::Account {
-                lamports: gs_rent,
-                data: gs_data,
-                owner: program_id(),
-                executable: false,
-                rent_epoch: 0,
-            },
-        )
-        .unwrap();
-    }
-
+    // Both players stay in turn order — current_turn_index advances naturally
     for (player, ps) in [(&player1, &ps1), (&player2, &ps2)] {
         let ix = Instruction {
             program_id: program_id(),
@@ -494,7 +409,6 @@ fn test_full_round_with_prize_distribution() {
     assert_eq!(vault_before, MIN_STAKE * 2, "Vault should have both stakes");
 
     // End round — winner gets pot minus rake
-    // Must include all player_count player_states (house_ps, ps1, ps2)
     let ix = Instruction {
         program_id: program_id(),
         accounts: vec![
@@ -504,7 +418,6 @@ fn test_full_round_with_prize_distribution() {
             AccountMeta::new(p1_ata, false), // winner (first player with equal score)
             AccountMeta::new(game.treasury_ata, false),
             AccountMeta::new_readonly(TOKEN_PROGRAM, false),
-            AccountMeta::new_readonly(house_ps, false),
             AccountMeta::new_readonly(ps1, false),
             AccountMeta::new_readonly(ps2, false),
         ],
@@ -544,66 +457,13 @@ fn test_vault_empty_after_payout() {
 
     let game = init_game_with_tokens(&mut svm, &authority, 102, &dealer.pubkey());
 
-    // Set up house PlayerState
-    let gs_data = read_data(&svm, &game.game_pda);
-    let house_key: [u8; 32] = gs_data[42..74].try_into().unwrap();
-    let (house_ps, house_ps_bump) =
-        derive_player_pda(game.game_id, &Address::new_from_array(house_key));
-    let house_ps_data = create_player_state_data(house_ps_bump, &house_key, game.game_id);
-    let rent = svm.minimum_balance_for_rent_exemption(house_ps_data.len());
-    svm.set_account(
-        house_ps,
-        solana_account::Account {
-            lamports: rent,
-            data: house_ps_data,
-            owner: program_id(),
-            executable: false,
-            rent_epoch: 0,
-        },
-    )
-    .unwrap();
-
     let player1 = Keypair::new();
     let player2 = Keypair::new();
-
     let (ps1, p1_ata, _) = join_game(&mut svm, &authority, &game, &player1, MIN_STAKE);
     let (ps2, _, _) = join_game(&mut svm, &authority, &game, &player2, MIN_STAKE);
 
     commit_deck(&mut svm, &game, &dealer);
-    start_round(&mut svm, &authority, &game, &[house_ps, ps1, ps2]);
-
-    // Advance past house turn
-    {
-        let mut ps_data = svm.get_account(&house_ps).unwrap().data.clone();
-        ps_data[73] = 0; // is_active = false
-        ps_data[74] = 2; // inactive_reason = STAYED
-        let rent = svm.minimum_balance_for_rent_exemption(ps_data.len());
-        svm.set_account(
-            house_ps,
-            solana_account::Account {
-                lamports: rent,
-                data: ps_data,
-                owner: program_id(),
-                executable: false,
-                rent_epoch: 0,
-            },
-        )
-        .unwrap();
-        let mut gs_data = svm.get_account(&game.game_pda).unwrap().data.clone();
-        gs_data[331] = 1;
-        let gs_rent = svm.minimum_balance_for_rent_exemption(gs_data.len());
-        svm.set_account(
-            game.game_pda,
-            solana_account::Account {
-                lamports: gs_rent,
-                data: gs_data,
-                owner: program_id(),
-                executable: false,
-                rent_epoch: 0,
-            },
-        )
-        .unwrap();
-    }
+    start_round(&mut svm, &authority, &game, &[ps1, ps2]);
 
     for (player, ps) in [(&player1, &ps1), (&player2, &ps2)] {
         let ix = Instruction {
@@ -629,7 +489,6 @@ fn test_vault_empty_after_payout() {
             AccountMeta::new(p1_ata, false),
             AccountMeta::new(game.treasury_ata, false),
             AccountMeta::new_readonly(TOKEN_PROGRAM, false),
-            AccountMeta::new_readonly(house_ps, false),
             AccountMeta::new_readonly(ps1, false),
             AccountMeta::new_readonly(ps2, false),
         ],
@@ -646,80 +505,44 @@ fn test_vault_empty_after_payout() {
 const SECOND_CHANCE_COST: u64 = 50_000_000_000;
 const SCRY_COST: u64 = 25_000_000_000;
 
-/// Helper: set up a game with an active round and one player in a given state.
-/// Returns (game, player_keypair, player_state_pda, player_ata, house_ps).
+/// Helper: set up a game with an active round and a player in a given state.
+///
+/// Two ephemeral players both legitimately join via `join_round` (no state
+/// injection for the House — initialize no longer auto-adds it). After
+/// `start_round`, current_turn_index = 0 (player A's turn).
+///
+/// If `player_a_is_bust` is true, player A's state is injected into BUST.
+/// LiteSVM tests still need this shortcut because making a real bust would
+/// require generating a real Groth16 proof and Merkle proofs, which is the
+/// dealer's job and out of scope for these unit-level tests.
+///
+/// Returns (game, player_a_keypair, ps_a_pda, p_a_ata, ps_b_pda).
 fn setup_round_with_player(
     svm: &mut LiteSVM,
     authority: &Keypair,
     game_id: u64,
-    player_is_bust: bool,
+    player_a_is_bust: bool,
 ) -> (TestGame, Keypair, Address, Address, Address) {
     let dealer = Keypair::new();
     svm.airdrop(&dealer.pubkey(), 5_000_000_000).unwrap();
 
     let game = init_game_with_tokens(svm, authority, game_id, &dealer.pubkey());
-    let player = Keypair::new();
 
-    // Create house PS
-    let gs_data = read_data(svm, &game.game_pda);
-    let house_key: [u8; 32] = gs_data[42..74].try_into().unwrap();
-    let (house_ps, house_ps_bump) =
-        derive_player_pda(game.game_id, &Address::new_from_array(house_key));
-    let house_ps_data = create_player_state_data(house_ps_bump, &house_key, game.game_id);
-    let rent = svm.minimum_balance_for_rent_exemption(house_ps_data.len());
-    svm.set_account(
-        house_ps,
-        solana_account::Account {
-            lamports: rent,
-            data: house_ps_data,
-            owner: program_id(),
-            executable: false,
-            rent_epoch: 0,
-        },
-    )
-    .unwrap();
+    // Two real players both join via the legitimate path
+    let player_a = Keypair::new();
+    let player_b = Keypair::new();
+    let (ps_a, p_a_ata, _) = join_game(svm, authority, &game, &player_a, MIN_STAKE);
+    let (ps_b, _p_b_ata, _) = join_game(svm, authority, &game, &player_b, MIN_STAKE);
 
-    let (ps, p_ata, _) = join_game(svm, authority, &game, &player, MIN_STAKE);
-
-    // Commit deck and start round
+    // Commit deck and start round — current_turn_index will be 0 (player A)
     commit_deck(svm, &game, &dealer);
-    start_round(svm, authority, &game, &[house_ps, ps]);
+    start_round(svm, authority, &game, &[ps_a, ps_b]);
 
-    // Advance past house turn
-    {
-        let mut ps_data = svm.get_account(&house_ps).unwrap().data.clone();
-        ps_data[73] = 0; // is_active = false
-        ps_data[74] = 2; // inactive_reason = STAYED
-        let rent = svm.minimum_balance_for_rent_exemption(ps_data.len());
-        svm.set_account(
-            house_ps,
-            solana_account::Account {
-                lamports: rent,
-                data: ps_data,
-                owner: program_id(),
-                executable: false,
-                rent_epoch: 0,
-            },
-        )
-        .unwrap();
-        let mut gs_data = svm.get_account(&game.game_pda).unwrap().data.clone();
-        gs_data[331] = 1; // current_turn_index = 1 (player's turn)
-        svm.set_account(
-            game.game_pda,
-            solana_account::Account {
-                lamports: svm.minimum_balance_for_rent_exemption(gs_data.len()),
-                data: gs_data,
-                owner: program_id(),
-                executable: false,
-                rent_epoch: 0,
-            },
-        )
-        .unwrap();
-    }
-
-    if player_is_bust {
-        // Simulate bust: set player state to BUST with a bust card
-        let mut ps_data = svm.get_account(&ps).unwrap().data.clone();
+    if player_a_is_bust {
+        // Simulate bust: inject player A's state. burn_second_chance only
+        // checks `inactive_reason == BUST`, not turn order, so we can do
+        // this without touching current_turn_index.
+        let mut ps_data = svm.get_account(&ps_a).unwrap().data.clone();
         ps_data[42] = 1; // hand_size = 1
         ps_data[43] = 13; // card value = King (13)
         ps_data[44] = 0; // card_type = ALPHA
@@ -729,7 +552,7 @@ fn setup_round_with_player(
         ps_data[75] = 13; // bust_card_value = 13
         let rent = svm.minimum_balance_for_rent_exemption(ps_data.len());
         svm.set_account(
-            ps,
+            ps_a,
             solana_account::Account {
                 lamports: rent,
                 data: ps_data,
@@ -741,14 +564,13 @@ fn setup_round_with_player(
         .unwrap();
     }
 
-    (game, player, ps, p_ata, house_ps)
+    (game, player_a, ps_a, p_a_ata, ps_b)
 }
 
 #[test]
 fn test_burn_second_chance_recovers_from_bust() {
     let (mut svm, authority) = setup();
-    let (game, player, ps, p_ata, _house_ps) =
-        setup_round_with_player(&mut svm, &authority, 200, true);
+    let (game, player, ps, p_ata, _ps_b) = setup_round_with_player(&mut svm, &authority, 200, true);
 
     let balance_before = token_balance(&svm, &p_ata);
 
@@ -789,7 +611,7 @@ fn test_burn_second_chance_recovers_from_bust() {
 #[test]
 fn test_burn_second_chance_rejects_non_busted() {
     let (mut svm, authority) = setup();
-    let (game, player, ps, p_ata, _house_ps) =
+    let (game, player, ps, p_ata, _ps_b) =
         setup_round_with_player(&mut svm, &authority, 201, false);
 
     let ix = Instruction {
@@ -813,8 +635,7 @@ fn test_burn_second_chance_rejects_non_busted() {
 #[test]
 fn test_burn_second_chance_rejects_double_use() {
     let (mut svm, authority) = setup();
-    let (game, player, ps, p_ata, _house_ps) =
-        setup_round_with_player(&mut svm, &authority, 202, true);
+    let (game, player, ps, p_ata, _ps_b) = setup_round_with_player(&mut svm, &authority, 202, true);
 
     // First use succeeds
     let ix = Instruction {
@@ -861,7 +682,7 @@ fn test_burn_second_chance_rejects_double_use() {
 #[test]
 fn test_burn_scry_burns_tokens() {
     let (mut svm, authority) = setup();
-    let (game, player, ps, p_ata, _house_ps) =
+    let (game, player, ps, p_ata, _ps_b) =
         setup_round_with_player(&mut svm, &authority, 210, false);
 
     let balance_before = token_balance(&svm, &p_ata);
@@ -897,7 +718,7 @@ fn test_burn_scry_burns_tokens() {
 #[test]
 fn test_burn_scry_rejects_double_use() {
     let (mut svm, authority) = setup();
-    let (game, player, ps, p_ata, _house_ps) =
+    let (game, player, ps, p_ata, _ps_b) =
         setup_round_with_player(&mut svm, &authority, 211, false);
 
     let ix = Instruction {
@@ -924,8 +745,7 @@ fn test_burn_scry_rejects_double_use() {
 #[test]
 fn test_token_supply_decreases_after_burns() {
     let (mut svm, authority) = setup();
-    let (game, player, ps, p_ata, _house_ps) =
-        setup_round_with_player(&mut svm, &authority, 220, true);
+    let (game, player, ps, p_ata, _ps_b) = setup_round_with_player(&mut svm, &authority, 220, true);
 
     // Read supply before
     let mint_data = svm.get_account(&game.mint).unwrap();
@@ -1027,30 +847,11 @@ fn test_full_game_lifecycle_with_all_mechanics() {
 
     let game = init_game_with_tokens(&mut svm, &authority, 301, &dealer.pubkey());
 
-    // Set up house PS
-    let gs_data = read_data(&svm, &game.game_pda);
-    let house_key: [u8; 32] = gs_data[42..74].try_into().unwrap();
-    let (house_ps, house_ps_bump) =
-        derive_player_pda(game.game_id, &Address::new_from_array(house_key));
-    let house_ps_data = create_player_state_data(house_ps_bump, &house_key, game.game_id);
-    let rent = svm.minimum_balance_for_rent_exemption(house_ps_data.len());
-    svm.set_account(
-        house_ps,
-        solana_account::Account {
-            lamports: rent,
-            data: house_ps_data,
-            owner: program_id(),
-            executable: false,
-            rent_epoch: 0,
-        },
-    )
-    .unwrap();
-
-    // Two players join with stakes
+    // Two players join with stakes — turn_order = [player1, player2]
     let player1 = Keypair::new();
     let player2 = Keypair::new();
     let (ps1, p1_ata, _) = join_game(&mut svm, &authority, &game, &player1, MIN_STAKE);
-    let (ps2, p2_ata, _) = join_game(&mut svm, &authority, &game, &player2, MIN_STAKE);
+    let (ps2, _p2_ata, _) = join_game(&mut svm, &authority, &game, &player2, MIN_STAKE);
 
     // Verify pot
     let gs_data = read_data(&svm, &game.game_pda);
@@ -1059,44 +860,12 @@ fn test_full_game_lifecycle_with_all_mechanics() {
 
     // Commit and start
     commit_deck(&mut svm, &game, &dealer);
-    start_round(&mut svm, &authority, &game, &[house_ps, ps1, ps2]);
+    start_round(&mut svm, &authority, &game, &[ps1, ps2]);
 
     // Verify round is active
     let gs_data = read_data(&svm, &game.game_pda);
     assert_eq!(gs_data[332], 1, "round_active should be true");
     assert_eq!(gs_data[333], 1, "round_number should be 1");
-
-    // Advance past house
-    {
-        let mut ps_data = svm.get_account(&house_ps).unwrap().data.clone();
-        ps_data[73] = 0;
-        ps_data[74] = 2;
-        let rent = svm.minimum_balance_for_rent_exemption(ps_data.len());
-        svm.set_account(
-            house_ps,
-            solana_account::Account {
-                lamports: rent,
-                data: ps_data,
-                owner: program_id(),
-                executable: false,
-                rent_epoch: 0,
-            },
-        )
-        .unwrap();
-        let mut gs_data = svm.get_account(&game.game_pda).unwrap().data.clone();
-        gs_data[331] = 1;
-        svm.set_account(
-            game.game_pda,
-            solana_account::Account {
-                lamports: svm.minimum_balance_for_rent_exemption(gs_data.len()),
-                data: gs_data,
-                owner: program_id(),
-                executable: false,
-                rent_epoch: 0,
-            },
-        )
-        .unwrap();
-    }
 
     // Player1 stays
     send_tx(
@@ -1143,7 +912,6 @@ fn test_full_game_lifecycle_with_all_mechanics() {
                 AccountMeta::new(p1_ata, false),
                 AccountMeta::new(game.treasury_ata, false),
                 AccountMeta::new_readonly(TOKEN_PROGRAM, false),
-                AccountMeta::new_readonly(house_ps, false),
                 AccountMeta::new_readonly(ps1, false),
                 AccountMeta::new_readonly(ps2, false),
             ],

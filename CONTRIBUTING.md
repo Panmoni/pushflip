@@ -5,6 +5,8 @@ self-contained piece of the project. For project goals and the full task
 plan, see [docs/EXECUTION_PLAN.md](docs/EXECUTION_PLAN.md). For the
 user-facing pitch and known limitations, see [README.md](README.md).
 
+Maintainer contact: [@georgedonnelly on Telegram](https://t.me/georgedonnelly).
+
 ## Project status
 
 - **On-chain program** ([program/](program/)) — stable. 16 instructions
@@ -248,7 +250,8 @@ medium, because the two implementations would coexist.
 
 ## Claiming a piece of work
 
-Before starting, open an issue (or DM the maintainer) with:
+Before starting, open an issue (or DM the maintainer at
+[@georgedonnelly on Telegram](https://t.me/georgedonnelly)) with:
 
 1. Which option you are picking.
 2. Your rough approach and any open design questions.

@@ -17,6 +17,7 @@ gambling program using Pinocchio (the zero-dependency Solana framework by Anza).
 8. [Pinocchio vs Anchor Comparison](#8-pinocchio-vs-anchor-comparison)
 9. [Project Templates and Starters](#9-project-templates-and-starters)
 10. [Recommended Toolchain for PushFlip](#10-recommended-toolchain-for-pushflip)
+11. [Poseidon hashing via `sol_poseidon` syscall](#11-poseidon-hashing-via-sol_poseidon-syscall)
 
 ---
 
@@ -648,6 +649,84 @@ shank = "0.4"
 [dev-dependencies]
 litesvm = "0.8"
 ```
+
+---
+
+## 11. Poseidon hashing via `sol_poseidon` syscall
+
+If your Pinocchio program needs Poseidon (e.g. ZK-SNARK Merkle proofs over
+BN254), **do not pull in `light_poseidon` directly.** The crate's BN254-X5
+parameter constructor (`light_poseidon::parameters::bn254_x5::get_poseidon_parameters`)
+allocates roughly 200 BN254 field elements as stack locals, producing an
+~11 KB stack frame that exceeds Solana's 4 KB BPF stack limit.
+
+The symptom is sneaky:
+
+- `cargo build-sbf` prints `Error: Function _ZN14light_poseidon... Stack offset of 10960 exceeded max offset of 4096 by 6864 bytes` but **still produces a binary** (the linker keeps going).
+- LiteSVM tests pass — LiteSVM does not enforce the 4 KB stack frame check the way the real validator does.
+- The first call into `light_poseidon::Poseidon::new_circom` on a real validator aborts with `Access violation in stack frame 5 at address 0x200005010 of size 8` after consuming ~200K CU.
+
+### Use the native syscall instead
+
+The Solana validator exposes Poseidon via the `sol_poseidon` syscall, with
+ABI:
+
+```rust
+extern "C" {
+    fn sol_poseidon(
+        parameters: u64,      // 0 = BN254-X5
+        endianness: u64,      // 0 = big-endian
+        vals: *const u8,      // pointer to a contiguous array of slice fat pointers
+        val_len: u64,         // number of inputs (≤ 12)
+        hash_result: *mut u8, // output buffer (32 bytes)
+    ) -> u64;                 // 0 on success
+}
+```
+
+Pinocchio 0.10.2 doesn't re-export this syscall — declare it directly in
+your crate. The signature is in
+[`solana-define-syscall::definitions`](https://docs.rs/solana-define-syscall/)
+and is stable across Solana versions.
+
+### Byte compatibility with `light_poseidon` (and circomlibjs)
+
+`solana-poseidon` v3.1's non-Solana fallback path literally delegates to:
+
+```rust
+light_poseidon::Poseidon::<ark_bn254::Fr>::new_circom(N).hash_bytes_be(_)
+```
+
+so the syscall and `light_poseidon` produce identical bytes for the BN254-X5
+circom variant. circomlibjs uses the same parameter set, so all three
+implementations agree. **You do not need to recompute on-chain Merkle roots
+or canonical hashes when migrating.**
+
+### Reference implementation
+
+PushFlip's wrapper is at
+[`program/src/zk/poseidon_native.rs`](../program/src/zk/poseidon_native.rs).
+It exposes `hash_card_leaf` and `hash_pair` helpers, dispatches to the
+syscall on the SBF target, and falls back to `light_poseidon` on the host so
+unit tests can still cross-validate. The corresponding `Cargo.toml` pattern
+keeps `light_poseidon` out of the deployed binary entirely:
+
+```toml
+[dependencies]
+# (no light-poseidon here)
+
+[target.'cfg(not(target_os = "solana"))'.dependencies]
+light-poseidon = "0.4"
+ark-bn254 = "0.5"
+```
+
+### Performance impact
+
+Migrating PushFlip's `hit` instruction from in-program `light_poseidon` to
+`sol_poseidon` dropped its compute consumption from **211 142 CU**
+(mid-flight crash) to **7 771 CU** (clean success) — a ~27× reduction. The
+savings come from offloading parameter construction to validator-internal
+optimized code instead of charging the program for ~200 BN254 field-element
+allocations on every call.
 
 ---
 

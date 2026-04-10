@@ -1,4 +1,72 @@
-# light_poseidon Stack Warning — Known Issue
+# light_poseidon Stack Warning — RESOLVED via `sol_poseidon` syscall
+
+## :white_check_mark: Status (2026-04-09): RESOLVED in Task 2.10
+
+The 11 KB stack frame issue with `light_poseidon::parameters::bn254_x5::get_poseidon_parameters`
+has been eliminated by replacing all on-chain `light_poseidon` calls with a thin
+wrapper around Solana's native `sol_poseidon` syscall. See
+[program/src/zk/poseidon_native.rs](../program/src/zk/poseidon_native.rs).
+
+### Verification (2026-04-09)
+
+A second devnet smoke test against the upgraded program
+(`HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px`, deploy signature
+`498y12uvHEQuCd1G1DSkE4tjgAyEwyyYakbGXBsyfpeziShLxfDeaWnotnxaXo3Ee711s9z6iQzg11UQnMU2Zzej`)
+ran the full pipeline cleanly:
+
+| Instruction | Before fix | After fix |
+|---|---|---|
+| `initialize` | ✅ | ✅ |
+| `join_round` × 2 | ✅ | ✅ |
+| `commit_deck` (Groth16) | ✅ | ✅ |
+| `start_round` | ✅ | ✅ |
+| **`hit` (Poseidon Merkle)** | ❌ Access violation in stack frame 5 at 211 142 CU | ✅ Success at **7 771 CU** |
+
+That's a **~27× compute reduction** for the `hit` instruction, in addition to
+eliminating the stack overflow. The native syscall offloads parameter
+construction to validator-internal optimized code that costs a flat fee per
+input rather than charging the program for ~200 BN254 field-element
+allocations.
+
+Successful `hit` transaction:
+[`sgnnwAM2NBMRyMFii6uhkk1bdwqBHm25QPndhZm27rcnVPaZHNSdturtuHHn6bzoc95PxD8zqJfrFGWBNbZyrg7`](https://explorer.solana.com/tx/sgnnwAM2NBMRyMFii6uhkk1bdwqBHm25QPndhZm27rcnVPaZHNSdturtuHHn6bzoc95PxD8zqJfrFGWBNbZyrg7?cluster=devnet)
+
+### What changed
+
+1. **New module** `program/src/zk/poseidon_native.rs` declares the
+   `sol_poseidon` syscall via `extern "C"` (the signature is taken verbatim
+   from `solana-define-syscall::definitions`) and exposes
+   `hash_card_leaf` / `hash_pair` helpers. On the SBF target the helpers
+   call the syscall directly; on the host target (`cargo test`) they fall
+   back to `light_poseidon` so the cross-validation tests still work.
+2. **`merkle.rs`** re-exports the helpers and no longer touches
+   `light_poseidon` or `ark_bn254` at all.
+3. **`program/Cargo.toml`** moves `light-poseidon` and `ark-bn254` to
+   `[target.'cfg(not(target_os = "solana"))'.dependencies]`. The deployed
+   binary now contains zero `light_poseidon` code, and `cargo build-sbf`
+   no longer prints the "Stack offset of 10960 exceeded max offset of 4096"
+   diagnostic.
+4. The host `test_canonical_deck_hash_matches_js` cross-validation test
+   continues to pass — confirming the wrapper produces byte-identical output
+   to the previous implementation. The on-chain `hit` succeeded because the
+   syscall produced the same Merkle root the dealer committed to in
+   `commit_deck`. **`CANONICAL_DECK_HASH` did not change.**
+
+### Why this works
+
+`solana-poseidon-3.1.11/src/lib.rs:262-271` shows that `solana_poseidon::hashv()`'s
+non-Solana fallback path literally delegates to:
+
+```rust
+light_poseidon::Poseidon::<ark_bn254::Fr>::new_circom(vals.len()).hash_bytes_be(vals)
+```
+
+— exactly the call our previous `merkle.rs` made. The on-Solana path goes
+through `sol_poseidon` (the validator native implementation). Both paths are
+guaranteed to produce identical bytes for the BN254 X5 circom variant; the
+solana-poseidon crate is the single source of truth for this guarantee.
+
+---
 
 ## The warning
 
@@ -114,9 +182,10 @@ Write our own Poseidon implementation that's stack-friendly.
 
 | | |
 |---|---|
-| **What it is** | A linker diagnostic, not an actual error |
-| **Cause** | `light_poseidon` constructs ~200 BN254 field elements as stack locals in one function |
-| **Why it's labeled "Error"** | Solana's SBF linker prefixes diagnostic output with "Error:" but keeps building |
-| **Has it broken anything yet?** | No — 94 tests pass, devnet upload succeeded |
-| **Has it been verified on real devnet?** | Not yet — see Phase 3 Task 3.0 for the planned smoke test |
-| **If it does fire** | Best fix is writing a `pinocchio-poseidon` wrapper around the native `sol_poseidon` syscall |
+| **What it is** | The build-time linker diagnostic IS a real runtime issue |
+| **Cause** | `light_poseidon::parameters::bn254_x5::get_poseidon_parameters` constructs ~200 BN254 field elements as stack locals, exceeding Solana's 4 KB BPF stack limit |
+| **Confirmed on real devnet?** | YES (2026-04-09) — `hit` instruction crashes with `Access violation in stack frame 5` after consuming 211K CU |
+| **Why LiteSVM tests pass** | LiteSVM doesn't enforce the 4 KB stack limit the same way the real validator does |
+| **What works** | initialize, join_round, commit_deck (Groth16!), start_round all work on real validator |
+| **What's broken** | Anything that calls `light_poseidon::Poseidon::new_circom` — currently `hit` (verify_merkle_proof) and the canonical-hash recompute fallback |
+| **Fix** | Write `pinocchio-poseidon` wrapper around `sol_poseidon` syscall (Option 2 below) |

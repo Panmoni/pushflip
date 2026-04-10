@@ -385,3 +385,175 @@ export function getBurnScryInstruction(
     { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY },
   ]);
 }
+
+// --- 11: InitVault ---
+
+export interface InitVaultAccounts {
+  /** Funds rent for the vault token account. Usually the authority. */
+  payer: Address;
+  /** Existing GameSession PDA. Read-only — supplies vault, vault_bump, token_mint. */
+  gameSession: Address;
+  /** Vault PDA — will be created and initialized as an SPL token account. */
+  vault: Address;
+  /** Token mint, must match game_session.token_mint. */
+  tokenMint: Address;
+}
+
+/**
+ * Create the SPL token account at the vault PDA address. Optional —
+ * games that don't need real token transfers (vault_ready=false) can
+ * skip this. Must be called after `initialize` and before any
+ * `join_round` that should transfer real tokens.
+ *
+ * The pushflip program signs with the vault PDA seeds during the
+ * `system::create_account` CPI, so this is the only on-chain way to
+ * place a token account at the vault PDA address.
+ */
+export function getInitVaultInstruction(
+  accounts: InitVaultAccounts,
+): PushflipInstruction {
+  return buildIx(new Uint8Array([Instructions.InitVault]), [
+    { address: accounts.payer, role: AccountRole.WRITABLE_SIGNER },
+    { address: accounts.gameSession, role: AccountRole.READONLY },
+    { address: accounts.vault, role: AccountRole.WRITABLE },
+    { address: accounts.tokenMint, role: AccountRole.READONLY },
+    { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+    { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY },
+  ]);
+}
+
+// --- 12: InitBountyBoard ---
+
+export interface InitBountyBoardAccounts {
+  /** Funds rent for the bounty board PDA. Must be the game_session.authority. */
+  payer: Address;
+  /** Existing GameSession PDA. */
+  gameSession: Address;
+  /** BountyBoard PDA at ["bounty", game_session_address] — will be created. */
+  bountyBoard: Address;
+}
+
+export interface InitBountyBoardArgs {
+  /** PDA bump seed for the bounty board (client-derived). */
+  bump: number;
+}
+
+/**
+ * Create the BountyBoard PDA for a game session. Optional — games that
+ * don't use bounties can skip this. Only the game_session.authority can
+ * call it. The bounty board has fixed capacity (`MAX_BOUNTIES = 10`).
+ */
+export function getInitBountyBoardInstruction(
+  accounts: InitBountyBoardAccounts,
+  args: InitBountyBoardArgs,
+): PushflipInstruction {
+  return buildIx(new Uint8Array([Instructions.InitBountyBoard, args.bump]), [
+    { address: accounts.payer, role: AccountRole.WRITABLE_SIGNER },
+    { address: accounts.gameSession, role: AccountRole.READONLY },
+    { address: accounts.bountyBoard, role: AccountRole.WRITABLE },
+    { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+  ]);
+}
+
+// --- 13: AddBounty ---
+
+export interface AddBountyAccounts {
+  /** Game authority. */
+  authority: Address;
+  /** GameSession (read-only — used for the authority check). */
+  gameSession: Address;
+  /** BountyBoard PDA. */
+  bountyBoard: Address;
+}
+
+export interface AddBountyArgs {
+  /**
+   * 0 = SEVEN_CARD_WIN, 1 = HIGH_SCORE, 2 = SURVIVOR, 3 = COMEBACK.
+   * See `program/src/state/bounty.rs` constants.
+   */
+  bountyType: number;
+  /**
+   * Reward metadata. For HIGH_SCORE bounties this field doubles as the
+   * score threshold the player must meet to claim. For other types it's
+   * an off-chain payout amount that the on-chain claim does NOT
+   * actually transfer (claim_bounty only marks the claim).
+   */
+  rewardAmount: bigint;
+}
+
+export function getAddBountyInstruction(
+  accounts: AddBountyAccounts,
+  args: AddBountyArgs,
+): PushflipInstruction {
+  const data = concatBytes(
+    new Uint8Array([Instructions.AddBounty, args.bountyType]),
+    u64Le(args.rewardAmount),
+  );
+  return buildIx(data, [
+    { address: accounts.authority, role: AccountRole.READONLY_SIGNER },
+    { address: accounts.gameSession, role: AccountRole.READONLY },
+    { address: accounts.bountyBoard, role: AccountRole.WRITABLE },
+  ]);
+}
+
+// --- 14: ClaimBounty ---
+
+export interface ClaimBountyAccounts {
+  /** Player claiming the bounty. */
+  player: Address;
+  /** GameSession (read-only — verifies player is in turn_order). */
+  gameSession: Address;
+  /** Player's PlayerState (read-only — verifies win condition). */
+  playerState: Address;
+  /** BountyBoard PDA. */
+  bountyBoard: Address;
+}
+
+export interface ClaimBountyArgs {
+  /** Index of the bounty in the board (0..bountyCount). */
+  bountyIndex: number;
+}
+
+/**
+ * Player records their claim of a bounty. The on-chain side verifies
+ * the win condition and marks the claim. **No tokens are transferred
+ * on chain** — the authority is responsible for paying out the
+ * `rewardAmount` (off-chain or via a separate token transfer
+ * instruction).
+ */
+export function getClaimBountyInstruction(
+  accounts: ClaimBountyAccounts,
+  args: ClaimBountyArgs,
+): PushflipInstruction {
+  return buildIx(
+    new Uint8Array([Instructions.ClaimBounty, args.bountyIndex]),
+    [
+      { address: accounts.player, role: AccountRole.READONLY_SIGNER },
+      { address: accounts.gameSession, role: AccountRole.READONLY },
+      { address: accounts.playerState, role: AccountRole.READONLY },
+      { address: accounts.bountyBoard, role: AccountRole.WRITABLE },
+    ],
+  );
+}
+
+// --- 15: CloseBountyBoard ---
+
+export interface CloseBountyBoardAccounts {
+  bountyBoard: Address;
+  /** Game authority. */
+  authority: Address;
+  gameSession: Address;
+  /** Receives the rent lamports. */
+  recipient: Address;
+}
+
+export function getCloseBountyBoardInstruction(
+  accounts: CloseBountyBoardAccounts,
+): PushflipInstruction {
+  return buildIx(new Uint8Array([Instructions.CloseBountyBoard]), [
+    { address: accounts.bountyBoard, role: AccountRole.WRITABLE },
+    { address: accounts.authority, role: AccountRole.READONLY_SIGNER },
+    { address: accounts.gameSession, role: AccountRole.READONLY },
+    { address: accounts.recipient, role: AccountRole.WRITABLE },
+  ]);
+}

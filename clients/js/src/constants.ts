@@ -29,6 +29,11 @@ export const enum Instructions {
   LeaveGame = 8,
   BurnSecondChance = 9,
   BurnScry = 10,
+  InitVault = 11,
+  InitBountyBoard = 12,
+  AddBounty = 13,
+  ClaimBounty = 14,
+  CloseBountyBoard = 15,
 }
 
 // --- Account discriminators ---

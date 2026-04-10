@@ -15,7 +15,7 @@ PushFlip is an on-chain card game with hit/stay mechanics, a $FLIP token economy
 - **$FLIP Token** -- SPL token with stake-to-play and burn-for-power mechanics
 - **@solana/kit** -- modern Solana TypeScript SDK
 - **React + Vite** -- frontend
-- **Shank + Codama** -- IDL generation and TypeScript client
+- **Hand-written TypeScript client** -- direct mirror of Pinocchio's manual byte layouts (no Shank / Codama indirection)
 
 ## Features
 
@@ -24,6 +24,73 @@ PushFlip is an on-chain card game with hit/stay mechanics, a $FLIP token economy
 - ZK-verified deck commitment -- cards are revealed progressively with proof
 - Token staking and burning integrated into gameplay
 - Flip Advisor -- real-time probability assistant
+
+## Performance and Costs
+
+All numbers below are measured empirically against the live devnet program (`HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px`) via [`scripts/smoke-test.ts`](scripts/smoke-test.ts), not estimates.
+
+### Per-transaction fees
+
+Solana charges a flat **5,000 lamports per signature** (≈ 0.000005 SOL ≈ $0.001 at SOL = $185), independent of how many compute units the transaction uses. Compute consumption per instruction:
+
+| Instruction | Compute units | Tx fee |
+|---|---:|---:|
+| `initialize` | ~5 K | 0.000005 SOL |
+| `join_round` | ~15 K | 0.000005 SOL |
+| `commit_deck` (Groth16 verification) | **84,834** | 0.000005 SOL |
+| `start_round` | ~10 K | 0.000005 SOL |
+| **`hit` (Poseidon Merkle verification)** | **7,771** | 0.000005 SOL |
+| `stay` / `end_round` / `close_game` | ~5–15 K | 0.000005 SOL |
+
+`hit` and `commit_deck` are the two heavy ones. Both currently fit comfortably under their compute-unit budgets and were validated end-to-end on devnet.
+
+### Per-account rent
+
+Account rent on Solana is a refundable deposit, not a recurring cost. Closing the account returns the rent to the original payer.
+
+| Account | Size | Rent | Paid by |
+|---|---:|---:|---|
+| `GameSession` PDA | 512 B | 0.00445 SOL | authority, once per game |
+| `PlayerState` PDA | 256 B | 0.00267 SOL | each player, once per game |
+| Vault SPL token account | 165 B | 0.00204 SOL | authority, once per game |
+
+### What a full game actually costs
+
+A 4-player game with ~7 turns each:
+
+| | SOL | At $185 / SOL |
+|---|---:|---:|
+| Non-recoverable tx fees (~37 signatures across the round) | ~0.000185 | **~3.4 ¢** |
+| In-flight rent (refunded on `close_game` / `leave_game`) | ~0.018 | $0 net |
+
+**A single turn costs you one tenth of one cent.** The 19.45 SOL devnet wallet that ran the smoke tests is good for ~100,000 full games before exhausting tx fees.
+
+### Latency: how long does a turn take?
+
+| Phase | Wall clock |
+|---|---|
+| Network round-trip per `hit` / `stay` (commitment = `confirmed`) | **~0.6–1.0 s** |
+| Solana finalization (only relevant if you require finality) | ~12–13 s |
+| Dealer's off-chain Groth16 proof generation (snarkjs WASM, single-threaded, **once per round**) | ~18–30 s |
+| On-chain Groth16 verification of that proof | ~1 s |
+
+A turn feels instant. The only noticeable wait is the proof generation that runs *once* at the start of each round — the frontend can mask it behind a "shuffling deck…" animation. After that, every player action is a sub-second click-and-confirm.
+
+A full game's wall clock works out to roughly:
+
+```
+20 s  (dealer generates Groth16 proof)
+ 1 s  (commit_deck verifies on chain)
+ 1 s  (start_round)
+~30 s  (4 players × ~7 turns × ~1 s each, plus think time)
+ 1 s  (end_round + close_game)
+─────
+~50 s end-to-end, completely independent of player count after the proof step
+```
+
+### Why these numbers are this good
+
+The on-chain hot path uses Solana's native `sol_poseidon` syscall (~7 K CU per `hit`) instead of an in-program `light_poseidon` implementation (~211 K CU and a stack overflow). See [docs/PINOCCHIO_RESOURCE_GUIDE.md §11](docs/PINOCCHIO_RESOURCE_GUIDE.md#11-poseidon-hashing-via-sol_poseidon-syscall) for the wrapper that made this possible — it's the closest thing this repo has to a portfolio-positive open-source contribution.
 
 ## How the ZK System Works
 
@@ -138,7 +205,9 @@ cargo build-sbf --manifest-path program/Cargo.toml --sbf-out-dir target/deploy
 
 > The `--manifest-path` flag is required because the workspace `tests/` crate pulls in dependencies that conflict with the BPF toolchain's older Cargo. Building only the `program/` crate avoids the conflict.
 >
-> A `Stack offset of 10960 exceeded max offset of 4096` warning from `light_poseidon` is expected during the build. Despite the "Error:" prefix, the build still finishes successfully and produces a valid binary. See [docs/POSEIDON_STACK_WARNING.md](docs/POSEIDON_STACK_WARNING.md) for the full explanation, why we believe it's harmless, and the planned smoke test to verify on real devnet.
+> The historical `Stack offset of 10960` linker warning from `light_poseidon` is gone as of Task 2.10 — the on-chain code now calls Solana's native `sol_poseidon` syscall and `light_poseidon` is a host-only test dependency. See [docs/POSEIDON_STACK_WARNING.md](docs/POSEIDON_STACK_WARNING.md) for the full migration story.
+>
+> Integration tests (`cargo test`) build their own copy of the program with `--features skip-zk-verify` into `target/deploy-test/pushflip.so` via [`tests/build.rs`](tests/build.rs), so they never clobber the deploy artifact at `target/deploy/pushflip.so`.
 
 Verify the binary was produced:
 

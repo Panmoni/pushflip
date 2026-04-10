@@ -1642,11 +1642,18 @@ pub const TREASURY_FEE_BPS: u16 = 200; // 2%
 
 ---
 
-### Phase 3: Frontend Development (Days 18-22)
+### Phase 3: On-Chain Hardening + Frontend (Days 18-25)
 
-**Goal:** Build interactive Vite + React frontend with @solana/kit + hand-written TypeScript client.
+**Goal:** First, prove every on-chain instruction works flawlessly on a real validator (Phase 3A). Then build the interactive Vite + React frontend (Phase 3B) on top of a verified-correct on-chain foundation.
 
-**Prerequisites:** Phase 2 complete ✅. Program deployed to devnet ✅. TypeScript client built ✅.
+**Prerequisites:** Phase 2 complete ✅. Program deployed to devnet ✅. TypeScript client built ✅. Task 2.10 sol_poseidon migration deployed ✅. Third heavy-duty review committed ✅.
+
+**Subphase ordering (decided 2026-04-09):**
+
+- **Phase 3A: On-Chain Hardening** — Tasks 3.A.1 through 3.A.6. Validates every LiteSVM-only instruction on real devnet, builds out the previously state-only bounty board, and runs a 4th heavy-duty review focused on the circom circuit. **Gates Phase 3B.**
+- **Phase 3B: Frontend** — The original "Tasks 3.1 through 3.7" Vite + React work. Begins only after Task 3.A.6 ships the on-chain green-light report.
+
+Rationale for the ordering: the frontend and AI both *consume* the on-chain interface. Discovering a LiteSVM-vs-real-validator divergence (or a missing instruction handler like the bounty board) after the frontend is built means tearing up frontend code that assumed broken or missing behavior. The cost of finding the bug now while the only client is a CLI script is a fraction of finding it after the React component tree has hardcoded assumptions about it. See Lessons #1 and #5 in this plan for the precedent.
 
 ### Phase 3 Prerequisites Status (completed 2026-04-09)
 - [x] **Devnet deployment** — Program ID `HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px`, originally deployed at slot 454396197 with ~2.6 SOL rent, BPF Upgradeable Loader, authority = local devnet wallet
@@ -1798,6 +1805,256 @@ After the fix, redeploy the program with `solana program deploy` and re-run 3.0.
 **Done when:** All three checks pass and we have logs / transaction signatures for posterity.
 
 ---
+
+---
+
+### Phase 3A: On-Chain Hardening (Days 18-21)
+
+**Goal:** Prove that **every** on-chain instruction and the **entire** token economy work flawlessly on a real Solana validator before any frontend or AI work begins. Task 3.0 only validated the `hit` code path empirically; the remaining instructions are LiteSVM-only — and LiteSVM has lied to us before (light_poseidon stack overflow, see Lessons #1 and #5). This phase closes that gap.
+
+**Prerequisites:** Phase 2 fully complete ✅, third heavy-duty review done ✅, smoke test infrastructure shipped ✅, Task 2.10 sol_poseidon migration deployed ✅.
+
+**Phase 3A is gating Phase 3B (Frontend) and Phase 4 (AI Agent).** Rationale: the frontend and AI both *consume* the on-chain interface. Discovering a LiteSVM-vs-real-validator divergence after the frontend is built means tearing up frontend code that assumed broken behaviour. Better to find and fix it now while the only client is a CLI script.
+
+**Done when:**
+
+1. Every instruction in `program/src/instructions/` has at least one successful transaction signature against devnet program `HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px`.
+2. The full token economy (mint creation, stake transfer, prize distribution, burn-for-power) has been exercised end-to-end against a real SPL Token mint on devnet.
+3. The bounty system has working on-chain instruction handlers (currently state-only — see Task 2.7 status).
+4. A focused 4th heavy-duty review of the Circom circuit and ZK pipeline has been completed and any findings resolved.
+5. A consolidated "on-chain green-light" report exists in this plan, listing every instruction with its devnet tx signature.
+
+---
+
+#### Task 3.A.1: Devnet Smoke Test Extension — Uncovered Instructions ⚠️ blocking
+
+**Goal:** Extend `scripts/smoke-test.ts` (or create sibling scripts in `scripts/`) so that the LiteSVM-only instructions are exercised against the real devnet validator at least once.
+
+**Currently uncovered on devnet** (LiteSVM-only):
+- `stay`
+- `end_round` (the no-token-transfer path; the token-transfer path is in Task 3.A.2)
+- `close_game` (rent recovery to authority)
+- `leave_game` (mid-round leave with PlayerState close)
+
+**Why this matters:** These are the four most likely places for a LiteSVM-vs-real-validator divergence. `close_game` in particular touches the BPF Loader / system program directly via account closure semantics that LiteSVM may simulate differently. Lesson #1 from EXECUTION_PLAN.md applies: a passing LiteSVM test is not the same as a passing devnet test.
+
+##### 3.A.1.1: Add `stay` and `end_round` coverage to smoke-test.ts (~30 min)
+**Do:** After Step 6 (`hit`) in `scripts/smoke-test.ts`, add:
+- Step 6b: Player A calls `stay()` to lock in their hand
+- Step 6c: Player B calls `hit()` (they're now the active player)
+- Step 6d: Player B calls `stay()`
+- Step 6e: Authority calls `end_round()`
+- Verify: round_active is now false, both PlayerStates are settled, no token movement (vault_ready=false)
+
+**Done when:** Each instruction returns a confirmed tx signature; final `GameSession` state shows `round_active = false` and the round is cleanly ended.
+
+##### 3.A.1.2: Add `leave_game` coverage (~15 min)
+**Do:** New script `scripts/smoke-test-leave.ts` (or a fresh game flow inside the main script) that initializes a game, has player A join, then immediately has player A call `leave_game()` *before any round starts*. Verify: PlayerState account is closed, rent returns to player A's wallet, GameSession `player_count` decrements to 0.
+
+**Done when:** PlayerState PDA is gone (`getAccountInfo` returns null) and player A's lamport balance increased by the rent amount.
+
+##### 3.A.1.3: Add `close_game` coverage (~15 min)
+**Do:** After Task 3.A.1.1 ends the round, have authority call `close_game()` on the smoke test's GameSession. Verify: GameSession PDA is closed, rent returns to authority.
+
+**Done when:** GameSession PDA is gone and authority's lamport balance increased by ~0.00445 SOL (the GameSession rent).
+
+##### 3.A.1.4: Cross-validate compute consumption (~10 min)
+**Do:** For every instruction exercised in 3.A.1.1–3.A.1.3, run `solana confirm -v <signature>` and record the CU consumption in this task's "Done when" report block. Confirm that no instruction is anywhere near the 200 K default budget.
+
+**Done when:** A table of `(instruction, CU consumed, tx signature)` is appended to this task.
+
+---
+
+#### Task 3.A.2: Real $FLIP Token Economy Validation ⚠️ blocking
+
+**Goal:** Create a real SPL Token mint on devnet, fund player token accounts, and exercise the entire `vault_ready=true` code path (stake transfer on join, pot math, prize distribution on end_round). This is the single highest-leverage remaining test on devnet — the entire token economy has only ever been simulated by LiteSVM, and SPL Token CPI behavior is exactly the kind of place LiteSVM has historically diverged.
+
+**Why this matters:** The `vault_ready` branch is where ~half the program's economic logic lives. Every stake transfer, pot increment, treasury fee deduction, and winner payout flows through it. If anything in the SPL Token CPI path differs between LiteSVM and the real validator, the token economy is silently broken on mainnet. This is the highest-priority remaining empirical work.
+
+##### 3.A.2.1: Create $FLIP test mint on devnet (~15 min)
+**Do:** Use `spl-token create-token` to mint a fresh test $FLIP on devnet. Decimals should match the program's expectation (`FLIP_DECIMALS` constant, 9). Mint authority = local CLI keypair. Save the mint address to a constants file or env var that the smoke test can read.
+
+**Done when:** `spl-token display <mint>` shows the new mint with 9 decimals and the local wallet as mint authority.
+
+##### 3.A.2.2: New smoke test variant `scripts/smoke-test-tokens.ts` (~45 min)
+**Do:** A copy of the existing smoke test that:
+1. Loads the $FLIP mint address (from 3.A.2.1)
+2. Creates an associated token account for the authority + each player
+3. Mints test $FLIP to each player (e.g. 1000 $FLIP each)
+4. **Crucially**: creates the vault PDA as a real SPL Token account owned by the GameSession (this triggers `vault_ready=true` in `join_round`)
+5. Runs the full game flow with real stake transfers
+6. Verifies after `end_round`:
+   - Vault is empty (winner got the pot)
+   - Treasury account received its `treasury_fee_bps` cut
+   - Winner's token account balance = old balance + winnings
+   - Loser's token account balance = old balance (their stake is gone)
+7. Closes the game and verifies rent recovery
+
+**Done when:** Token balances round-trip correctly and the script prints "TOKEN ECONOMY SMOKE TEST PASSED".
+
+##### 3.A.2.3: Verify pot math edge cases (~30 min)
+**Do:** Inside the same script (or a sibling), exercise:
+- A 2-player game where both bust (rollover path)
+- A 2-player game where one wins clean
+- A 2-player game where one stays and one busts
+- Verify treasury fee (`treasury_fee_bps`) is deducted correctly in each case
+- Verify the rollover counter increments and that the rollover-cap-sweep-to-treasury path works (10 rollover cap)
+
+**Done when:** All four scenarios produce the expected token balance changes on devnet, with tx signatures recorded.
+
+---
+
+#### Task 3.A.3: Burn Instructions on Real Devnet ⚠️ blocking
+
+**Goal:** Exercise `burn_second_chance` and `burn_scry` against the real validator, including the SPL Token burn CPI to the $FLIP mint from Task 3.A.2.
+
+##### 3.A.3.1: Burn for Second Chance flow (~30 min)
+**Do:** New script (or extension of 3.A.2.2) that:
+1. Sets up a game and gets player A into a busted state (hit with a card that would push their hand over the limit)
+2. Player A calls `burn_second_chance()` with the required token amount
+3. Verify: the burn CPI fired (player's $FLIP balance decreased by the burn amount; total $FLIP supply decreased by the same), player A's `inactive_reason` is reset, player A is back in the game
+
+**Done when:** Token supply decreased and player A is re-active, with tx signatures.
+
+##### 3.A.3.2: Burn for Scry flow (~30 min)
+**Do:** Same shape as 3.A.3.1 but for `burn_scry`. Player burns $FLIP to peek at the next card.
+
+**Done when:** Token supply decreased and the peek result is logged via the program log path (we don't return the data, we log it — verify via `solana confirm -v` on the tx).
+
+---
+
+#### Task 3.A.4: Implement Bounty Board Instructions (estimate: 1 day)
+
+**Goal:** The `BountyBoard` state struct exists in `program/src/state/bounty.rs` and was wired into Phase 2.7, but **no instruction handlers ever read or write it**. The compiler currently emits dead-code warnings for the entire struct, and the IDL has no way to expose bounty operations to the frontend. Either implement the handlers or strip the dead state — the user explicitly chose **implement**.
+
+**Why this matters:** Phase 2.7 status was "state only" — we shipped the data layout but not the behaviour. With no handlers, the bounty system is non-functional and the frontend cannot offer it as a feature. Cleaning this up now (before the frontend) means the frontend can build against a complete on-chain interface from day 1. Doing it after the frontend means rewriting frontend code.
+
+##### 3.A.4.1: Design & spec the bounty instructions (~30 min)
+**Do:** Write a short design doc (in `docs/` or as a comment in `bounty.rs`) covering:
+- `init_bounty_board(authority, game_session)` — creates the PDA
+- `add_bounty(authority, bounty_type, reward_amount, deadline?)` — appends a bounty (max 10 per board, per `MAX_BOUNTIES`)
+- `claim_bounty(player, bounty_index)` — player claims a bounty they've earned (verifies the win condition for the bounty_type)
+- `close_bounty_board(authority)` — recovers rent
+- Each instruction's account list, instruction data layout, and validation rules
+- Decision: do bounties auto-resolve on end_round or require explicit claim? (Recommend explicit claim — simpler state machine, lower CU per round.)
+
+**Done when:** A design doc exists and is checked in.
+
+##### 3.A.4.2: Implement the four instructions (~3-4 hours)
+**Do:** New instruction handlers in `program/src/instructions/bounty/`:
+- `init_bounty_board.rs`
+- `add_bounty.rs`
+- `claim_bounty.rs`
+- `close_bounty_board.rs`
+
+Wire them into `process_instruction` in `program/src/lib.rs` with new discriminator bytes (currently the dispatcher goes 0-10; bounty ops would be 11-14).
+
+**Done when:** `cargo build-sbf` compiles cleanly with no warnings about dead bounty code.
+
+##### 3.A.4.3: Integration tests for bounty handlers (~1-2 hours)
+**Do:** Add tests to `tests/src/phase2.rs` (or new `tests/src/bounty.rs`) covering:
+- Initialize bounty board
+- Add 1, 5, and 10 bounties (boundary)
+- Try to add an 11th (must fail with a clear error)
+- Claim a bounty after winning a game
+- Try to claim a bounty without meeting the condition (must fail)
+- Close the bounty board and verify rent recovery
+
+**Done when:** All new tests pass via `cargo test --manifest-path tests/Cargo.toml`.
+
+##### 3.A.4.4: Update TypeScript client + dealer (~1 hour)
+**Do:** Add the four new instruction builders to `clients/js/src/` and account decoders if needed. Update PDA helpers. Add TS client tests.
+
+**Done when:** `cd clients/js && pnpm test` passes with the new tests.
+
+##### 3.A.4.5: Bounty board on devnet smoke test (~30 min)
+**Do:** Add a `scripts/smoke-test-bounty.ts` (or extend the main smoke test) that initializes a board, adds a bounty, runs a game where player A meets the condition, and has player A claim it.
+
+**Done when:** Tx signatures recorded; on-chain `BountyBoard.bounties[N].claimed_by == player A`.
+
+---
+
+#### Task 3.A.5: 4th Heavy-Duty Review — Circom Circuit Focus
+
+**Goal:** A focused security review of `zk-circuits/circuits/shuffle_verify.circom` and the cryptographic glue around it (export_vk_rust.mjs G2 layer, dealer/src/prover.ts negation/serialization, the Poseidon parameter assumptions in poseidon_native.rs). The third heavy-duty review focused on the full session diff but did not zoom into the circuit itself; the last circuit-focused review was Phase 2.8 (which caught the 3 critical findings: sum-only bijection, unconstrained `<--`, unconstrained shuffled deck). This is the cryptographic equivalent of "the third pair of eyes."
+
+**Why this matters:** Circom soundness bugs are notoriously easy to miss because they only fire on adversarial inputs — every honest test passes. If a public reviewer (employer, hackathon judge, security researcher) finds a fourth critical, the response could be anywhere from "tighten one constraint" (1 hour) to "circuit redesign from scratch" (weeks). Better to find any such issues now than after the portfolio is presented.
+
+**Why ahead of frontend:** Any circuit redesign would invalidate:
+- The current proving key (.zkey)
+- The on-chain verifying key constants (`VK_*` in `program/src/zk/verifying_key.rs`)
+- The canonical deck hash (`CANONICAL_DECK_HASH`) — possibly
+- The dealer's proof generation pipeline
+
+Doing the review before frontend work means the frontend builds against a stable circuit. Doing it after means we might rewire frontend code mid-build.
+
+##### 3.A.5.1: Run /heavy-duty-review with circuit-only scope (~1 hour)
+**Do:** Invoke `/heavy-duty-review` with the scope explicitly set to:
+- `zk-circuits/circuits/`
+- `zk-circuits/scripts/export_vk_rust.mjs`
+- `dealer/src/prover.ts` (the proof serialization layer)
+- `dealer/src/merkle.ts` (the Poseidon Merkle tree builder)
+- `program/src/zk/verifying_key.rs` (the on-chain VK constants)
+- `program/src/zk/poseidon_native.rs` (the syscall wrapper)
+
+The discovery agents should be told this is a cryptographic-correctness review, not a code-quality review. Look for: under-constrained variables, missing range checks, off-by-one in Merkle indexing, Fiat-Shamir transcript ordering issues, BN254 field-element overflow, public-input layout drift between circuit/dealer/on-chain.
+
+**Done when:** The review report is saved to `docs/reviews/2026-XX-XX-circuit-pass4.md` (or similar) with confirmed findings and remediation status.
+
+##### 3.A.5.2: Fix any confirmed findings (estimate: variable, 0-3 days)
+**Do:** Address each confirmed finding from 3.A.5.1. If a finding requires a circuit change:
+1. Update `shuffle_verify.circom`
+2. Re-run trusted setup (`zk-circuits/scripts/setup.sh`) — produces new .zkey
+3. Re-export verification key (`export_vk_rust.mjs`) — updates `verifying_key.rs`
+4. Update `VK_FINGERPRINT` in `verifying_key.rs` (the H2 gate will fail until you do)
+5. Re-run dealer's `prover.test.ts` (the H2 gate's TS side)
+6. Rebuild SBF, redeploy to devnet, re-run the full smoke test suite
+7. If `CANONICAL_DECK_HASH` changed: update both `program/src/zk/verifying_key.rs` and `dealer/src/merkle.test.ts` and update the Phase 2 Decisions Log
+
+**Done when:** All findings are either confirmed-and-fixed or confirmed-and-documented as "accepted risk for portfolio scope".
+
+---
+
+#### Task 3.A.6: On-Chain Green-Light Report
+
+**Goal:** A consolidated single-source-of-truth showing that **every** on-chain instruction has a real devnet tx signature backing it. This is the explicit checkpoint that gates Phase 3B (frontend) work.
+
+##### 3.A.6.1: Build the green-light table (~30 min)
+**Do:** Append a new section "On-Chain Green-Light Report" to this EXECUTION_PLAN.md (right above Phase 3B / the renamed Vite section). The section is a single table:
+
+| Instruction | Devnet signature | CU consumed | Notes |
+|---|---|---|---|
+| `initialize` | (sig from smoke test) | … | … |
+| `commit_deck` | … | 84 834 | Groth16 verify |
+| `join_round` (vault_ready=false) | … | … | … |
+| `join_round` (vault_ready=true) | (from Task 3.A.2.2) | … | Real $FLIP stake transfer |
+| `start_round` | … | … | … |
+| `hit` | sgnnwAM2…6Zyrg7 | 7 771 | sol_poseidon syscall |
+| `stay` | (from Task 3.A.1.1) | … | … |
+| `end_round` (no payout) | (from Task 3.A.1.1) | … | … |
+| `end_round` (with payout) | (from Task 3.A.2.2) | … | Real prize distribution |
+| `end_round` (rollover sweep) | (from Task 3.A.2.3) | … | Treasury fee path |
+| `close_game` | (from Task 3.A.1.3) | … | Rent recovery |
+| `leave_game` | (from Task 3.A.1.2) | … | Mid-game exit |
+| `burn_second_chance` | (from Task 3.A.3.1) | … | Real $FLIP burn CPI |
+| `burn_scry` | (from Task 3.A.3.2) | … | Real $FLIP burn CPI |
+| `init_bounty_board` | (from Task 3.A.4.5) | … | … |
+| `add_bounty` | (from Task 3.A.4.5) | … | … |
+| `claim_bounty` | (from Task 3.A.4.5) | … | … |
+| `close_bounty_board` | (from Task 3.A.4.5) | … | … |
+
+**Done when:** The table has a tx signature in every row and is committed to the plan.
+
+##### 3.A.6.2: Phase 3A retrospective + commit (~15 min)
+**Do:** Add a 3-paragraph summary at the bottom of the green-light section: what was found, what was already correct, and any new decisions that came out of this phase. Run `/propose-commits` and ship it.
+
+**Done when:** The phase is committed and the plan is updated to mark Phase 3A as complete.
+
+---
+
+#### Task 3.B.0: Phase 3B Kickoff (Frontend) — gated by 3.A.6
+
+The original "Phase 3" content (Tasks 3.1 → 3.7) is now Phase 3B and starts only after Task 3.A.6 is signed off. Renumbered tasks below.
 
 ---
 
@@ -2198,6 +2455,46 @@ Each action: `useMutation` from React Query, success/error toasts, auto-refetch 
 **Goal:** Production-ready deployment and comprehensive documentation.
 
 **Prerequisites:** All phases complete. Full game playable on devnet.
+
+---
+
+#### Pre-Mainnet Checklist (deferred items, not blocking devnet)
+
+These are items we explicitly chose NOT to fix during the devnet build cycle but MUST be addressed before any mainnet deployment. They are listed here so they're impossible to forget.
+
+##### 5.0.1: Reclaim oversized devnet program data slot
+**Context:** Our current devnet program at `HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px` has a data length of 372 640 bytes (~364 KB) and 2.59 SOL of rent locked up, even though the current binary is only ~80 KB. This is because the BPF Loader Upgradeable allocates a fixed-size data slot at first deploy and that slot does not shrink on subsequent upgrades. The original deploy embedded `light_poseidon` (the Task 2.10 reason); after Task 2.10 the binary shrank by ~280 KB but the rent slot did not.
+
+**Why we're not fixing it on devnet:** Reclaiming requires `solana program close` followed by a fresh `solana program deploy`, which produces a new program ID. Changing the program ID on devnet would invalidate every test signature, every reference in docs, every smoke test fixture, and the `declare_id!` constant in source. The cost (waste 2 SOL of devnet rent) is far smaller than the value (a stable program ID across the entire portfolio narrative).
+
+**What to do for mainnet:**
+1. Build the production binary fresh (`cargo build-sbf --manifest-path program/Cargo.toml --sbf-out-dir target/deploy`).
+2. Generate a fresh mainnet program keypair (`solana-keygen new -o target/deploy/pushflip-mainnet-keypair.json`).
+3. Update `declare_id!` in `program/src/lib.rs` to the new mainnet pubkey, plus `clients/js/src/programId.ts` and any test/script constants.
+4. `solana program deploy target/deploy/pushflip.so --program-id target/deploy/pushflip-mainnet-keypair.json --url mainnet-beta`
+5. The mainnet slot will be sized to the current binary (~80 KB / ~0.6 SOL rent), not the historical 2.6 SOL. This is the only practical way to get a right-sized rent slot.
+6. Optional: close the devnet program afterward via `solana program close --bypass-warning HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px --url devnet` to recover the 2.59 SOL. Only do this if devnet is officially abandoned.
+
+**Done when:** Mainnet program is deployed with a right-sized rent slot and a fresh program ID.
+
+##### 5.0.2: Decentralized dealer / threshold randomness (post-MVP)
+**Context:** The current dealer is a single trusted party. The Groth16 proof guarantees the deck is a *valid* permutation but does NOT prove it was *random*. A malicious dealer can pick a shuffle that favors themselves. This is documented in the README's "Known Limitations" but is a real game-integrity weakness for any production deployment that handles real value.
+
+**Why we're not fixing it during the build cycle:** It requires designing a multi-party commit-reveal protocol on top of the existing dealer architecture, which is post-MVP scope. It does NOT require redesigning anything we've already built — the existing single-dealer code path is the degenerate one-party case of the threshold protocol.
+
+**What to do post-MVP:**
+1. Design a commit-reveal scheme where N players each contribute a random `nonce_i` at game start. Each player commits `H(nonce_i)` on chain, then reveals `nonce_i` after the deck is committed.
+2. The dealer's actual shuffle seed is `XOR(nonce_1 .. nonce_N)`, computed on chain in the `start_round` instruction.
+3. The dealer regenerates the proof using the new seed before `commit_deck`. Since the seed is known to all parties post-reveal, anyone can verify the dealer didn't pick a favorable seed.
+4. As long as ONE player contributed honestly, the shuffle is provably random.
+5. Rate this as ~3-5 days of work, no architectural changes to anything already shipped.
+
+**Done when:** Threshold randomness protocol is implemented and the README's "Known Limitations" section is updated to remove the single-trusted-dealer caveat.
+
+##### 5.0.3: Final security review pass before mainnet
+**Context:** The third heavy-duty review was post-Task-2.10 and focused on the session's diff. The fourth (Task 3.A.5) is circuit-focused. Before mainnet, run a full-scope review one more time covering the entire codebase as a single unit, with adversarial-input fuzzing for the instruction handlers if practical.
+
+**Done when:** No High or Critical findings remain.
 
 ---
 

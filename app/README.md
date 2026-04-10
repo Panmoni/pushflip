@@ -47,9 +47,19 @@ pnpm format       # biome format --write
 
 ## Status
 
-Phase 3.1 complete — scaffold + dependency stack + UI primitives
+Phase 3.1 + 3.2 complete. Scaffold + dependency stack + UI primitives
 (button, card, dialog, sonner) + WalletProvider + QueryProvider + Kit RPC
-clients in [src/lib/program.ts](src/lib/program.ts). Header renders the
-shadcn `WalletMultiButton`; the rest of the layout is a placeholder until
-Tasks 3.2 → 3.7 land per
+clients in [src/lib/program.ts](src/lib/program.ts). Three program
+integration hooks landed in [src/hooks/](src/hooks/):
+
+- `useGameSession(gameId)` — fetch + subscribe to a `GameSession` PDA
+- `usePlayerState(gameId)` — fetch + subscribe to the connected wallet's
+  `PlayerState` PDA (uses the wallet adapter ↔ Kit bridge)
+- `useGameActions(gameId)` — `joinRound`, `stay`, `burnSecondChance`,
+  `burnScry`, `hit` (stub) with re-entry guards + symmetric success/error
+  toasts. Signing goes through [src/lib/wallet-bridge.ts](src/lib/wallet-bridge.ts).
+
+The current `<GameStatusPanel>` is a Phase 3.2 verification panel — it
+exercises the read hooks against devnet. Task 3.3 will replace it with
+the real `<GameBoard>`. See
 [docs/EXECUTION_PLAN.md](../docs/EXECUTION_PLAN.md).

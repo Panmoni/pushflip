@@ -20,6 +20,100 @@
   - Alex Ramirez
   - Jorge Gallo
 
+---
+
+## Current Status (snapshot for new collaborators) — 2026-04-10
+
+> **Living section.** Update at the end of every session so new contributors can find "where we are now" without scrolling. For full history see the **Phase 3 Prerequisites Status** block (~line 1753), the **Phase 3 Decisions Log** table (~line 1769), and the **Lessons Learned** section (~line 1805) — or use the `Where to find things in this plan` table at the bottom of this section.
+
+### Where we are
+
+- **Phases 1, 2, 3A: COMPLETE.** On-chain program is deployed to devnet (Program ID `HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px`), all 16 instructions covered by smoke tests under resource caps, ZK pipeline (Circom + Groth16 + Poseidon Merkle) fully working with `sol_poseidon` syscall (~7771 CU per `hit`). Five heavy-duty security reviews shipped (1 Critical + 4 High + 17 Medium total fixed across the program surface).
+- **Phase 3B (frontend) Tasks 3.1.1 → 3.1.8: COMPLETE.** Vite 8 + React 19 + TypeScript 6 + Tailwind v4 + Biome/Ultracite scaffold in [app/](../app/), shadcn (radix base, nova preset) UI primitives installed (button, card, dialog, sonner), `WalletProvider` + `QueryProvider` + Kit RPC clients wired in. Workspace-wide `@solana/kit` 2.x → 6.x migration done as part of 3.1.4. Two more heavy-duty reviews (#6 + #7) shipped against the frontend scaffold; 22 findings fixed across both.
+- **Working tree at 2026-04-10:** clean except `notes.md` (George's personal file — DO NOT EDIT) and the in-progress changes for the Phase 3.1.5–8 commit chain (next up).
+- **All workspaces green:** `clients/js` 26/26 tests, `dealer` 11/11 tests, `app` typecheck/lint/build clean, `cargo check --all-targets` clean (14 + 8 + 4 = 26 deferred dead-code warnings tracked under Task 3.B.End).
+
+### What's next: Task 3.2 (Program Integration Layer)
+
+The next concrete unit of work is **Task 3.2** — three React hooks that consume the Kit RPC clients in [app/src/lib/program.ts](../app/src/lib/program.ts) and expose typed game state to components:
+
+- **Task 3.2.1 — `useGameSession`** — fetch + subscribe to the GameSession PDA. Decoder: `decodeGameSession` from `@pushflip/client`. (~25 min)
+- **Task 3.2.2 — `usePlayerState`** — derive PlayerState PDA from connected wallet + game_id, fetch + subscribe. Decoder: `decodePlayerState`. (~20 min)
+- **Task 3.2.3 — `useGameActions`** — `joinRound`, `hit`, `stay`, `burnSecondChance`, `burnScry` — uses the wallet adapter ↔ Kit bridge via `@solana/compat`'s `fromLegacyPublicKey` / `fromLegacyTransactionInstruction`. **This is the first time the wallet adapter ↔ Kit bridge is actually exercised; expect to spend non-trivial time on the type translation.** (~30 min if the bridge is straightforward, more if Kit's signer types fight with the wallet adapter's `signTransaction`.)
+
+Full task spec at [Task 3.2: Program Integration Layer](#task-32-program-integration-layer). Sub-tasks 3.2.1 and 3.2.2 are **parallelizable** — same hook pattern, different decoders. 3.2.3 depends on at least 3.2.1.
+
+### Parallelizable work tracks for Phase 3B
+
+If George and Alex want to split work:
+
+| Track | Owner | Depends on | Notes |
+|---|---|---|---|
+| 3.2.1 `useGameSession` | either | nothing — uses Kit RPC + `decodeGameSession` from `@pushflip/client` | Establishes the hook pattern (React Query + Kit `accountNotifications`); copy this pattern for the others |
+| 3.2.2 `usePlayerState` | either | nothing — same pattern as 3.2.1 | Can be done in parallel with 3.2.1 once the pattern is sketched |
+| 3.2.3 `useGameActions` | either | 3.2.1 | First exercises the wallet adapter ↔ Kit bridge via `@solana/compat` |
+| 3.3.1 `<Card>` component | either | nothing | Pure presentational; no on-chain integration |
+| 3.5.1 `calculateBustProbability` | either | nothing | Pure frontend math; no on-chain integration; can be developed alongside 3.2 |
+| 3.7.1 dark theme tokens | either | nothing | Adjusts the existing shadcn design tokens in [globals.css](../app/src/styles/globals.css); zero coupling to other tracks |
+
+### Quickstart for new contributors
+
+```bash
+# Clone + install (pnpm 9+, Node 20.11+, Rust 1.84+ for the on-chain side)
+git clone <repo>
+cd pushflip
+pnpm install
+
+# Verify everything is green before touching anything
+pnpm --filter @pushflip/client test     # 26 tests
+pnpm --filter @pushflip/dealer test     # 11 tests
+pnpm --filter @pushflip/app typecheck   # tsc -b --noEmit
+pnpm --filter @pushflip/app lint        # biome check
+pnpm --filter @pushflip/app build       # tsc -b && vite build
+cargo check --all-targets               # Rust on-chain (warnings deferred)
+
+# Run the frontend dev server
+pnpm --filter @pushflip/app dev         # http://localhost:5173
+
+# Run the on-chain smoke tests against devnet (requires a funded devnet keypair)
+cd scripts && pnpm tsx smoke-test.ts
+```
+
+For a deeper conventions/onboarding doc see [CONTRIBUTING.md](../CONTRIBUTING.md) (toolchain versions, code conventions, project status by component).
+
+### Conventions to know before touching code
+
+| Area | Rule | Why |
+|---|---|---|
+| **`notes.md` at repo root** | **DO NOT EDIT.** This is George's personal scratch file. | Memory rule (`feedback_notes.md`). Editing it loses George's context. |
+| **`app/` filenames** | **kebab-case only** (`card.tsx`, not `Card.tsx`). | Ultracite's `useFilenamingConvention` rule enforces this. The execution plan's Tasks 3.3+ use PascalCase paths but should be read as kebab-case when implemented — see Decisions Log entry "Ultracite/Biome enforces kebab-case filenames". |
+| **`app/src/components/ui/*` and `app/src/lib/utils.ts`** | **Vendored from shadcn — do not lint, do not hand-edit unless absolutely necessary.** Excluded from Biome via [biome.jsonc](../app/biome.jsonc). | Re-running `pnpm dlx shadcn@latest add <component>` overwrites these files; linter exclusions prevent diff churn. The one exception currently is [sonner.tsx](../app/src/components/ui/sonner.tsx) where we hardcoded `theme="dark"` and dropped the `next-themes` import — see Decisions Log entry "Removed `next-themes` dependency". |
+| **Program client** | **Hand-written, NOT Codama-generated.** Lives at [clients/js/](../clients/js/) as the `@pushflip/client` workspace package. Re-export everything from `@pushflip/client` rather than duplicating the byte layouts. | Path B chosen in Phase 3 prereqs — Pinocchio's manual byte layouts make a parallel Codama representation more cost than benefit. See Decisions Log entry "Skip Shank/Codama". |
+| **`@solana/kit` version** | **^6.8.0 workspace-wide** (`app`, `clients/js`, `scripts`, `dealer`). | Kit 2.x → 6.x migration was done in Task 3.1.4 because the kit-plugin-* packages need Kit 6. Mixing majors will cause silent type drift. See Decisions Log entry "Bumped @solana/kit 2.x → 6.x across the entire workspace". |
+| **Wallet adapter ↔ Kit bridge** | The wallet adapter uses **web3.js v1** internally (`PublicKey`, `Transaction`); our hooks use **Kit** (`Address`, `Instruction`). Translate at the boundary using `fromLegacyPublicKey` / `fromLegacyTransactionInstruction` from `@solana/compat`. | See [src/providers/wallet-provider.tsx](../app/src/providers/wallet-provider.tsx) docstring and Decisions Log entry "App workspace uses individual `@solana/wallet-adapter-{phantom,solflare,base}` packages". |
+| **Env vars in `app/`** | Use `import.meta.env.VITE_FOO?.trim() \|\| "default"` — **never** `??`. Add new vars to [src/vite-env.d.ts](../app/src/vite-env.d.ts). | `??` doesn't catch empty strings; `vite-env.d.ts` augmentation makes typos compile errors. See Lessons #34, #35. |
+| **Module-level long-lived resources** | Modules that open WebSockets, intervals, or OS handles should call `import.meta.hot?.invalidate()` at the top. | Vite HMR re-eval otherwise leaks the resource on every save. See [src/lib/program.ts](../app/src/lib/program.ts) and Lesson #37. |
+| **Heavy-duty reviews** | Run `/heavy-duty-review` after any non-trivial commit chain. Pass 2 (verification) MUST diff agent claims against actual file contents AND session state — Pass 1 agents lie confidently. | See Lessons #20 and #29. Seven heavy-duty reviews so far; every one has caught at least one structural bug the unit tests missed. |
+| **Pre-mainnet items** | Three items deferred from Phase 3 to Phase 5: reclaim the oversized program data slot (Task 5.0.1), threshold randomness / decentralized dealer (Task 5.0.2), final full-scope review (Task 5.0.3). Listed at [Pre-Mainnet Checklist](#pre-mainnet-checklist-deferred-items-not-blocking-devnet). | None block devnet work. |
+
+### Where to find things in this plan
+
+Line numbers shift; grep for the section header instead. Approximate locations as of 2026-04-10:
+
+| Looking for... | Section header to grep | Approx. line |
+|---|---|---|
+| Decisions made and *why* | `### Phase 3 Decisions Log` | ~1769 |
+| Hard-won insights from past sessions | `### Lessons Learned (Phase 1 → Phase 3 prereqs)` (subsections: Tooling & Test Infrastructure, ZK / Cryptography, Pinocchio-Specific, Solana Deployment, Process, Build & Test Workflow, Cross-Account Validation, Plan-vs-Reality Drift, Frontend Provider & Env Patterns) | ~1805 |
+| Phase 1 / Phase 2 task history | `### Phase 1 Summary`, `### Phase 2 Summary` | ~645, ~651 |
+| Current heavy-duty review pipeline | `### Phase 3 Prerequisites Status` | ~1753 |
+| Phase 3A on-chain task definitions | `### Phase 3A: On-Chain Hardening` | ~1970 |
+| Phase 3B frontend Task 3.1 (scaffolding) | `#### Task 3.1: Vite + React Project Setup` | ~2371 |
+| Phase 3B frontend Task 3.2 (program hooks — next up) | `#### Task 3.2: Program Integration Layer` | ~2465 |
+| Phase 4 (House AI) | `### Phase 4: The House AI Agent` | ~2655 |
+| Phase 5 (deployment) and pre-mainnet checklist | `### Phase 5`, `#### Pre-Mainnet Checklist` | ~2784, ~2792 |
+
+---
+
 ## Scope Definition
 
 ### Core Features (Phases 1-4)
@@ -29,8 +123,8 @@
 4. Basic bounty system
 5. "The House" AI opponent + ZK dealer service
 6. "Flip Advisor" probability assistant (frontend)
-7. Vite + React frontend with **@solana/kit + Kit Plugins** (NOT legacy web3.js, Anchor TS client, or Gill)
-8. IDL generated via **Shank**, TypeScript client generated via **Codama**
+7. Vite + React frontend with **@solana/kit + Kit Plugins** (NOT legacy web3.js, Anchor TS client, or Gill). Wallet integration via the official `@solana/wallet-adapter-*` packages bridged to Kit via `@solana/compat`.
+8. **Hand-written TypeScript client** at `clients/js/` (the `@pushflip/client` workspace package) — NOT generated via Shank/Codama. See [Decision: Skip Shank/Codama](#phase-3-decisions-log) — Pinocchio's manual byte layouts are mirrored directly.
 
 ### Post-MVP Features
 - AI Commentator/Narrator
@@ -61,11 +155,12 @@
 │         │                 │                                         │
 │         └────────┬────────┘                                         │
 │                  ▼                                                  │
-│         ┌───────────────┐                                           │
-│         │ @solana/kit   │                                           │
-│         │ + Kit Plugins │                                           │
-│         │ + Codama      │                                           │
-│         └───────┬───────┘                                           │
+│         ┌────────────────┐                                          │
+│         │ @solana/kit v6 │                                          │
+│         │ + Kit Plugins  │                                          │
+│         │ + @pushflip/   │                                          │
+│         │   client (hand)│                                          │
+│         └───────┬────────┘                                          │
 └─────────────────┼───────────────────────────────────────────────────┘
                   │
                   ▼
@@ -186,18 +281,19 @@ The ZK Dealer is an off-chain service that chooses the shuffle order, generates 
 |----------|------------|-----------|------------------------|
 | **Blockchain** | Solana Devnet | High throughput, low fees, mature ecosystem | N/A (Solana-only project) |
 | **On-chain Framework** | **Pinocchio 0.11** | Zero-dependency, zero-copy, maximum CU efficiency, portfolio differentiator — demonstrates deep Solana internals | Anchor (easier DX but commoditized skill), native solana-program (Pinocchio supersedes it) |
-| **Language (On-chain)** | Rust 1.70+ | Required for Solana programs | N/A |
-| **IDL Generation** | **Shank** | Generates IDL from native Rust programs via derive macros | Anchor IDL (requires Anchor), manual JSON |
-| **Client Codegen** | **Codama** | Generates TypeScript + Rust clients from Shank IDL | Manual client code, Anchor TS client |
+| **Language (On-chain)** | Rust 1.84+ | Required for Solana programs (BPF toolchain) | N/A |
+| **IDL Generation** | ~~Shank~~ — **NOT USED** | ~~Generates IDL from native Rust programs via derive macros~~. **Decision (Phase 3 prereqs):** skipped in favor of hand-written `@pushflip/client`. Pinocchio's manual byte layouts make a parallel Shank representation more cost than benefit. | Path B: hand-written TS client (chosen) |
+| **Client Codegen** | ~~Codama~~ — **NOT USED** | ~~Generates TypeScript + Rust clients from Shank IDL~~. Replaced by hand-written `@pushflip/client` workspace package mirroring Rust byte layouts directly. | Hand-written (chosen) |
 | **Randomness** | **ZK-SNARK (Groth16)** | Provably fair — cryptographic proof of valid shuffle, no trusted third party | Slot hash (predictable by validators), VRF (oracle trust required) |
 | **ZK Proving** | **Circom + snarkjs** | Mature circuit language, Groth16 backend, ~200K CU on-chain verification | Halo2 (larger proofs), SP1/RISC Zero (heavier) |
 | **ZK Verification (on-chain)** | **groth16-solana** | Audited Groth16 verifier by Light Protocol, uses native alt_bn128 syscalls | Custom verifier (risky), arkworks (no Solana syscalls) |
 | **ZK Hashing** | **light-poseidon** + Poseidon syscall | ZK-friendly hash, native Solana syscall support, Circom-compatible BN254 params | SHA-256 (10x more constraints in-circuit), Keccak |
 | **Token Standard** | SPL Token | Native Solana token standard | Token-2022 (overkill for MVP) |
-| **Frontend Framework** | Vite 5 + React 18 | Fast dev server, perfect for SPAs, lightweight, excellent DX | Next.js (unnecessary SSR/routing overhead for dApp) |
-| **Solana Client (JS)** | **@solana/kit + Kit Plugins** | Official next-gen SDK (tree-shakable, 83% smaller bundles, 900% faster crypto), Kit Plugins add composable client presets (RPC, payer, tx planning, LiteSVM) | Legacy @solana/web3.js 1.x (deprecated), @coral-xyz/anchor TS (requires Anchor), Gill (unnecessary wrapper) |
-| **Styling** | Tailwind CSS + shadcn/ui | Rapid development, consistent design system | Chakra UI (heavier) |
-| **Wallet Integration** | @solana/wallet-adapter-react | Official Solana solution, supports Phantom/Solflare/etc, free, no vendor lock-in | dynamic.xyz (overkill — paid, multi-chain focus, adds vendor dependency for crypto-native audience that already has wallets) |
+| **Frontend Framework** | Vite 8 + React 19 + TypeScript 6 | Fast dev server, perfect for SPAs, lightweight, excellent DX. Strict-mode TS family on (`strict`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `exactOptionalPropertyTypes`). | Next.js (unnecessary SSR/routing overhead for dApp) |
+| **Solana Client (JS)** | **@solana/kit v6 + Kit Plugins + @pushflip/client (workspace)** | Official next-gen SDK (tree-shakable, 83% smaller bundles, 900% faster crypto), Kit Plugins add composable client presets (`@solana/kit-{client-rpc,plugin-rpc,plugin-payer,plugin-instruction-plan}`). `@pushflip/client` is the hand-written workspace package that mirrors Pinocchio's byte layouts. | Legacy @solana/web3.js 1.x (deprecated — but still pulled in transitively by wallet adapters), @coral-xyz/anchor TS (requires Anchor), Gill (unnecessary wrapper) |
+| **Wallet ↔ Kit bridge** | **@solana/web3.js 1.x + @solana/compat** | Wallet adapters return web3.js v1 `PublicKey`/`Transaction`; Kit hooks expect `Address`/`Instruction`. `@solana/compat` provides `fromLegacyPublicKey` / `fromLegacyTransactionInstruction` to translate at the boundary. | Custom adapter (more code, easier to get wrong) |
+| **Styling** | Tailwind CSS v4 + shadcn/ui (radix base, nova preset) | Rapid development, consistent design system. Tailwind v4 via `@tailwindcss/vite` plugin (no PostCSS, no `tailwind.config.js`). shadcn primitives installed: button, card, dialog, sonner. | Chakra UI (heavier) |
+| **Wallet Integration** | @solana/wallet-adapter-{react,react-ui,phantom,solflare,base} (NOT the umbrella `wallet-adapter-wallets`) | Individual packages avoid the broken `@solana-program/token-2022 → @solana/sysvars ^2.1.0` peer-dep chain that the umbrella drags in. Official Solana solution, supports Phantom/Solflare. | dynamic.xyz (overkill — paid, multi-chain focus, adds vendor dependency for crypto-native audience that already has wallets) |
 | **State Management** | Zustand + React Query | Lightweight, good for async state | Redux (overkill) |
 | **Linting & Formatting** | **Biome + Ultracite** | Single Rust-based tool replaces ESLint + Prettier, fast, zero-config with Ultracite preset. Covers `app/`, `house-ai/`, `scripts/` | ESLint + Prettier (slower, two tools, more config), oxlint (less mature) |
 | **AI Agent Runtime** | Node.js 20 + TypeScript | Same language as frontend, good Solana SDK | Python (different ecosystem) |
@@ -1668,6 +1764,8 @@ Rationale for the ordering: the frontend and AI both *consume* the on-chain inte
 - [x] **Fifth heavy-duty review (instruction-surface focus)** — completed 2026-04-10. Three parallel Explore agents on `init_vault` + the four bounty handlers + commit_deck.rs delta + dispatcher + TS client. ~30 raw findings → **1 Critical, 1 High, 4 Medium** confirmed in Pass 2; ~24 dismissed (2 agent misreads, 4 retracted by the agent itself, mitigation chains, design-correct items). All 6 confirmed findings fixed in the same session. The two structural fixes — **C1 (cross-game player_state claim in `claim_bounty`)** and **H1 (`init_vault` payer not constrained to authority)** — would each have been exploitable on mainnet. Devnet redeploy with all 6 fixes: sig `2DLdxRXeLMcgEzdnmCwgmFuNRJ4vuQmo6Ge1FdKPDiPigDUNhnDHbsDRqQFMATDPMpDjMeurSSHLVeJs9YG1j2UP`. Bounty smoke test re-verified post-fix under resource caps. See the full report below in the Phase 3 Decisions Log.
 - [x] **Phase 3B started — Tasks 3.1.1 → 3.1.4 complete (2026-04-10)** — Vite + React 19 + TypeScript 6 + Tailwind v4 + Biome/Ultracite scaffold in [app/](../app/), plus a workspace-wide `@solana/kit` 2.x → 6.x migration. Sub-tasks: **3.1.1** Vite scaffold with `pnpm create vite app --template react-ts`, package renamed to `@pushflip/app`, dev server up at localhost:5173. **3.1.2** Tailwind v4 via `@tailwindcss/vite` plugin (no PostCSS). **3.1.3** Biome 2.4 + Ultracite 7.4 preset; ESLint stack uninstalled and removed. Ultracite enforces kebab-case filenames — affects all Phase 3 component paths (`Card.tsx` → `card.tsx`). **3.1.4a** Kit 2 → 6 migration across `clients/js`, `dealer`, `scripts` workspaces (user-confirmed before bumping); type renames `IInstruction*` → `Instruction*`; `assertIsTransactionWithBlockhashLifetime(signed)` inserted in all four smoke tests to narrow Kit 6's widened lifetime union before `sendAndConfirm`. **3.1.4b** Solana deps installed in `app/` — Kit 6.8.0 + four `kit-plugin-*` packages + `kit-client-rpc` + `@solana-program/token` + individual `@solana/wallet-adapter-{base,react,react-ui,phantom,solflare}` (umbrella `wallet-adapter-wallets` rejected due to broken `@solana-program/token-2022 → @solana/sysvars` peer chain) + `@solana/web3.js@^1.98.4` + `@solana/compat@^6.8.0` (the bridge between web3.js v1 wallet adapters and Kit 6 — both were missing from the original spec). All four backend workspaces typecheck clean; clients/js 26/26 tests pass (added a Kit transaction-builder integration test); dealer 11/11 pass.
 - [x] **Sixth heavy-duty review (Phase 3.1 scaffolding focus)** — completed 2026-04-10. Three parallel Explore agents on the new `app/` scaffold + the Kit migration delta in `clients/js` + scripts. ~22 raw findings → **0 Critical / 4 High / 7 Medium / 3 Low** = 14 confirmed; 4 dismissed in Pass 2 (two agent contradictions resolved by reading the actual files — Agent A wrongly claimed `tsconfig.app.json` had `strict: true`, Agent C wrongly claimed Biome 2.x still uses an `excludes` field). All 14 fixed in the same session. The four High items: missing `strict: true` in app tsconfigs; missing `@solana/web3.js` + `@solana/compat` peer/bridge deps; pre-existing `tsx --test src/**/*.test.ts` glob bug in `clients/js` and `dealer` package.json (POSIX shells without globstar fail silently); `.env*` files not in `app/.gitignore`. Also caught a **latent pre-existing bug** while unifying `@types/node` versions: `dealer/tsconfig.json` was relying on the (now-removed unused) `@solana/kit` dep to transitively pull in `@types/node`, so `tsc --noEmit` on dealer was already broken before this session — fixed by adding explicit `"types": ["node"]` to `clients/js`, `dealer`, and `scripts` tsconfigs.
+- [x] **Phase 3.1 COMPLETE — Tasks 3.1.5 → 3.1.8 done (2026-04-10)** — UI dependencies installed (React Query 5.97 + Zustand 5.0.12), shadcn vite preset initialized with `pnpm dlx shadcn@latest init -t vite -b radix -p nova` (added button, card, dialog, sonner — note: `toast` is deprecated in shadcn, `sonner` is the replacement), `cn()` helper at [src/lib/utils.ts](../app/src/lib/utils.ts), [components.json](../app/components.json), full design-token block written to [src/styles/globals.css](../app/src/styles/globals.css). [src/providers/wallet-provider.tsx](../app/src/providers/wallet-provider.tsx) wires `ConnectionProvider > BaseWalletProvider > WalletModalProvider` with memoized Phantom + Solflare adapters, `autoConnect: true`, and an `onError` handler that surfaces wallet errors as sonner toasts. [src/providers/query-provider.tsx](../app/src/providers/query-provider.tsx) lazy-inits one `QueryClient` per app instance via `useState(() => …)` (StrictMode-safe) with `staleTime: 30s`, `gcTime: 60s`, `retry: 1`, `refetchOnWindowFocus: false`. [src/lib/constants.ts](../app/src/lib/constants.ts) exports `RPC_ENDPOINT`, `RPC_WS_ENDPOINT`, `TOKEN_MINT`, `GAME_ID`. [src/lib/program.ts](../app/src/lib/program.ts) constructs cluster-narrowed `RpcDevnet<SolanaRpcApiDevnet>` + `RpcSubscriptionsDevnet<SolanaRpcSubscriptionsApi>` clients. `@pushflip/client` added as `workspace:*` dep so components import directly from the workspace package boundary. [src/app.tsx](../app/src/app.tsx) wires both providers + Toaster + a minimal `<header><main><footer>` layout with `WalletMultiButton`. Final build: 381 KB / 117 KB gzip JS + 297 KB ESM chunk + 36 KB / 7 KB gzip CSS, dev server boots in 699ms.
+- [x] **Seventh heavy-duty review (Phase 3.1.5–8 provider focus)** — completed 2026-04-10. Three parallel Explore agents on the new providers + lib files + shadcn config. ~22 raw findings → **0 Critical / 3 High / 3 Medium / 2 Low** = 8 confirmed; 4 dismissed in Pass 2 (one notable agent contradiction: Agent C claimed the `@solana/wallet-adapter-react-ui/styles.css` import should be moved from `wallet-provider.tsx` to `main.tsx` for "earlier load" — verified by file read that it's already at module level and Vite hoists side-effect CSS imports to the main bundle regardless of source location). All 7 actionable findings fixed in the same session (the eighth, `error.message` exposure in onError toast, was explicitly deferred to Task 3.2 per the review's own guidance). The three High items: empty-string env-var fallback (`??` doesn't catch `""`), missing `vite-env.d.ts` augmentation for `VITE_RPC_*` typo detection, type-narrowing regression where wide `Rpc<SolanaRpcApi>` annotations threw away Kit's cluster-narrowed `RpcDevnet<SolanaRpcApiDevnet>` type. The three Medium items: `next-themes` dead complexity (uninstalled — pushflip is dark-only by design), missing `gcTime` in QueryClient defaults, WebSocket leak risk on Vite HMR re-eval (fixed with `import.meta.hot?.invalidate()`). Also added a case-insensitive `deriveWsEndpoint()` helper for the http→ws scheme swap (low-severity edge case).
 
 ### Phase 3 Decisions Log
 | Date | Decision | Rationale |
@@ -1698,6 +1796,12 @@ Rationale for the ordering: the frontend and AI both *consume* the on-chain inte
 | 2026-04-10 | App workspace tsconfigs use full strict family (`strict`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `exactOptionalPropertyTypes`); all four backend workspace tsconfigs now declare `"types": ["node"]` explicitly | Phase 3B Task 3.1 / Sixth heavy-duty review (H1 + dealer latent bug). create-vite ships a tsconfig WITHOUT `strict: true`, which is laxer than the rest of the workspace (`clients/js` has `strict: true`). Patched both `tsconfig.app.json` and `tsconfig.node.json` in app/ before any real source files were written. Separately: while unifying `@types/node` to `^24.12.2` and TypeScript to `~6.0.2` workspace-wide, `pnpm exec tsc --noEmit` started failing on dealer with "Cannot find name 'node:test'". Root cause: dealer was relying on the (now-removed unused) `@solana/kit` dep to transitively load `@types/node`. Adding explicit `"types": ["node"]` to `dealer/tsconfig.json`, `clients/js/tsconfig.json`, and `scripts/tsconfig.json` made type discovery robust against future dep removals. The dealer typecheck was already broken before this session — the dead `@solana/kit` dep was masking it. |
 | 2026-04-10 | Ultracite/Biome enforces kebab-case filenames in `app/` | Phase 3B Task 3.1.3. Ultracite's `useFilenamingConvention` rule rejects `App.tsx` → demands `app.tsx`. This deviates from the PascalCase paths in Tasks 3.3+ (`Card.tsx`, `PlayerHand.tsx`, etc.) but aligns with shadcn/ui conventions (which we'll use for primitives in Task 3.1.5). Picked compliance over disabling the rule because shadcn-generated files are kebab-case anyway, and consistency matters more than matching the original spec verbatim. All Phase 3 component task paths in this plan should be read as kebab-case (`card.tsx`, `player-hand.tsx`, etc.) when implemented. |
 | 2026-04-10 | Sixth heavy-duty review (Phase 3.1 scaffolding focus): 4 High + 7 Medium + 3 Low fixes shipped | Three parallel Explore agents on the new `app/` scaffold + Kit migration delta. ~22 raw findings → 14 confirmed; 4 dismissed by Pass 2 verification (two were agent contradictions about the same file, resolved by direct reads). Notable agent disagreement: Agent A claimed `tsconfig.app.json` had the strict family present; Agent C correctly said it was missing. Pass 2 read the file and Agent C was right. **Lesson #16 (Pass 2 verification against session state)** saved another false dismissal. The four High fixes (strict mode, web3.js+compat peers, test glob bug, .env gitignore) all unblock or harden Task 3.1.6 (WalletProvider). Cleanup also added a new `Kit transaction-builder integration` test suite to [clients/js/src/client.test.ts](../clients/js/src/client.test.ts) that pipes a `getStayInstruction` result through `appendTransactionMessageInstruction` — catches the kind of `Instruction<T>` type-system regression that the existing byte-level encoding tests would not. Total post-fix: 26/26 clients/js tests + 11/11 dealer tests + clean typecheck across all four backend workspaces. |
+| 2026-04-10 | shadcn vite preset (radix base, nova preset) installed via `pnpm dlx shadcn@latest init -t vite -b radix -p nova`; `toast` component replaced with `sonner` | Phase 3B Task 3.1.5. The original Task 3.1.5 spec said `npx shadcn@latest add button card dialog toast` — but `toast` is deprecated in current shadcn (since 2024), and the CLI now redirects users to `sonner` (which is what gets installed when you ask for the toast component anyway). Used `pnpm dlx` instead of `npx` for the workspace's pnpm convention. The vite preset auto-configured `components.json`, created [src/lib/utils.ts](../app/src/lib/utils.ts) with the `cn()` helper, and rewrote [src/styles/globals.css](../app/src/styles/globals.css) with the full design-token block (background, foreground, popover, primary, secondary, muted, accent, destructive, border, input, ring, chart-1..5, sidebar-*, plus light/dark variants and radius scale). Side-effect: pulled in `@fontsource-variable/geist`, `lucide-react`, `class-variance-authority`, `clsx`, `tailwind-merge`, `tw-animate-css`, `next-themes` (later removed), `@radix-ui/react-{dialog,slot}` as transitive deps. The shadcn UI vendored files (`src/components/ui/*` and `src/lib/utils.ts`) are excluded from Biome via `!src/components/ui` and `!src/lib/utils.ts` in [biome.jsonc](../app/biome.jsonc) so re-running `shadcn add` in the future doesn't conflict with the linter's preferred formatting. |
+| 2026-04-10 | Removed `next-themes` dependency; sonner Toaster hardcoded to `theme="dark"` | Phase 3B Task 3.1.5 / seventh heavy-duty review (M4). The shadcn-default `sonner.tsx` template imports `useTheme()` from `next-themes` and feeds it into the Toaster. We never set up a `<ThemeProvider>` wrapper because pushflip is dark-only by design (Task 3.7.1 calls for `#0a0a0a`). The original template silently fell back to `"system"` mode, which meant a user on a light-mode OS would see toasts rendered in light mode while the rest of the app was dark — visual mismatch. Hardcoding `theme="dark"` and dropping `next-themes` removes a dep we don't actually use and eliminates the inconsistency. Also dropped the `isSonnerTheme` runtime type guard that existed only to satisfy `exactOptionalPropertyTypes: true` against `useTheme()`'s `string \| undefined` return. |
+| 2026-04-10 | RPC endpoint env-var fallbacks use `\|\|` (not `??`) and a case-insensitive `deriveWsEndpoint()` helper | Phase 3B Task 3.1.8 / seventh heavy-duty review (H1 + L7). The original [src/lib/constants.ts](../app/src/lib/constants.ts) used `import.meta.env.VITE_RPC_ENDPOINT ?? "https://api.devnet.solana.com"`, but `??` only catches `null`/`undefined` — a developer who sets `VITE_RPC_ENDPOINT=` (empty value) in `.env.local` gets back an empty string and silently breaks `createSolanaRpc()`. Fix: `VITE_RPC_ENDPOINT?.trim() \|\| "default"`. Same fix applied to `RPC_WS_ENDPOINT`. Separately, the original `RPC_ENDPOINT.replace(/^http/, "ws")` was case-sensitive (didn't match `Https://`) — replaced with `deriveWsEndpoint()` using module-level `HTTPS_SCHEME = /^https/i` and `HTTP_SCHEME = /^http/i` constants (regex literals hoisted to satisfy Biome's `useTopLevelRegex` rule). Pass-through for already-WS schemes. Also created [app/src/vite-env.d.ts](../app/src/vite-env.d.ts) augmenting Vite's `ImportMetaEnv` so `VITE_RPC_*` typos are caught at compile time — Vite's default ambient interface extends `Record<string, any>` which silently swallows typos. |
+| 2026-04-10 | Kit RPC clients in `program.ts` use cluster-narrowed `RpcDevnet<SolanaRpcApiDevnet>` and `RpcSubscriptionsDevnet<SolanaRpcSubscriptionsApi>` types | Phase 3B Task 3.1.8 / seventh heavy-duty review (H3). The original explicit type annotations were `Rpc<SolanaRpcApi>` and `RpcSubscriptions<SolanaRpcSubscriptionsApi>` — wider than what `createSolanaRpc(devnet(...))` actually returns. Kit's `@solana/rpc` package defines `RpcDevnet<TRpcMethods>` (`Rpc<...> & { '~cluster': 'devnet' }`) and `SolanaRpcApiDevnet` exactly so devnet-only methods like `requestAirdrop` can be type-checked at compile time against the cluster. By writing the wide annotation, future Task 3.2 hooks would have lost the ability to fail at compile time if they accidentally call a mainnet-only method. Both narrowed types are re-exported from the `@solana/kit` umbrella. |
+| 2026-04-10 | `program.ts` uses `import.meta.hot?.invalidate()` to force HMR full-reload | Phase 3B Task 3.1.8 / seventh heavy-duty review (M6). [app/src/lib/program.ts](../app/src/lib/program.ts) constructs a long-lived WebSocket via `createSolanaRpcSubscriptions(devnet(RPC_WS_ENDPOINT))` at module-evaluation time. Without an HMR invalidate boundary, Vite's HMR would re-evaluate the importer chain on save and leak the old WebSocket while opening a new one — over a long dev session, this accumulates dozens of orphan WebSockets to the public devnet RPC, making rate-limiting worse. The one-line fix `if (import.meta.hot) { import.meta.hot.invalidate(); }` forces a full page reload whenever this file (or any importer) is HMR-edited. No-op in production. |
+| 2026-04-10 | Seventh heavy-duty review (Phase 3.1.5–8 provider focus): 3 High + 3 Medium + 1 Low + 1 deferred fixes shipped | Three parallel Explore agents on the new providers + lib files + shadcn config. ~22 raw findings → 8 confirmed; 4 dismissed by Pass 2 verification. Notable agent contradiction: Agent C claimed the `@solana/wallet-adapter-react-ui/styles.css` import should be moved from `wallet-provider.tsx` to `main.tsx` for "earlier load" — verified by file read that it's already at module level, and Vite hoists side-effect CSS imports to the main bundle regardless of source location, so the recommendation was wrong. Two CRITICAL-adjacent fixes: H2 (missing `vite-env.d.ts`) and H3 (cluster type narrowing) both prevent latent compile-time bugs in Task 3.2 hooks. The deferred finding (`error.message` exposure in onError toast) was explicitly held back per the review's own guidance — it becomes relevant only when Task 3.2 adds transaction signing flows. Final state: clients/js 26/26 + dealer 11/11 + app typecheck/lint/build all clean, dev server boots in 699ms. |
 
 ### Lessons Learned (Phase 1 → Phase 3 prereqs)
 
@@ -1786,6 +1890,18 @@ day 1 if we built this again.
 32. **Linter/formatter conventions should be locked in BEFORE the first source file is written.** Ultracite's `useFilenamingConvention` rule enforces kebab-case (`app.tsx`, not `App.tsx`), which contradicts the PascalCase paths in execution-plan Tasks 3.3+ (`Card.tsx`, `PlayerHand.tsx`, etc.) — written by someone who didn't think to consult the linter that hadn't been chosen yet. Catching this in Task 3.1.3 before any component files existed cost ~1 minute (rename `App.tsx` → `app.tsx` + update one import). Catching it in Task 3.7 after writing 30 components would have cost an hour of git mvs and import updates. **The rule:** the very first thing to install in any new TS/JS workspace is the linter you intend to use, and the very first thing to test is "does it accept the file naming convention I'm planning to use?" If not, decide the convention NOW.
 
 33. **`tsc --noEmit` only catches type errors when type discovery actually works — and "auto-discovery via transitive deps" is a fragile foundation.** While unifying `@types/node` versions across the workspace, `pnpm exec tsc --noEmit` started failing on dealer with "Cannot find name 'node:test'". Root cause: dealer had been relying on the (now-removed unused) `@solana/kit` dep to transitively load `@types/node` into the TS program. Removing the dead Kit dep — a cosmetic cleanup — exposed a typecheck that had been **silently broken before this session**. Lesson: **declare your test framework types explicitly in `tsconfig.json`'s `types` array, not via transitive auto-discovery.** Adding `"types": ["node"]` to all four backend workspace tsconfigs makes type discovery robust against future dep removals and refactors. Also: just because `cargo test` / `pnpm test` (which use `tsx`, not `tsc`) pass doesn't mean the strict `tsc --noEmit` typecheck passes. Run both as separate gates.
+
+#### Frontend Provider & Env Patterns (from Phase 3.1.5–8)
+
+34. **`??` is the wrong fallback operator for environment variables — always use `||`.** `??` only catches `null`/`undefined`, but `import.meta.env.VITE_*` returns `""` (empty string) when a developer sets `VITE_FOO=` in `.env.local`. The seventh heavy-duty review caught two instances of this pattern in [src/lib/constants.ts](../app/src/lib/constants.ts). Empty-string env vars are a common typo (extra equals sign in dotenv, copy-paste from a partial line, etc.) and silently breaking is the worst possible outcome. **The general rule:** when the empty string is not a valid value (which is essentially always for env vars), use `import.meta.env.VITE_FOO?.trim() \|\| "default"`. The `?.trim()` also catches whitespace-only values. Apply the same rule to `process.env.*` in Node.
+
+35. **Vite env-var typos go undetected without an `ImportMetaEnv` augmentation.** Vite's default ambient `ImportMetaEnv` interface (from `vite/types/importMeta.d.ts`) extends `Record<string, any>` for unknown keys, so `import.meta.env.VITE_RPC_ENDPOINT` and `import.meta.env.VITE_RCP_ENDPOINT` (typo) both type-check as `any`. The typo will silently fall through to the runtime fallback, costing debugging hours when nothing seems to take effect. **The fix:** create a `vite-env.d.ts` file in `src/` with a `/// <reference types="vite/client" />` triple-slash directive AND an explicit `interface ImportMetaEnv` declaring every `VITE_*` var your app reads. This converts typos into compile-time errors. The create-vite scaffold normally includes this file but ours got dropped during the initial cleanup pass — verify it exists in any new Vite project before writing the first env-var reference.
+
+36. **Throwing away type narrowing via wide explicit annotations is "negative documentation".** [src/lib/program.ts](../app/src/lib/program.ts) originally annotated the Kit RPC clients as `Rpc<SolanaRpcApi>` and `RpcSubscriptions<SolanaRpcSubscriptionsApi>` — but `createSolanaRpc(devnet(...))` actually returns the narrower `RpcDevnet<SolanaRpcApiDevnet>`. The wide annotation was a TypeScript anti-pattern: it added an annotation that LOST information instead of GAINING it, and would have let future hooks call mainnet-only methods against the devnet RPC without a compile error. Kit's whole `RpcDevnet<TMethods>` design exists exactly to prevent this class of bug. **The general rule:** prefer inference from constructor calls when the constructor has well-typed return types. Only add explicit annotations when (a) the inferred type is too wide, (b) you're declaring a function parameter contract for callers, or (c) you want to assert the inferred type matches your expectation. If you must annotate, use the narrowest available type the library exports.
+
+37. **Hot Module Replacement leaks long-lived resources unless modules opt out.** [src/lib/program.ts](../app/src/lib/program.ts) constructs a WebSocket via `createSolanaRpcSubscriptions(devnet(...))` at module-evaluation time. Vite's HMR re-evaluates modules on save and the new module instance opens a fresh WebSocket while the old instance's WebSocket is held by closure references in already-mounted React subscribers — those don't get GC'd until full page reload. Over a long dev session, dozens of orphan WebSockets accumulate to api.devnet.solana.com, contributing to public RPC rate limiting and making "why is my dev environment slow today" debugging harder. **The fix is one line:** `if (import.meta.hot) { import.meta.hot.invalidate(); }` at the top of any module that constructs long-lived resources. This forces Vite to do a full page reload instead of re-evaluating the module in place. No-op in production. **The general rule:** any module that opens a WebSocket, sets up a long-running interval, or holds an OS-level handle should opt out of in-place HMR re-eval.
+
+38. **Vendored UI primitives need linter exclusions or they will fight you forever.** shadcn's "copy-paste, don't depend" model means we own the code in `src/components/ui/`, but re-running `pnpm dlx shadcn@latest add <component>` overwrites those files with shadcn's preferred formatting. Without an explicit exclusion in `biome.jsonc`, Biome will reformat the freshly-added files on the next `lint:fix` run, creating noise diffs every time we add a new shadcn component. **The fix:** add `!src/components/ui` and `!src/lib/utils.ts` to `biome.jsonc`'s `files.includes` array (Biome 2.x uses negation patterns, not a separate `excludes` field — see lesson #15). Same pattern applies to any vendored code where the upstream's formatting takes precedence.
 
 ---
 
@@ -2309,16 +2425,17 @@ pnpm add @solana/kit @solana/kit-client-rpc @solana/kit-plugin-rpc \
 **Replaced** the umbrella `@solana/wallet-adapter-wallets` with individual `phantom` + `solflare` packages — drops Trezor and the broken `@solana-program/token-2022 → @solana/sysvars ^2.1.0` peer-dep chain. **Added** `@solana/web3.js@^1.98.4` as an explicit dep (declared as a peer of `wallet-adapter-react-ui`) and `@solana/compat@^6.8.0` (the bridge between web3.js `PublicKey`/`Transaction` and Kit `Address`/`Instruction` — needed by Task 3.1.6 below).
 **Done when**: `pnpm build` in app/ succeeds, `pnpm lint` clean, `pnpm typecheck` clean.
 
-##### 3.1.5: Install UI dependencies (~10 min)
+##### 3.1.5: Install UI dependencies — COMPLETED 2026-04-10
 **Do**:
 ```bash
 pnpm add @tanstack/react-query zustand
-npx shadcn@latest init
-npx shadcn@latest add button card dialog toast
+pnpm dlx shadcn@latest init -t vite -b radix -p nova -y
+pnpm dlx shadcn@latest add card dialog sonner -y
 ```
 **Done when**: shadcn components available in `src/components/ui/`.
+**Result**: React Query 5.97 + Zustand 5.0.12 installed. shadcn vite preset (radix base, nova preset) initialized — created [src/lib/utils.ts](../app/src/lib/utils.ts) (cn helper), [components.json](../app/components.json), and rewrote [src/styles/globals.css](../app/src/styles/globals.css) with the full design-token block (background, foreground, popover, primary, secondary, muted, accent, destructive, border, input, ring, chart-1..5, sidebar-*, plus light/dark variants and radius scale). Components added: button, card, dialog, sonner. **Note**: `toast` is deprecated in shadcn — `sonner` is the current replacement. The Vite scaffold also pulled in `@fontsource-variable/geist`, `lucide-react`, `class-variance-authority`, `clsx`, `tailwind-merge`, `tw-animate-css`, and `@radix-ui/react-{dialog,slot}` as transitive deps. **One follow-up fix**: `next-themes` was uninstalled in the post-review hardening pass (see Decisions Log entry below) — pushflip is dark-only by design and the original shadcn `sonner.tsx` template's `useTheme()` call was unnecessary. Added `!src/components/ui` and `!src/lib/utils.ts` to [biome.jsonc](../app/biome.jsonc) so re-running `shadcn add` doesn't conflict with the linter.
 
-##### 3.1.6: Create WalletProvider (~20 min)
+##### 3.1.6: Create WalletProvider — COMPLETED 2026-04-10
 **Do**: Create `src/providers/wallet-provider.tsx`:
 1. Import `WalletProvider`, `ConnectionProvider` from wallet-adapter-react
 2. Configure for devnet with Kit's `createSolanaRpc()`
@@ -2326,31 +2443,34 @@ npx shadcn@latest add button card dialog toast
 4. Wrap children
 **Learn**: The wallet adapter handles the connection flow between your dApp and browser extension wallets. `createSolanaRpc()` from Kit replaces the old `Connection` class. **Bridge note**: the wallet adapters return web3.js v1 `PublicKey`/`Transaction` objects, while our instruction builders in `@pushflip/client` produce Kit `Address`/`Instruction` types. Use `fromLegacyPublicKey` and `fromLegacyTransactionInstruction` from `@solana/compat` to translate at the boundary. This is why 3.1.4b adds `@solana/web3.js` and `@solana/compat` as explicit deps — the original spec missed both.
 **Done when**: No errors in console when the app loads.
+**Result**: [app/src/providers/wallet-provider.tsx](../app/src/providers/wallet-provider.tsx) wraps `ConnectionProvider` (constructed from `RPC_ENDPOINT`) → `BaseWalletProvider` (with memoized Phantom + Solflare adapters, `autoConnect: true`, `onError` that toasts via sonner) → `WalletModalProvider` (the connect/disconnect modal UI). Wallet UI styles (`@solana/wallet-adapter-react-ui/styles.css`) are imported at module level so Vite hoists them to the main CSS bundle.
 
-##### 3.1.7: Create QueryProvider and wire up App.tsx (~15 min)
+##### 3.1.7: Create QueryProvider and wire up app.tsx — COMPLETED 2026-04-10
 **Do**:
-1. Create `src/providers/QueryProvider.tsx` with React Query's `QueryClientProvider`
-2. Update `src/App.tsx` to wrap with both providers
+1. Create `src/providers/query-provider.tsx` with React Query's `QueryClientProvider`
+2. Update `src/app.tsx` to wrap with both providers
 3. Add basic layout structure: header, main, footer
 **Done when**: App renders with providers, no console errors.
+**Result**: [app/src/providers/query-provider.tsx](../app/src/providers/query-provider.tsx) lazy-inits one `QueryClient` per app instance via `useState(() => new QueryClient(...))` (StrictMode-safe). Defaults tuned for the Kit subscription push model: `staleTime: 30_000`, `gcTime: 60_000`, `retry: 1`, `refetchOnWindowFocus: false`. [app/src/app.tsx](../app/src/app.tsx) wires the providers in this order: `QueryProvider > WalletProvider > {layout + Toaster}`. Layout has semantic `<header>` (with `WalletMultiButton`), `<main>` (placeholder content), `<footer>`.
 
-##### 3.1.8: Create constants and program setup (~15 min)
+##### 3.1.8: Create constants and program setup — COMPLETED 2026-04-10
 **Do**:
 1. Create `src/lib/constants.ts`: `PROGRAM_ID`, `TOKEN_MINT`, `RPC_ENDPOINT`, `GAME_ID` (re-export from `@pushflip/client` constants where possible to keep one source of truth)
 2. Create `src/lib/program.ts`: import the **hand-written** `@pushflip/client` (the workspace package — NOT a Codama client; per the project conventions in [CONTRIBUTING.md](../CONTRIBUTING.md#L73-L74) we don't generate clients), re-export PDA derivation helpers, set up Kit RPC via `createSolanaRpc(devnet(...))`
 3. (Already done in 3.1.1) Path aliases (`@/` → `src/`) live in [app/vite.config.ts](../app/vite.config.ts) using `import.meta.dirname`
 **Done when**: Can import constants and program helpers from any component.
+**Result**: [app/src/lib/constants.ts](../app/src/lib/constants.ts) exports `RPC_ENDPOINT`, `RPC_WS_ENDPOINT`, `TOKEN_MINT`, `GAME_ID`. RPC endpoints read from `import.meta.env.VITE_RPC_*` with `||` fallback (NOT `??` — the empty-string fallthrough was a finding from the seventh heavy-duty review, see Decisions Log) and a case-insensitive `deriveWsEndpoint()` helper for the http→ws scheme swap. [app/src/lib/program.ts](../app/src/lib/program.ts) constructs the Kit `rpc` and `rpcSubscriptions` clients using the cluster-narrowed `RpcDevnet<SolanaRpcApiDevnet>` / `RpcSubscriptionsDevnet<SolanaRpcSubscriptionsApi>` types so future hooks fail at compile time if they try to call mainnet-only methods. **No barrel re-export** — components import program client types/helpers directly from `@pushflip/client` (added as `workspace:*` dep in app/package.json). Also created [app/src/vite-env.d.ts](../app/src/vite-env.d.ts) to augment Vite's `ImportMetaEnv` so `VITE_RPC_*` typos are caught at compile time. Dropped `erasableSyntaxOnly` from [tsconfig.app.json](../app/tsconfig.app.json) because `@pushflip/client` (consumed in source via `main: "src/index.ts"`) uses `const enum` for instruction discriminators — esbuild/Vite handle this fine but tsc with the strict flag rejects it.
 
 ---
 
 #### Task 3.2: Program Integration Layer
 
 ##### 3.2.1: Create useGameSession hook (~25 min)
-**Do**: Create `src/hooks/useGameSession.ts`:
-1. Fetch GameSession account using Codama decoder + React Query
-2. Subscribe to account changes via Kit's `accountNotifications`
+**Do**: Create `src/hooks/use-game-session.ts`:
+1. Fetch GameSession account using `decodeGameSession` from `@pushflip/client` + React Query (`useQuery`)
+2. Subscribe to account changes via Kit's `accountNotifications` from `rpcSubscriptions` in [src/lib/program.ts](../app/src/lib/program.ts)
 3. Return typed game state: pot, turn_order, round_active, deck_committed, etc.
-**Learn**: Kit subscriptions use `AsyncIterator` with an `AbortController`. React Query handles caching and refetching. Together they give you real-time account state.
+**Learn**: Kit subscriptions use `AsyncIterator` with an `AbortController`. React Query handles caching and refetching. Together they give you real-time account state. Use `queryClient.setQueryData(...)` from inside the subscription's async iterator loop to push updates into the React Query cache.
 **Done when**: Hook returns game session data. Log it to console.
 
 ##### 3.2.2: Create usePlayerState hook (~20 min)

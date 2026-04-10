@@ -51,7 +51,12 @@
       "Bash(circom circuits/shuffle_verify.circom --r1cs --sym -o build/)",
       "Bash(circom circuits/shuffle_verify.circom --wasm -o build/)",
       "Read(//home/george9874/repos/pushflip/zk-circuits/**)",
-      "Bash(./node_modules/.bin/tsc --noEmit)"
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Read(//home/george9874/repos/pushflip/scripts/**)",
+      "Bash(snarkjs r1cs:*)",
+      "Bash(rm proof-debug.mjs proof-bytes-debug.mjs)",
+      "Bash(rm -f test-proof-debug.mjs)",
+      "Bash(pnpm list:*)"
     ],
     "deny": [
       "Bash(rm -rf *)",

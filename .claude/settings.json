@@ -80,7 +80,9 @@
       "Bash(pnpm test:*)",
       "Bash(awk -F: '$2+0 > 1700 && $2+0 < 2200')",
       "Bash(awk -F: 'BEGIN{first=0} {n=$2+0; if\\(n>1700 && n<2240\\) print}')",
-      "Bash(awk -F: '$2+0 > 1769 && $2+0 < 1800')"
+      "Bash(awk -F: '$2+0 > 1769 && $2+0 < 1800')",
+      "Bash(pnpm dlx:*)",
+      "Bash(timeout 6 pnpm dev)"
     ],
     "deny": [
       "Bash(rm -rf *)",

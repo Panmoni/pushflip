@@ -3,7 +3,7 @@
 ## ToDo
 - logo
 - colosseum weekly video https://arena.colosseum.org/hackathon
-- how to best share deployment key with Alex
+- how to best share deployment privkey with Alex
 
 ### Future
 - should have a powers of tau ceremony involving humans at some point

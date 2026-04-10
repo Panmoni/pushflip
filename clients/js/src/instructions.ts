@@ -7,11 +7,12 @@
  */
 
 import {
+  type AccountMeta,
   AccountRole,
   type Address,
-  type IInstruction,
-  type IInstructionWithAccounts,
-  type IInstructionWithData,
+  type Instruction,
+  type InstructionWithAccounts,
+  type InstructionWithData,
 } from "@solana/kit";
 
 import { concatBytes, u16Le, u64Le } from "./bytes.js";
@@ -22,19 +23,19 @@ import {
   TOKEN_PROGRAM_ID,
 } from "./constants.js";
 
-type PushflipInstruction = IInstruction<typeof PUSHFLIP_PROGRAM_ID> &
-  IInstructionWithAccounts<readonly { address: Address; role: AccountRole }[]> &
-  IInstructionWithData<Uint8Array>;
+type PushflipInstruction = Instruction<typeof PUSHFLIP_PROGRAM_ID> &
+  InstructionWithAccounts<readonly AccountMeta[]> &
+  InstructionWithData<Uint8Array>;
 
 function buildIx(
   data: Uint8Array,
-  accounts: { address: Address; role: AccountRole }[],
+  accounts: readonly AccountMeta[],
 ): PushflipInstruction {
   return {
     programAddress: PUSHFLIP_PROGRAM_ID,
     accounts,
     data,
-  } as PushflipInstruction;
+  };
 }
 
 // --- 0: Initialize ---

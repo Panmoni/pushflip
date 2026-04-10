@@ -1,7 +1,13 @@
 import * as assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { AccountRole, type Address } from "@solana/kit";
+import {
+  AccountRole,
+  type Address,
+  appendTransactionMessageInstruction,
+  createTransactionMessage,
+  pipe,
+} from "@solana/kit";
 
 import {
   decodeBountyBoard,
@@ -425,5 +431,33 @@ describe("Account deserializers", () => {
     assert.equal(bb.bounties[0].rewardAmount, 1_000_000_000_000n);
     assert.equal(bb.bounties[0].isActive, true);
     assert.equal(bb.bounties[1].rewardAmount, 500_000_000_000n);
+  });
+});
+
+// --- Kit transaction-builder integration ---
+//
+// Catches type-system regressions where an instruction returned by one of
+// our builders cannot be appended to a Kit @solana/kit transaction message.
+// Pure encoding tests above would not catch a `Instruction<T>` generic
+// parameter weakening or an `accounts` shape mismatch — this would.
+describe("Kit transaction-builder integration", () => {
+  it("instruction can be appended to a Kit transaction message", () => {
+    const ix = getStayInstruction({
+      gameSession: FAKE_ADDR_1,
+      playerState: FAKE_ADDR_2,
+      player: FAKE_ADDR_3,
+    });
+
+    // The structural compatibility of `PushflipInstruction` with Kit's
+    // `Instruction` interface is asserted at compile time by passing it
+    // through `appendTransactionMessageInstruction`. If the types ever
+    // drift, tsc will fail before this test runs.
+    const message = pipe(createTransactionMessage({ version: 0 }), (m) =>
+      appendTransactionMessageInstruction(ix, m),
+    );
+
+    assert.equal(message.instructions.length, 1);
+    assert.equal(message.instructions[0]?.programAddress, PUSHFLIP_PROGRAM_ID);
+    assert.equal(message.instructions[0]?.accounts?.length, ix.accounts.length);
   });
 });

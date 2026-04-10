@@ -36,6 +36,7 @@ import {
   type SolanaRpcSubscriptionsApi,
   appendTransactionMessageInstruction,
   appendTransactionMessageInstructions,
+  assertIsTransactionWithBlockhashLifetime,
   createKeyPairSignerFromBytes,
   createSolanaRpc,
   createSolanaRpcSubscriptions,
@@ -202,6 +203,7 @@ async function sendTx(
   );
 
   const signed = await signTransactionMessageWithSigners(message);
+  assertIsTransactionWithBlockhashLifetime(signed);
   await ctx.sendAndConfirm(signed, { commitment: "confirmed" });
   return getSignatureFromTransaction(signed);
 }

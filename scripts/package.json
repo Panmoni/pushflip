@@ -9,14 +9,14 @@
   "dependencies": {
     "@pushflip/client": "workspace:*",
     "@pushflip/dealer": "workspace:*",
-    "@solana-program/compute-budget": "^0.7.0",
-    "@solana-program/system": "^0.7.0",
-    "@solana-program/token": "^0.5.1",
-    "@solana/kit": "^2.1.0"
+    "@solana-program/compute-budget": "^0.15.0",
+    "@solana-program/system": "^0.12.0",
+    "@solana-program/token": "^0.13.0",
+    "@solana/kit": "^6.8.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^24.12.2",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "~6.0.2"
   }
 }

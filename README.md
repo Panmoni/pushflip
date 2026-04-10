@@ -268,6 +268,17 @@ solana program close HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px --bypass-warni
 
 ⚠️ This is **irreversible** — the program ID becomes permanently unusable. Only do this if you're abandoning the deployment.
 
+## Documentation
+
+- [docs/FAQ.md](docs/FAQ.md) — technical Q&A covering architecture, ZK design, trade-offs, and known limitations. Start here if you want depth without reading code.
+- [docs/EXECUTION_PLAN.md](docs/EXECUTION_PLAN.md) — phase-by-phase task breakdown, decisions log, and lessons learned across the build.
+- [docs/ZK_RESEARCH.md](docs/ZK_RESEARCH.md) — survey of Solana ZK primitives and the rationale for choosing Groth16 + Poseidon over the alternatives.
+- [docs/PINOCCHIO_RESOURCE_GUIDE.md](docs/PINOCCHIO_RESOURCE_GUIDE.md) — Pinocchio internals, gotchas (including the borrow-semantics footgun), and the `sol_poseidon` syscall wrapper write-up.
+- [docs/POSEIDON_STACK_WARNING.md](docs/POSEIDON_STACK_WARNING.md) — retrospective on the `light_poseidon` BPF stack overflow and the syscall migration that resolved it.
+- [docs/SOLANA_KIT_GUIDE.md](docs/SOLANA_KIT_GUIDE.md) — `@solana/kit` v2 usage notes for the TypeScript client.
+- [docs/HOSTING_AND_RPC.md](docs/HOSTING_AND_RPC.md) — RPC provider and hosting decisions.
+- [docs/CLAUDE_HOOKS.md](docs/CLAUDE_HOOKS.md) — Claude Code hook safety net configuration.
+
 ## Development
 
 This repo is AI-assisted via Claude Code and ships a set of [Claude Code hooks](docs/CLAUDE_HOOKS.md) as a safety net: protected-file guards for program keypairs / ZK artifacts / [notes.md](notes.md), blocked-command patterns for irreversible Solana and git operations, auto-format (`rustfmt` / `prettier`), `cargo check` feedback after edits, and a pre-PR test gate. See [docs/CLAUDE_HOOKS.md](docs/CLAUDE_HOOKS.md) for the full list.

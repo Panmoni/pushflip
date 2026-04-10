@@ -439,8 +439,7 @@ without taking on an oracle dependency: each player commits
 and the circuit proves the shuffle was derived from the combined seed.
 Neither side alone controls the result. The general lesson is that
 "provable randomness" and "provable deck validity" are orthogonal
-guarantees, and a portfolio piece that confuses them in either
-direction misses the point.
+guarantees, and conflating them in either direction misses the point.
 
 ### <a id="q10"></a>Q10. Single trusted dealer. Call it what it is. Why isn't this just a fancier "trust me bro"?
 
@@ -707,7 +706,7 @@ are exported from those files via
 
 What this means in practice. Whoever holds the toxic waste from the
 single contribution can — in theory — forge a proof for a deck that
-isn't a valid permutation. For a portfolio devnet deployment, that
+isn't a valid permutation. On the current devnet deployment that
 threat is the developer themselves and the impact is zero. For a
 mainnet deployment with real value at stake, this would be a
 disqualifying flaw. The mitigation roadmap is:
@@ -726,8 +725,8 @@ disqualifying flaw. The mitigation roadmap is:
 This is one of the genuine limitations called out in the closing
 section of this FAQ. The general lesson is that cryptographic *code* is
 half the problem; cryptographic *operational hygiene* — keys,
-ceremonies, key management — is the other half, and a portfolio piece
-should be honest about which half it has actually solved.
+ceremonies, key management — is the other half, and being honest about
+which half has actually been solved is the only credible posture.
 
 ### <a id="q16"></a>Q16. Tests pass under LiteSVM but devnet revealed an 11 KB stack overflow. How is your test suite still trustworthy after that?
 
@@ -776,9 +775,7 @@ not green for that class of bug.
 
 ### <a id="q17"></a>Q17. What would actually need to happen for this to ship to mainnet?
 
-A real list, in roughly the order it should be tackled. This is the
-honest version of the "production-readiness" question that gets glossed
-over in most portfolio projects.
+A real list, in roughly the order it should be tackled.
 
 1. **Third-party audit.** Internal reviews, no matter how diligent,
    are not an audit. Five+ heavy-duty reviews caught five+ batches of
@@ -792,8 +789,7 @@ over in most portfolio projects.
    proof system. No mainnet without one.
 3. **Player-entropy mitigation for dealer trust.** Discussed in
    [Q9](#q9) and [Q10](#q10). The current single-dealer model is
-   acceptable for a portfolio piece on devnet; it's not acceptable for
-   real value at stake.
+   acceptable on devnet; it's not acceptable for real value at stake.
 4. **Smoke test in CI.** The smoke test
    ([Q16](#q16)) is currently a manual run. It needs to be a GitHub
    Actions job against a disposable devnet keypair, gated on every PR
@@ -838,7 +834,3 @@ caveats it acknowledges, in one place so they're impossible to miss:
   [Q12](#q12))
 - **Frontend and House AI not yet built.** Phase 3 and 4 of the
   execution plan are scaffolded but not implemented.
-
-These are the things to lead with if you're handed this project and
-asked what's wrong with it. Burying them would make every other claim
-in this document less credible.

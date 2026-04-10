@@ -19,9 +19,12 @@ Maintainer contact: [@georgedonnelly on Telegram](https://t.me/georgedonnelly).
   is pinned by a snapshot fingerprint test in
   [program/src/zk/verifying_key.rs](program/src/zk/verifying_key.rs).
 - **TypeScript client** ([clients/js/](clients/js/)) — stable. Hand-written on
-  `@solana/kit`. 25 unit tests passing.
+  `@solana/kit` v6. 26 unit tests passing (includes a Kit transaction-builder
+  integration test).
 - **Frontend** ([app/](app/)) — Phase 3B, in progress. Vite + React + Tailwind
-  + `@solana/kit`. Tasks 3.1 → 3.7 in the execution plan.
+  + Biome/Ultracite + `@solana/kit` v6. The wallet adapter ↔ Kit bridge uses
+  `@solana/web3.js` 1.x + `@solana/compat`. Tasks 3.1 → 3.7 in the execution
+  plan.
 - **House AI** (`house-ai/`) — Phase 4, not started. Currently scoped as
   Node + TypeScript in the plan.
 - **Threshold randomness** — post-MVP. Documented as Task 5.0.2. The current

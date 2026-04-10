@@ -275,7 +275,7 @@ solana program close HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px --bypass-warni
 - [docs/ZK_RESEARCH.md](docs/ZK_RESEARCH.md) — survey of Solana ZK primitives and the rationale for choosing Groth16 + Poseidon over the alternatives.
 - [docs/PINOCCHIO_RESOURCE_GUIDE.md](docs/PINOCCHIO_RESOURCE_GUIDE.md) — Pinocchio internals, gotchas (including the borrow-semantics footgun), and the `sol_poseidon` syscall wrapper write-up.
 - [docs/POSEIDON_STACK_WARNING.md](docs/POSEIDON_STACK_WARNING.md) — retrospective on the `light_poseidon` BPF stack overflow and the syscall migration that resolved it.
-- [docs/SOLANA_KIT_GUIDE.md](docs/SOLANA_KIT_GUIDE.md) — `@solana/kit` v2 usage notes for the TypeScript client.
+- [docs/SOLANA_KIT_GUIDE.md](docs/SOLANA_KIT_GUIDE.md) — `@solana/kit` v6 usage notes for the TypeScript client.
 - [docs/HOSTING_AND_RPC.md](docs/HOSTING_AND_RPC.md) — RPC provider and hosting decisions.
 - [docs/CLAUDE_HOOKS.md](docs/CLAUDE_HOOKS.md) — Claude Code hook safety net configuration.
 

@@ -4,9 +4,9 @@
 
 ## What Is Kit?
 
-Kit (`@solana/kit`) is the **official JavaScript SDK for Solana**, maintained by Anza (the Agave validator team). It is the renamed 2.x line of `@solana/web3.js` — a complete ground-up rewrite, not a version bump.
+Kit (`@solana/kit`) is the **official JavaScript SDK for Solana**, maintained by Anza (the Agave validator team). It started life as the renamed 2.x line of `@solana/web3.js` — a complete ground-up rewrite, not a version bump — and is currently shipping as v6.
 
-- **Package**: `@solana/kit` on npm (v6.5.0 stable)
+- **Package**: `@solana/kit` on npm (v6.8.0 — pinned at `^6.8.0` workspace-wide)
 - **Repo**: https://github.com/anza-xyz/kit
 - **Docs**: https://www.solanakit.com/docs
 - **License**: MIT

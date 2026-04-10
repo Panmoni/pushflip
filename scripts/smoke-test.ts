@@ -62,10 +62,13 @@ import {
   deriveVaultPda,
   getCloseGameInstruction,
   getCommitDeckInstruction,
+  getEndRoundInstruction,
   getHitInstruction,
   getInitializeInstruction,
   getJoinRoundInstruction,
+  getLeaveGameInstruction,
   getStartRoundInstruction,
+  getStayInstruction,
   PUSHFLIP_PROGRAM_ID,
 } from "@pushflip/client";
 import { Dealer } from "@pushflip/dealer";
@@ -87,9 +90,12 @@ const DEALER_CONFIG = {
 };
 
 // Lamports each ephemeral player needs:
-//   - PlayerState rent: ~0.0019 SOL (256-byte account)
-//   - A few tx fees (5000 lamports each)
-//   - Buffer
+//   - PlayerState rent: ~0.00267 SOL (256-byte account, refunded on leave_game)
+//   - A few tx fees per player (~3-4 instructions × 5000 lamports each)
+//   - Buffer for the dealer's commit_deck tx
+// 0.005 SOL is plenty even after the 3.A.1 extension (stay/end_round/
+// leave_game) because rent comes back when leave_game closes the
+// PlayerState before the player ever needs to spend it.
 const PLAYER_FUNDING_LAMPORTS = 5_000_000n; // 0.005 SOL per player
 
 // Compute budget for instructions that touch Poseidon. The default 200K is
@@ -126,6 +132,31 @@ function info(msg: string): void {
 function fail(msg: string): never {
   console.log(`  ${c.red}✗${c.reset} ${msg}`);
   process.exit(1);
+}
+
+/**
+ * Retry a flaky async operation up to `attempts` times with a small
+ * exponential backoff. Devnet RPC occasionally drops connections mid-stream
+ * with `SocketError: other side closed` and retries clear it instantly.
+ */
+async function retry<T>(
+  label: string,
+  fn: () => Promise<T>,
+  attempts: number = 4,
+): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`  ${c.dim}retry ${i + 1}/${attempts} for ${label}: ${msg}${c.reset}`);
+      // 250ms, 500ms, 1000ms — total < 2s budget
+      await new Promise((r) => setTimeout(r, 250 * 2 ** i));
+    }
+  }
+  throw lastErr;
 }
 
 /** Random u64 game_id derived from current time + random bytes. */
@@ -421,37 +452,287 @@ async function main(): Promise<void> {
   }
   ok(`Hand contains the revealed card: value=${card.value} type=${card.cardType} suit=${card.suit}`);
 
-  // --- Step 8: Cleanup — close the game to recover rent ---
-  step(8, "Close game (recover rent)");
-  // The game can only be closed when no round is active. We're mid-round,
-  // so we can't close cleanly without ending the round first. End_round
-  // requires all players inactive (busted or stayed). For the smoke test,
-  // we just leave the round active and let the rent stay parked. The wallet
-  // can recover it later by ending the round + closing the game manually.
-  info(
-    `(skipping close — round is active and ending it requires player B to also act)`,
+  // Player A might already be inactive after the hit (if they busted on
+  // their first card — possible with a duplicate value or a bust effect).
+  // Track the active state explicitly so the rest of the flow handles
+  // either case correctly.
+  let playerAActive = psState.isActive;
+  info(`player A active after hit: ${playerAActive}`);
+
+  // --- Step 7b: Player A stays (only if still active) ---
+  if (playerAActive) {
+    step(7.5, "Player A calls stay() to lock in their score");
+    const stayAIx = getStayInstruction({
+      gameSession: gamePda,
+      playerState: psA,
+      player: playerA.address,
+    });
+    const stayASig = await sendTx(ctx, playerA, [stayAIx], [playerA]);
+    ok(`Player A stayed`);
+    info(`tx: ${stayASig}`);
+    playerAActive = false;
+  } else {
+    info(`(player A already inactive — no stay needed)`);
+  }
+
+  // --- Step 7c: Verify it's now player B's turn, then player B stays ---
+  step(8, "Player B's turn — hit once then stay");
+
+  const gsAccountTurn = await rpc.getAccountInfo(gamePda, { encoding: "base64" }).send();
+  const gsTurn = decodeGameSession(Buffer.from(gsAccountTurn.value!.data[0], "base64"));
+  if (gsTurn.currentTurnIndex !== 1) {
+    fail(`Expected currentTurnIndex=1 (player B), got ${gsTurn.currentTurnIndex}`);
+  }
+  ok(`turn advanced: currentTurnIndex = 1 (player B)`);
+
+  // Player B hits once
+  const revealB = dealer.revealNextCard();
+  info(`Card revealed by dealer for B: value=${revealB.card.value} type=${revealB.card.cardType} suit=${revealB.card.suit}`);
+  const hitBIx = getHitInstruction(
+    {
+      gameSession: gamePda,
+      playerState: psB,
+      player: playerB.address,
+    },
+    {
+      cardValue: revealB.card.value,
+      cardType: revealB.card.cardType,
+      cardSuit: revealB.card.suit,
+      merkleProof: revealB.proof,
+      leafIndex: revealB.leafIndex,
+    },
   );
-  info(
-    `Game and player state PDAs left intact for forensic inspection.`,
+  const hitBCuIx = getSetComputeUnitLimitInstruction({ units: HIT_COMPUTE_LIMIT });
+  const hitBSig = await sendTx(ctx, playerB, [hitBCuIx, hitBIx], [playerB]);
+  ok(`Player B hit succeeded`);
+  info(`tx: ${hitBSig}`);
+
+  // Check if player B is still active (might have busted)
+  const psBAccount = await rpc.getAccountInfo(psB, { encoding: "base64" }).send();
+  const psBState = decodePlayerState(Buffer.from(psBAccount.value!.data[0], "base64"));
+  let playerBActive = psBState.isActive;
+  info(`player B active after hit: ${playerBActive}`);
+
+  if (playerBActive) {
+    const stayBIx = getStayInstruction({
+      gameSession: gamePda,
+      playerState: psB,
+      player: playerB.address,
+    });
+    const stayBSig = await sendTx(ctx, playerB, [stayBIx], [playerB]);
+    ok(`Player B stayed`);
+    info(`tx: ${stayBSig}`);
+    playerBActive = false;
+  } else {
+    info(`(player B already inactive — no stay needed)`);
+  }
+
+  // --- Step 9: Authority calls end_round ---
+  step(9, "Authority calls end_round() — settles the round");
+  info(`(no token payout: vault_ready=false in this run, so end_round only updates state)`);
+
+  // The authority is the caller. End_round needs the vault, winner token
+  // account, treasury token account, and player_states in turn_order. Since
+  // vault_ready=false, no transfers fire, so we can pass placeholders for
+  // the token accounts (they're never read by the no-payout code path).
+  const endRoundIx = getEndRoundInstruction({
+    gameSession: gamePda,
+    caller: wallet.address,
+    vault: vaultPda,
+    winnerTokenAccount: wallet.address, // placeholder, vault_ready=false
+    treasuryTokenAccount: wallet.address, // placeholder, vault_ready=false
+    playerStates: [psA, psB],
+  });
+  const endRoundSig = await sendTx(ctx, wallet, [endRoundIx]);
+  ok(`Round ended`);
+  info(`tx: ${endRoundSig}`);
+
+  const gsAfterEnd = decodeGameSession(
+    Buffer.from(
+      (await rpc.getAccountInfo(gamePda, { encoding: "base64" }).send()).value!.data[0],
+      "base64",
+    ),
   );
+  if (gsAfterEnd.roundActive) fail(`round_active should be false after end_round, got true`);
+  if (gsAfterEnd.deckCommitted) fail(`deck_committed should be false after end_round, got true`);
+  if (gsAfterEnd.drawCounter !== 0) fail(`draw_counter should be 0 after end_round, got ${gsAfterEnd.drawCounter}`);
+  ok(`GameSession state reset: round_active=false, deck_committed=false, draw_counter=0`);
+
+  // --- Step 10: Player B leaves the game between rounds ---
+  // Verifies the leave_game between-rounds path:
+  //   - Compacts turn_order
+  //   - Decrements player_count
+  //   - Closes PlayerState PDA
+  //   - Refunds rent to the player
+  step(10, "Player B calls leave_game() — exercises between-rounds leave path");
+
+  // Use getBalance instead of getAccountInfo: it's lamport-only and skips
+  // the JSON-RPC default base58 encoding which fails on data > 128 bytes
+  // (PlayerState is 256 bytes).
+  const playerBLamportsBefore = await retry("getBalance(playerB) pre-leave", () =>
+    rpc.getBalance(playerB.address).send().then((r) => r.value),
+  );
+  const psBLamportsBefore = await retry("getBalance(psB) pre-leave", () =>
+    rpc.getBalance(psB).send().then((r) => r.value),
+  );
+  info(`player B balance before leave: ${playerBLamportsBefore} lamports`);
+  info(`PlayerState B rent: ${psBLamportsBefore} lamports`);
+
+  const leaveBIx = getLeaveGameInstruction({
+    gameSession: gamePda,
+    playerState: psB,
+    player: playerB.address,
+    recipient: playerB.address,
+  });
+  const leaveBSig = await sendTx(ctx, playerB, [leaveBIx], [playerB]);
+  ok(`Player B left the game`);
+  info(`tx: ${leaveBSig}`);
+
+  // PlayerState B should be gone. Pass encoding=base64 so the call
+  // doesn't fail with the base58>128B error if the account somehow
+  // still exists.
+  const psBAfterLeave = await retry("getAccountInfo(psB) post-leave", () =>
+    rpc.getAccountInfo(psB, { encoding: "base64" }).send(),
+  );
+  if (psBAfterLeave.value !== null) fail(`PlayerState B should be closed, but still exists`);
+  ok(`PlayerState B PDA closed`);
+
+  // GameSession should now have player_count=1 with player A in slot 0
+  const gsAfterLeave = decodeGameSession(
+    Buffer.from(
+      (
+        await retry("getAccountInfo(gamePda) post-leaveB", () =>
+          rpc.getAccountInfo(gamePda, { encoding: "base64" }).send(),
+        )
+      ).value!.data[0],
+      "base64",
+    ),
+  );
+  if (gsAfterLeave.playerCount !== 1) {
+    fail(`Expected playerCount=1 after B leaves, got ${gsAfterLeave.playerCount}`);
+  }
+  if (gsAfterLeave.turnOrder[0] !== playerA.address) {
+    fail(`Expected turnOrder[0]=playerA, got ${gsAfterLeave.turnOrder[0]}`);
+  }
+  ok(`turn_order compacted: playerCount=1, turnOrder[0]=playerA`);
+
+  // Player B's lamport balance should have increased by the PlayerState
+  // rent minus the leave_game tx fee (5000 lamports).
+  const playerBLamportsAfter = await retry("getBalance(playerB) post-leave", () =>
+    rpc.getBalance(playerB.address).send().then((r) => r.value),
+  );
+  const lamportsDelta = playerBLamportsAfter - playerBLamportsBefore;
+  const expectedDelta = psBLamportsBefore - 5000n; // rent minus tx fee
+  info(`player B balance after leave: ${playerBLamportsAfter} lamports (delta: ${lamportsDelta >= 0n ? "+" : ""}${lamportsDelta})`);
+  if (lamportsDelta !== expectedDelta) {
+    fail(
+      `Rent refund off! Expected delta=${expectedDelta} (rent ${psBLamportsBefore} - tx fee 5000), got ${lamportsDelta}`,
+    );
+  }
+  ok(`Rent refund verified: +${lamportsDelta} lamports`);
+
+  // --- Step 11: Player A also leaves so we can close the game ---
+  // The close_game instruction requires player_count == 0 OR no players
+  // referenced — actually it just needs round_active=false and pot_amount=0,
+  // which we already have. But for clean rent recovery we leave A too so
+  // their PlayerState gets reclaimed before we close the GameSession.
+  step(11, "Player A leaves between rounds — also exercises leave_game from the only-player slot");
+
+  const psALamportsBefore = (await rpc.getBalance(psA).send()).value;
+  const leaveAIx = getLeaveGameInstruction({
+    gameSession: gamePda,
+    playerState: psA,
+    player: playerA.address,
+    recipient: playerA.address,
+  });
+  const leaveASig = await sendTx(ctx, playerA, [leaveAIx], [playerA]);
+  ok(`Player A left the game`);
+  info(`tx: ${leaveASig}`);
+
+  const psAAfterLeave = await retry("getAccountInfo(psA) post-leave", () =>
+    rpc.getAccountInfo(psA, { encoding: "base64" }).send(),
+  );
+  if (psAAfterLeave.value !== null) fail(`PlayerState A should be closed`);
+
+  const gsAfterLeaveA = decodeGameSession(
+    Buffer.from(
+      (
+        await retry("getAccountInfo(gamePda) post-leaveA", () =>
+          rpc.getAccountInfo(gamePda, { encoding: "base64" }).send(),
+        )
+      ).value!.data[0],
+      "base64",
+    ),
+  );
+  if (gsAfterLeaveA.playerCount !== 0) {
+    fail(`Expected playerCount=0 after A leaves, got ${gsAfterLeaveA.playerCount}`);
+  }
+  ok(`PlayerState A PDA closed; GameSession now has playerCount=0`);
+  void psALamportsBefore; // (recorded above for symmetry but we trust the assertion above too)
+
+  // --- Step 12: Authority closes the game and recovers rent ---
+  step(12, "Authority calls close_game() — recovers GameSession rent");
+
+  const walletLamportsBefore = await retry("getBalance(wallet) pre-close", () =>
+    rpc.getBalance(wallet.address).send().then((r) => r.value),
+  );
+  const gsLamportsBefore = await retry("getBalance(gamePda) pre-close", () =>
+    rpc.getBalance(gamePda).send().then((r) => r.value),
+  );
+  info(`wallet balance before close: ${walletLamportsBefore} lamports`);
+  info(`GameSession rent: ${gsLamportsBefore} lamports`);
+
+  const closeGameIx = getCloseGameInstruction({
+    gameSession: gamePda,
+    authority: wallet.address,
+    recipient: wallet.address,
+  });
+  const closeSig = await sendTx(ctx, wallet, [closeGameIx]);
+  ok(`Game closed`);
+  info(`tx: ${closeSig}`);
+
+  // GameSession PDA should be gone
+  const gsAfterClose = await retry("getAccountInfo(gamePda) post-close", () =>
+    rpc.getAccountInfo(gamePda, { encoding: "base64" }).send(),
+  );
+  if (gsAfterClose.value !== null) fail(`GameSession should be closed, but still exists`);
+  ok(`GameSession PDA closed`);
+
+  const walletLamportsAfter = await retry("getBalance(wallet) post-close", () =>
+    rpc.getBalance(wallet.address).send().then((r) => r.value),
+  );
+  const walletDelta = walletLamportsAfter - walletLamportsBefore;
+  // Authority got back GameSession rent but paid the close_game tx fee.
+  const expectedWalletDelta = gsLamportsBefore - 5000n;
+  if (walletDelta !== expectedWalletDelta) {
+    fail(
+      `Authority rent refund off! Expected ${expectedWalletDelta}, got ${walletDelta}`,
+    );
+  }
+  ok(`Authority rent refund verified: +${walletDelta} lamports`);
 
   // --- Final summary ---
   console.log(`\n${c.bold}${c.green}╔════════════════════════════════════════════════════╗${c.reset}`);
   console.log(`${c.bold}${c.green}║  ✓ SMOKE TEST PASSED                               ║${c.reset}`);
   console.log(`${c.bold}${c.green}╚════════════════════════════════════════════════════╝${c.reset}`);
   console.log(`\n${c.bold}Verified empirically on devnet:${c.reset}`);
-  console.log(`  ${c.green}✓${c.reset} Initialize → join (×2) → commit_deck → start_round → hit pipeline works`);
+  console.log(`  ${c.green}✓${c.reset} Full game lifecycle: initialize → join (×2) → commit_deck → start_round → hit → stay → end_round → leave_game → close_game`);
   console.log(`  ${c.green}✓${c.reset} Groth16 proof verification on real alt_bn128 syscalls works`);
   console.log(`  ${c.green}✓${c.reset} ${c.bold}sol_poseidon syscall + Merkle proof verification work on the real validator${c.reset}`);
   console.log(`  ${c.green}✓${c.reset} Card data round-trip: dealer → on-chain → client deserialize`);
   console.log(`  ${c.green}✓${c.reset} The initialize design fix (no auto-add House) holds on real validator`);
-  console.log(`\n${c.dim}Game PDA (left active for inspection): ${gamePda}${c.reset}`);
-  console.log(`${c.dim}game_id: ${gameId}${c.reset}`);
-  console.log(`\n${c.dim}Next: Phase 3.1 — frontend scaffolding${c.reset}\n`);
+  console.log(`  ${c.green}✓${c.reset} Turn advancement (hit → stay → next player) works on real validator`);
+  console.log(`  ${c.green}✓${c.reset} end_round (no-payout path) settles state correctly`);
+  console.log(`  ${c.green}✓${c.reset} leave_game (between-rounds) closes PlayerState and refunds rent exactly`);
+  console.log(`  ${c.green}✓${c.reset} close_game closes GameSession and refunds rent exactly`);
+  console.log(`\n${c.dim}Game and all PlayerStates fully cleaned up. No on-chain residue.${c.reset}`);
+  console.log(`${c.dim}game_id: ${gameId}${c.reset}\n`);
 }
 
-main().catch((e) => {
-  console.error(`\n${c.red}${c.bold}Smoke test crashed:${c.reset}`);
-  console.error(e);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0)) // force-exit so an open WSS handle doesn't keep us alive
+  .catch((e) => {
+    console.error(`\n${c.red}${c.bold}Smoke test crashed:${c.reset}`);
+    console.error(e);
+    process.exit(1);
+  });

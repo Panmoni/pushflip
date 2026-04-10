@@ -11,6 +11,7 @@
     "@pushflip/dealer": "workspace:*",
     "@solana-program/compute-budget": "^0.7.0",
     "@solana-program/system": "^0.7.0",
+    "@solana-program/token": "^0.5.1",
     "@solana/kit": "^2.1.0"
   },
   "devDependencies": {

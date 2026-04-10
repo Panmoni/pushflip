@@ -158,6 +158,8 @@ The magic: the court (on-chain verifier) can confirm the document is valid witho
 
 The current system uses a **single trusted dealer** that chooses the shuffle. The ZK proof proves the deck is a *valid* permutation but does NOT prove it was shuffled *randomly*. Players must trust the dealer shuffled honestly. See the [execution plan](docs/EXECUTION_PLAN.md) for the roadmap to player-contributed entropy and decentralized dealing.
 
+A related limitation: Groth16 proofs are **not bound to a specific game session.** A valid proof for game #1 is mathematically valid for game #2 with the same canonical deck, because the public inputs are only `(merkle_root, canonical_hash)` — no game_id. In practice this is only exploitable by the dealer themselves (who already knows the deck preimage), so it reduces to "the dealer must not reuse shuffles across games" — which is the same trust assumption as the single-dealer model. The proper fix is to add `game_id` as a third public input to the circuit, which is part of the same threshold-randomness rework planned for post-MVP. Tracked in [docs/EXECUTION_PLAN.md](docs/EXECUTION_PLAN.md) Pre-Mainnet Checklist 5.0.2.
+
 ## Deployment
 
 ### Live Devnet Deployment

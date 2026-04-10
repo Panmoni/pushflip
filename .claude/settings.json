@@ -67,7 +67,20 @@
       "Bash(pkill -f \"tsx smoke-test\")",
       "Bash(kill -9 46317)",
       "Bash(rm -f /tmp/reverify-bounty-postfix.log)",
-      "Bash(timeout 300 nice -n 19 ionice -c 3 npx tsx smoke-test-bounty.ts)"
+      "Bash(timeout 300 nice -n 19 ionice -c 3 npx tsx smoke-test-bounty.ts)",
+      "Bash(pnpm create:*)",
+      "Bash(timeout 8 pnpm dev)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm remove:*)",
+      "Bash(pnpm lint:*)",
+      "Bash(pnpm lint:fix)",
+      "Bash(pnpm typecheck:*)",
+      "Bash(pnpm exec tsc:*)",
+      "Bash(pnpm exec biome:*)",
+      "Bash(pnpm test:*)",
+      "Bash(awk -F: '$2+0 > 1700 && $2+0 < 2200')",
+      "Bash(awk -F: 'BEGIN{first=0} {n=$2+0; if\\(n>1700 && n<2240\\) print}')",
+      "Bash(awk -F: '$2+0 > 1769 && $2+0 < 1800')"
     ],
     "deny": [
       "Bash(rm -rf *)",
@@ -79,7 +92,8 @@
       "/home/george9874/tools/open-brain-mcp/src",
       "/home/george9874/repos/pushflip",
       "/home/george9874/repos/pushflip/clients/js/src",
-      "/tmp"
+      "/tmp",
+      "/home/george9874/repos/pushflip/app"
     ]
   },
   "hooks": {

@@ -116,6 +116,18 @@ export class Dealer {
   }
 
   /**
+   * Get the serialized Groth16 proof components (proofA, proofB, proofC,
+   * publicInputs) for the current round. Use this with @pushflip/client's
+   * `getCommitDeckInstruction` to build the on-chain transaction.
+   */
+  getSerializedProof(): SerializedProof {
+    if (!this.serializedProof) {
+      throw new Error("No proof available — call shuffle() first");
+    }
+    return this.serializedProof;
+  }
+
+  /**
    * Reveal the next card in sequence.
    *
    * Enforces sequential access — cards must be revealed in order.

@@ -1,5 +1,21 @@
 {
   "name": "@pushflip/scripts",
   "private": true,
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "smoke-test": "tsx smoke-test.ts"
+  },
+  "dependencies": {
+    "@pushflip/client": "workspace:*",
+    "@pushflip/dealer": "workspace:*",
+    "@solana-program/compute-budget": "^0.7.0",
+    "@solana-program/system": "^0.7.0",
+    "@solana/kit": "^2.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
 }

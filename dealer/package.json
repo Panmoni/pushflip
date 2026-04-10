@@ -1,8 +1,16 @@
 {
   "name": "@pushflip/dealer",
+  "description": "Workspace-internal ZK dealer for the pushflip program. Consumed in source form via tsx; not intended for publishing. Run `pnpm build` first if you need a compiled artifact under dist/.",
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "types": "./src/index.ts",
   "scripts": {
     "build": "tsc",
     "start": "npx tsx src/index.ts",

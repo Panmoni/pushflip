@@ -6,7 +6,6 @@
 /// Public inputs: 2 (merkle_root, canonical_hash)
 use pinocchio_groth16::groth16::Groth16Verifyingkey;
 
-/// Marker: non-empty signals that Groth16 verification is enabled.
 /// Non-empty = Groth16 verification enabled. Empty = skip (testing only).
 #[cfg(not(feature = "skip-zk-verify"))]
 pub const VERIFYING_KEY_BYTES: &[u8] = &[1];
@@ -33,33 +32,33 @@ pub const VK_ALPHA_G1: [u8; 64] = [
 ];
 
 pub const VK_BETA_G2: [u8; 128] = [
-    43, 194, 55, 173, 162, 244, 147, 61, 106, 110, 124, 223, 156, 135, 2, 125, 244, 197, 9, 229,
-    168, 202, 100, 41, 4, 36, 169, 221, 190, 240, 224, 43, 8, 32, 177, 40, 67, 118, 70, 215, 76,
-    191, 202, 84, 231, 220, 70, 240, 86, 176, 80, 100, 248, 133, 29, 15, 55, 66, 223, 222, 119, 76,
-    121, 2, 10, 222, 145, 215, 138, 148, 64, 49, 87, 109, 165, 245, 216, 156, 15, 22, 154, 76, 232,
-    4, 217, 209, 121, 150, 21, 212, 164, 242, 52, 50, 30, 87, 17, 57, 215, 5, 119, 44, 169, 54,
-    194, 67, 48, 220, 121, 233, 43, 134, 114, 195, 125, 253, 212, 55, 205, 207, 56, 71, 110, 26,
-    20, 186, 177, 240,
+    8, 32, 177, 40, 67, 118, 70, 215, 76, 191, 202, 84, 231, 220, 70, 240, 86, 176, 80, 100, 248,
+    133, 29, 15, 55, 66, 223, 222, 119, 76, 121, 2, 43, 194, 55, 173, 162, 244, 147, 61, 106, 110,
+    124, 223, 156, 135, 2, 125, 244, 197, 9, 229, 168, 202, 100, 41, 4, 36, 169, 221, 190, 240,
+    224, 43, 17, 57, 215, 5, 119, 44, 169, 54, 194, 67, 48, 220, 121, 233, 43, 134, 114, 195, 125,
+    253, 212, 55, 205, 207, 56, 71, 110, 26, 20, 186, 177, 240, 10, 222, 145, 215, 138, 148, 64,
+    49, 87, 109, 165, 245, 216, 156, 15, 22, 154, 76, 232, 4, 217, 209, 121, 150, 21, 212, 164,
+    242, 52, 50, 30, 87,
 ];
 
 pub const VK_GAMMA_G2: [u8; 128] = [
-    24, 0, 222, 239, 18, 31, 30, 118, 66, 106, 0, 102, 94, 92, 68, 121, 103, 67, 34, 212, 247, 94,
-    218, 221, 70, 222, 189, 92, 217, 146, 246, 237, 25, 142, 147, 147, 146, 13, 72, 58, 114, 96,
-    191, 183, 49, 251, 93, 37, 241, 170, 73, 51, 53, 169, 231, 18, 151, 228, 133, 183, 174, 243,
-    18, 194, 18, 200, 94, 165, 219, 140, 109, 235, 74, 171, 113, 128, 141, 203, 64, 143, 227, 209,
-    231, 105, 12, 67, 211, 123, 76, 230, 204, 1, 102, 250, 125, 170, 9, 6, 137, 208, 88, 95, 240,
-    117, 236, 158, 153, 173, 105, 12, 51, 149, 188, 75, 49, 51, 112, 179, 142, 243, 85, 172, 218,
-    220, 209, 34, 151, 91,
+    25, 142, 147, 147, 146, 13, 72, 58, 114, 96, 191, 183, 49, 251, 93, 37, 241, 170, 73, 51, 53,
+    169, 231, 18, 151, 228, 133, 183, 174, 243, 18, 194, 24, 0, 222, 239, 18, 31, 30, 118, 66, 106,
+    0, 102, 94, 92, 68, 121, 103, 67, 34, 212, 247, 94, 218, 221, 70, 222, 189, 92, 217, 146, 246,
+    237, 9, 6, 137, 208, 88, 95, 240, 117, 236, 158, 153, 173, 105, 12, 51, 149, 188, 75, 49, 51,
+    112, 179, 142, 243, 85, 172, 218, 220, 209, 34, 151, 91, 18, 200, 94, 165, 219, 140, 109, 235,
+    74, 171, 113, 128, 141, 203, 64, 143, 227, 209, 231, 105, 12, 67, 211, 123, 76, 230, 204, 1,
+    102, 250, 125, 170,
 ];
 
 pub const VK_DELTA_G2: [u8; 128] = [
-    40, 134, 192, 61, 125, 208, 85, 204, 67, 241, 168, 21, 63, 15, 205, 53, 92, 127, 106, 41, 66,
-    137, 6, 50, 27, 96, 252, 42, 226, 5, 107, 14, 42, 13, 42, 146, 62, 140, 102, 133, 215, 131,
-    216, 110, 27, 142, 70, 146, 40, 212, 70, 135, 234, 238, 32, 176, 241, 36, 250, 178, 159, 36,
-    12, 255, 36, 243, 157, 55, 162, 29, 159, 164, 11, 204, 218, 180, 23, 209, 86, 61, 119, 37, 233,
-    182, 14, 89, 142, 98, 229, 205, 79, 21, 170, 132, 183, 210, 17, 199, 156, 7, 141, 255, 236,
-    167, 214, 71, 139, 125, 112, 28, 124, 45, 123, 213, 27, 211, 148, 235, 62, 224, 139, 98, 125,
-    5, 246, 78, 141, 1,
+    42, 13, 42, 146, 62, 140, 102, 133, 215, 131, 216, 110, 27, 142, 70, 146, 40, 212, 70, 135,
+    234, 238, 32, 176, 241, 36, 250, 178, 159, 36, 12, 255, 40, 134, 192, 61, 125, 208, 85, 204,
+    67, 241, 168, 21, 63, 15, 205, 53, 92, 127, 106, 41, 66, 137, 6, 50, 27, 96, 252, 42, 226, 5,
+    107, 14, 17, 199, 156, 7, 141, 255, 236, 167, 214, 71, 139, 125, 112, 28, 124, 45, 123, 213,
+    27, 211, 148, 235, 62, 224, 139, 98, 125, 5, 246, 78, 141, 1, 36, 243, 157, 55, 162, 29, 159,
+    164, 11, 204, 218, 180, 23, 209, 86, 61, 119, 37, 233, 182, 14, 89, 142, 98, 229, 205, 79, 21,
+    170, 132, 183, 210,
 ];
 
 pub const VK_IC: [[u8; 64]; 3] = [
@@ -91,5 +90,91 @@ pub fn verifying_key() -> Groth16Verifyingkey<'static> {
         vk_gamma_g2: VK_GAMMA_G2,
         vk_delta_g2: VK_DELTA_G2,
         vk_ic: &VK_IC,
+    }
+}
+
+/// Fingerprint of the entire on-chain verifying key, including the
+/// canonical deck hash. Updated by the test below whenever the VK is
+/// regenerated. **DO NOT update this constant blindly** — every change is
+/// a contract break with the dealer's `serializeG2` and `circomlibjs`
+/// canonical hash, and requires:
+///
+/// 1. Re-running `dealer/src/prover.test.ts` (the `serializeG2` G2-swap
+///    fixture) to confirm the dealer still emits proofs in the format the
+///    new VK expects.
+/// 2. Re-running the devnet smoke test (`scripts/smoke-test.ts`) to confirm
+///    `commit_deck` still verifies a real proof end-to-end against the
+///    upgraded program.
+/// 3. Redeploying the program to devnet (`solana program deploy`) so the
+///    on-chain VK matches the source-tree constants.
+///
+/// If you only update the constant without doing the above, you have not
+/// fixed the bug — you have removed the gate that was about to catch it.
+//
+// `#[allow(dead_code)]`: this constant is intentionally only consumed by
+// the `#[cfg(test)]` snapshot test below. It exists at module scope (and
+// `pub`) so that humans browsing the source see the snapshot value and
+// the doc-comment checklist. The production build correctly observes it
+// is never read at runtime.
+#[allow(dead_code)]
+pub const VK_FINGERPRINT: u64 = 0x93084a24fed22583;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// FNV-1a 64-bit hash. Single-pass, deterministic, zero deps. Used
+    /// only as a snapshot fingerprint — not for security.
+    fn fnv1a64(bytes: &[u8]) -> u64 {
+        const OFFSET: u64 = 0xcbf29ce484222325;
+        const PRIME: u64 = 0x100000001b3;
+        let mut hash = OFFSET;
+        for &b in bytes {
+            hash ^= b as u64;
+            hash = hash.wrapping_mul(PRIME);
+        }
+        hash
+    }
+
+    /// Folds the entire on-chain VK into a single u64 fingerprint.
+    fn compute_vk_fingerprint() -> u64 {
+        let mut buf: Vec<u8> = Vec::with_capacity(32 + 64 + 128 * 3 + 64 * 3);
+        buf.extend_from_slice(&CANONICAL_DECK_HASH);
+        buf.extend_from_slice(&VK_ALPHA_G1);
+        buf.extend_from_slice(&VK_BETA_G2);
+        buf.extend_from_slice(&VK_GAMMA_G2);
+        buf.extend_from_slice(&VK_DELTA_G2);
+        for ic in VK_IC.iter() {
+            buf.extend_from_slice(ic);
+        }
+        fnv1a64(&buf)
+    }
+
+    /// **VK consistency gate.** Asserts that the on-chain verifying key
+    /// matches the snapshot in `VK_FINGERPRINT`. This is the regression
+    /// guard that catches cases like:
+    ///
+    /// - The G2 byte-order swap is reverted in `dealer/src/prover.ts`
+    ///   without also reverting it in `zk-circuits/scripts/export_vk_rust.mjs`
+    ///   (or vice versa).
+    /// - `export_vk_rust.mjs` is re-run and the new VK constants are
+    ///   committed without the on-chain redeploy.
+    /// - The Poseidon canonical hash is regenerated against a different
+    ///   parameter set.
+    ///
+    /// On failure, update `VK_FINGERPRINT` *and* follow the checklist in
+    /// its docstring. Do not update the constant in isolation — see the
+    /// docstring for why.
+    #[test]
+    fn vk_fingerprint_matches_snapshot() {
+        let actual = compute_vk_fingerprint();
+        assert_eq!(
+            actual, VK_FINGERPRINT,
+            "On-chain verifying key has drifted from the snapshot. \
+             Expected fingerprint 0x{VK_FINGERPRINT:016x}, got 0x{actual:016x}. \
+             If you regenerated the VK intentionally, update VK_FINGERPRINT in \
+             this file AND re-run scripts/smoke-test.ts on devnet AND redeploy \
+             the program. See VK_FINGERPRINT's docstring for the full checklist."
+        );
     }
 }

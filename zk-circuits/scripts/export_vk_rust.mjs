@@ -32,12 +32,14 @@ function formatG1(point) {
 }
 
 function formatG2(point) {
-  // snarkjs: [[x_imag, x_real], [y_imag, y_real], ["1","0"]]
+  // snarkjs vk_*_2 layout: [[x.c0, x.c1], [y.c0, y.c1], ["1","0"]]
+  // Solana alt_bn128 syscall expects [c1, c0, c1, c0] order (per EIP-197).
+  // This must match how dealer/src/prover.ts serializeG2() writes proof_b.
   return [
-    ...decimalTo32BytesBE(point[0][0]), // x_imag
-    ...decimalTo32BytesBE(point[0][1]), // x_real
-    ...decimalTo32BytesBE(point[1][0]), // y_imag
-    ...decimalTo32BytesBE(point[1][1]), // y_real
+    ...decimalTo32BytesBE(point[0][1]), // x.c1 (imaginary)
+    ...decimalTo32BytesBE(point[0][0]), // x.c0 (real)
+    ...decimalTo32BytesBE(point[1][1]), // y.c1 (imaginary)
+    ...decimalTo32BytesBE(point[1][0]), // y.c0 (real)
   ];
 }
 

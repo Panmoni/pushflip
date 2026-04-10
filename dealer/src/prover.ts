@@ -72,15 +72,27 @@ function serializeG1(point: string[]): Uint8Array {
 
 /**
  * Serialize a snarkjs G2 proof element to 128 bytes big-endian.
- * snarkjs pi_b = [[x_imag, x_real], [y_imag, y_real], ["1","0"]]
- * Solana alt_bn128 expects: x_imag || x_real || y_imag || y_real
+ *
+ * Solana's alt_bn128_pairing syscall (and the EVM bn256Pairing precompile,
+ * per EIP-197) expects G2 components in [c1, c0, c1, c0] order — i.e. the
+ * imaginary coefficient before the real one for each Fq2 element.
+ *
+ * snarkjs's pi_b is stored mathematically as [[c0, c1], [c0, c1]], so we
+ * have to swap each pair when writing into the on-chain proof bytes.
+ *
+ * Reference: snarkjs's `exportSolidityCallData` does this same swap:
+ *   [[pi_b[0][1], pi_b[0][0]], [pi_b[1][1], pi_b[1][0]]]
+ *
+ * IMPORTANT: this MUST match how `zk-circuits/scripts/export_vk_rust.mjs`
+ * writes the verifying key. If you change one, change the other AND
+ * regenerate the on-chain VK + redeploy.
  */
 function serializeG2(point: string[][]): Uint8Array {
   const result = new Uint8Array(128);
-  result.set(decimalTo32BytesBE(point[0][0]), 0);   // x_imag
-  result.set(decimalTo32BytesBE(point[0][1]), 32);  // x_real
-  result.set(decimalTo32BytesBE(point[1][0]), 64);  // y_imag
-  result.set(decimalTo32BytesBE(point[1][1]), 96);  // y_real
+  result.set(decimalTo32BytesBE(point[0][1]), 0);   // x.c1 (imaginary)
+  result.set(decimalTo32BytesBE(point[0][0]), 32);  // x.c0 (real)
+  result.set(decimalTo32BytesBE(point[1][1]), 64);  // y.c1 (imaginary)
+  result.set(decimalTo32BytesBE(point[1][0]), 96);  // y.c0 (real)
   return result;
 }
 

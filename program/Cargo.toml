@@ -15,12 +15,28 @@ pinocchio-log = "0.5"
 pinocchio-pubkey = "0.3"
 shank = "0.4"
 pinocchio-groth16 = "0.3"
-light-poseidon = "0.4"
-ark-bn254 = "0.5"
 ark-ff = "0.5"
 solana-address = { version = "2.0", features = ["sha2"] }
+
+# Host-only crypto deps. We use Solana's native `sol_poseidon` syscall on the
+# SBF target (see `program/src/zk/poseidon_native.rs`) — `light_poseidon`'s
+# `parameters::bn254_x5::get_poseidon_parameters` allocates ~11 KB on the
+# stack and exceeds Solana's 4 KB BPF stack limit. Pinning these to the host
+# target keeps them out of the deployed binary entirely while still letting
+# `cargo test` cross-validate the canonical deck hash.
+[target.'cfg(not(target_os = "solana"))'.dependencies]
+light-poseidon = "0.4"
+ark-bn254 = "0.5"
 
 
 [features]
 bpf-entrypoint = []
 skip-zk-verify = []
+
+[lints.rust]
+# `cfg(target_os = "solana")` is the SBF target triple cargo-build-sbf
+# uses, but rustc/clippy don't know about it by default and emit
+# `unexpected_cfgs` warnings on host builds (cargo check, cargo clippy,
+# host unit tests). Declare it explicitly so the lint stays useful for
+# real typos.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

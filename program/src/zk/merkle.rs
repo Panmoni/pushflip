@@ -1,49 +1,16 @@
-use light_poseidon::{Poseidon, PoseidonBytesHasher};
 use pinocchio::error::ProgramError;
 
 use crate::errors::PushFlipError;
+// Re-export the Poseidon helpers through this module so existing call sites
+// keep working unchanged. The underlying implementation lives in
+// `poseidon_native` and routes to the `sol_poseidon` syscall on the SBF
+// target. **Do NOT add Poseidon logic to this file** — edit
+// `poseidon_native.rs` instead. See that file for the byte-compatibility
+// rationale and the `light_poseidon` host fallback used by unit tests.
+pub use crate::zk::poseidon_native::{hash_card_leaf, hash_pair};
 
 /// Merkle tree depth (128 leaves = 94 cards + 34 padding)
 pub const MERKLE_DEPTH: usize = 7;
-
-/// Number of real card leaves in the tree
-pub const LEAF_COUNT: usize = 94;
-
-/// Total leaves including padding (2^MERKLE_DEPTH)
-pub const TOTAL_LEAVES: usize = 128;
-
-/// Hash a card's fields into a Poseidon leaf: Poseidon(value, card_type, suit, leaf_index)
-pub fn hash_card_leaf(value: u8, card_type: u8, suit: u8, leaf_index: u8) -> [u8; 32] {
-    let mut poseidon = Poseidon::<ark_bn254::Fr>::new_circom(4).unwrap();
-
-    let mut input0 = [0u8; 32];
-    let mut input1 = [0u8; 32];
-    let mut input2 = [0u8; 32];
-    let mut input3 = [0u8; 32];
-
-    // Big-endian: value in the last byte
-    input0[31] = value;
-    input1[31] = card_type;
-    input2[31] = suit;
-    input3[31] = leaf_index;
-
-    poseidon
-        .hash_bytes_be(&[&input0, &input1, &input2, &input3])
-        .unwrap()
-}
-
-/// Hash for a padding leaf: Poseidon(0, 0, 0, leaf_index)
-pub fn hash_padding_leaf(leaf_index: u8) -> [u8; 32] {
-    hash_card_leaf(0, 0, 0, leaf_index)
-}
-
-/// Poseidon hash of two 32-byte nodes (for Merkle internal nodes).
-fn hash_pair(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
-    let mut poseidon = Poseidon::<ark_bn254::Fr>::new_circom(2).unwrap();
-    poseidon
-        .hash_bytes_be(&[left.as_ref(), right.as_ref()])
-        .unwrap()
-}
 
 /// Verify a Merkle proof for a card at a given leaf position.
 ///
@@ -87,6 +54,14 @@ pub fn verify_merkle_proof(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Total leaves including padding (2^MERKLE_DEPTH).
+    const TOTAL_LEAVES: usize = 128;
+
+    /// Hash for a padding leaf: Poseidon(0, 0, 0, leaf_index).
+    fn hash_padding_leaf(leaf_index: u8) -> [u8; 32] {
+        hash_card_leaf(0, 0, 0, leaf_index)
+    }
 
     /// Build a complete Merkle tree from leaves and return (root, all_nodes).
     /// Nodes are stored level by level, bottom to top.

@@ -33,6 +33,8 @@ pub enum PushFlipError {
     LeafIndexOutOfRange,
     ScryAlreadyUsed,
     VaultNotInitialized,
+    VaultAlreadyInitialized,
+    MaxBountiesReached,
 }
 
 impl From<PushFlipError> for ProgramError {

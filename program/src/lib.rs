@@ -37,6 +37,11 @@ pub fn process_instruction(
         8 => instructions::leave_game::process(_accounts, &instruction_data[1..]),
         9 => instructions::burn_second_chance::process(_accounts, &instruction_data[1..]),
         10 => instructions::burn_scry::process(_accounts, &instruction_data[1..]),
+        11 => instructions::init_vault::process(_accounts, &instruction_data[1..]),
+        12 => instructions::bounty::init_bounty_board::process(_accounts, &instruction_data[1..]),
+        13 => instructions::bounty::add_bounty::process(_accounts, &instruction_data[1..]),
+        14 => instructions::bounty::claim_bounty::process(_accounts, &instruction_data[1..]),
+        15 => instructions::bounty::close_bounty_board::process(_accounts, &instruction_data[1..]),
         _ => Err(ProgramError::InvalidInstructionData),
     }
 }

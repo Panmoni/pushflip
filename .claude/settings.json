@@ -56,7 +56,18 @@
       "Bash(snarkjs r1cs:*)",
       "Bash(rm proof-debug.mjs proof-bytes-debug.mjs)",
       "Bash(rm -f test-proof-debug.mjs)",
-      "Bash(pnpm list:*)"
+      "Bash(pnpm list:*)",
+      "Bash(spl-token create-token:*)",
+      "Bash(awk '{print $2}')",
+      "Bash(pkill -f \"smoke-test\")",
+      "Bash(pkill -f \"tsx smoke\")",
+      "Read(//proc/46317/**)",
+      "Bash(pkill -P 46284)",
+      "Bash(kill 46284)",
+      "Bash(pkill -f \"tsx smoke-test\")",
+      "Bash(kill -9 46317)",
+      "Bash(rm -f /tmp/reverify-bounty-postfix.log)",
+      "Bash(timeout 300 nice -n 19 ionice -c 3 npx tsx smoke-test-bounty.ts)"
     ],
     "deny": [
       "Bash(rm -rf *)",
@@ -67,7 +78,8 @@
       "/home/george9874/repos",
       "/home/george9874/tools/open-brain-mcp/src",
       "/home/george9874/repos/pushflip",
-      "/home/george9874/repos/pushflip/clients/js/src"
+      "/home/george9874/repos/pushflip/clients/js/src",
+      "/tmp"
     ]
   },
   "hooks": {

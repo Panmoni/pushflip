@@ -47,5 +47,9 @@ pnpm format       # biome format --write
 
 ## Status
 
-Phase 3.1 complete (scaffold + dependency stack). Tasks 3.1.5 → 3.7 are
-in flight per [docs/EXECUTION_PLAN.md](../docs/EXECUTION_PLAN.md).
+Phase 3.1 complete — scaffold + dependency stack + UI primitives
+(button, card, dialog, sonner) + WalletProvider + QueryProvider + Kit RPC
+clients in [src/lib/program.ts](src/lib/program.ts). Header renders the
+shadcn `WalletMultiButton`; the rest of the layout is a placeholder until
+Tasks 3.2 → 3.7 land per
+[docs/EXECUTION_PLAN.md](../docs/EXECUTION_PLAN.md).

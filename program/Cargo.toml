@@ -3,6 +3,7 @@ name = "pushflip"
 version = "0.1.0"
 edition = "2021"
 description = "A crypto-native push-your-luck card game on Solana with ZK-proof deck verification"
+build = "build.rs"
 
 [lib]
 crate-type = ["cdylib", "lib"]

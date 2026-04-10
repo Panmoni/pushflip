@@ -71,9 +71,31 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     }
 
     // --- Verify Groth16 proof ---
-    // Skip verification if verifying key is not yet set (placeholder).
-    // In production, this MUST be enforced.
-    if !VERIFYING_KEY_BYTES.is_empty() {
+    //
+    // SECURITY: This is the on-chain Groth16 verification gate. The
+    // production binary (built without `--features skip-zk-verify`) has
+    // `VERIFYING_KEY_BYTES = &[1]` (non-empty), so the verifier ALWAYS
+    // runs and rejects invalid proofs.
+    //
+    // The test binary (built by `tests/build.rs` with `--features
+    // skip-zk-verify`) has `VERIFYING_KEY_BYTES = &[]`, which short-
+    // circuits the verifier. This is intentional and only safe because
+    // the test binary lives at a *different* on-disk path
+    // (`target/deploy-test/pushflip.so`) than the deploy binary
+    // (`target/deploy/pushflip.so`) — they cannot clobber each other.
+    //
+    // If you ever see the runtime log line below in a transaction, the
+    // wrong binary has been deployed and the program is accepting any
+    // proof bytes. The fix is to rebuild without `--features
+    // skip-zk-verify` and redeploy.
+    if VERIFYING_KEY_BYTES.is_empty() {
+        // This branch is only reachable in test builds. Log loudly so a
+        // production validator running the wrong binary screams in every
+        // transaction's logs.
+        pinocchio_log::log!(
+            "WARNING: skip-zk-verify is enabled. ANY proof bytes accepted. NOT SAFE FOR PRODUCTION."
+        );
+    } else {
         let vk = crate::zk::verifying_key::verifying_key();
         let public_inputs = [merkle_root, CANONICAL_DECK_HASH];
         verify_shuffle_proof(proof_a, proof_b, proof_c, &public_inputs, &vk)?;

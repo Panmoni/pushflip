@@ -61,6 +61,32 @@ const delta_g2 = formatG2(vk.vk_delta_2);
 const ic_points = vk.IC.map(formatG1);
 const nrPubInputs = vk.IC.length - 1; // IC has n+1 entries for n public inputs
 
+// Hard-coded sanity check: the on-chain `commit_deck.rs` instruction
+// passes EXACTLY 2 public inputs (merkle_root, canonical_hash). If the
+// circuit is ever regenerated with a different number of public signals,
+// this script would silently emit Rust code with a mismatched
+// `NR_PUBLIC_INPUTS`, and `commit_deck` would fail at runtime with a
+// cryptic Groth16 error. Catch the divergence here instead.
+//
+// (Heavy-duty review pass 4 finding M1.)
+const EXPECTED_NR_PUBLIC_INPUTS = 2;
+if (nrPubInputs !== EXPECTED_NR_PUBLIC_INPUTS) {
+  console.error(
+    `ERROR: circuit has ${nrPubInputs} public inputs, expected ${EXPECTED_NR_PUBLIC_INPUTS}.`,
+  );
+  console.error(
+    `If you intentionally changed the circuit's public input count, you must also update:`,
+  );
+  console.error(
+    `  - program/src/instructions/commit_deck.rs (the public_inputs array)`,
+  );
+  console.error(`  - dealer/src/prover.ts (the publicInputs returned by generateProof)`);
+  console.error(
+    `  - this constant (EXPECTED_NR_PUBLIC_INPUTS) once all of the above match`,
+  );
+  process.exit(1);
+}
+
 console.log(`\
 /// Groth16 verifying key for the shuffle verification circuit.
 ///

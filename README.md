@@ -279,6 +279,20 @@ solana program close HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px --bypass-warni
 - [docs/HOSTING_AND_RPC.md](docs/HOSTING_AND_RPC.md) — RPC provider and hosting decisions.
 - [docs/CLAUDE_HOOKS.md](docs/CLAUDE_HOOKS.md) — Claude Code hook safety net configuration.
 
+## Contributing
+
+Outside contributors are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for project status, build/test commands, code conventions, and three well-scoped open work tracks (native Rust dealer with arkworks, threshold randomness protocol, House AI agent in Rust). Each track is self-contained and can be owned end-to-end.
+
 ## Development
 
 This repo is AI-assisted via Claude Code and ships a set of [Claude Code hooks](docs/CLAUDE_HOOKS.md) as a safety net: protected-file guards for program keypairs / ZK artifacts / [notes.md](notes.md), blocked-command patterns for irreversible Solana and git operations, auto-format (`rustfmt` / `prettier`), `cargo check` feedback after edits, and a pre-PR test gate. See [docs/CLAUDE_HOOKS.md](docs/CLAUDE_HOOKS.md) for the full list.
+
+## License
+
+Copyright 2026 George Donnelly and Alex Ramirez, the PushFlip developers
+
+Licensed under the [Apache License, Version 2.0](LICENSE) (the "License"). You may not use this project except in compliance with the License. Unless required by applicable law or agreed to in writing, the software is distributed on an "AS IS" basis, without warranties or conditions of any kind, either express or implied. See the [LICENSE](LICENSE) file for the specific language governing permissions and limitations under the License.
+
+Contributions submitted to this project are licensed under the same Apache License 2.0 by virtue of Section 5 of the License ("inbound = outbound"). No separate Contributor License Agreement is required.
+
+"PushFlip" and "$FLIP" are not registered trademarks. Per Section 6 of the License, the Apache License does not grant permission to use the project name or token symbol for purposes other than reasonable and customary use in describing the origin of the work.

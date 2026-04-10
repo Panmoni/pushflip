@@ -120,9 +120,11 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     gs.set_token_mint(token_mint.address().as_array());
     gs.set_vault(vault_pda.as_array());
     gs.set_vault_bump(vault_bump);
-    gs.set_player_count(1);
-    gs.set_turn_order_slot(0, house.address().as_array());
-    for i in 1..MAX_PLAYERS {
+    // Empty turn_order — players (including the House AI) are added via
+    // join_round. The `house` field at offset 42 still records the AI
+    // identity for off-chain code; on-chain it's just another player.
+    gs.set_player_count(0);
+    for i in 0..MAX_PLAYERS {
         gs.set_turn_order_slot(i, &[0u8; 32]);
     }
     gs.set_current_turn_index(0);

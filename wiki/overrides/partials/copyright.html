@@ -1,21 +1,17 @@
 {#-
   PushFlip override of the Material copyright partial.
-  Adds a "Built <git_hash> on <build_date>" line below the static
-  copyright. Both values are populated by wiki/hooks.py at build time
-  via config.extra.git_hash and config.extra.build_date.
+  Renders the static copyright and the dynamic "Built <hash> on <date>"
+  metadata on a single line, separated by a middle dot. The build
+  values come from wiki/hooks.py via config.extra.git_hash and
+  config.extra.build_date.
 
   Falls back gracefully: if either value is missing (e.g. git not
-  available), the build line is suppressed.
+  available), only the static copyright is rendered.
 -#}
 <div class="md-copyright">
   {% if config.copyright %}
     <div class="md-copyright__highlight">
-      {{ config.copyright }}
-    </div>
-  {% endif %}
-  {% if config.extra.git_hash and config.extra.build_date and config.extra.git_hash != "dev" %}
-    <div class="md-copyright__build">
-      Built <code>{{ config.extra.git_hash }}</code> on {{ config.extra.build_date }}
+      {{ config.copyright }}{% if config.extra.git_hash and config.extra.build_date and config.extra.git_hash != "dev" %} · Built <code>{{ config.extra.git_hash }}</code> on {{ config.extra.build_date }}{% endif %}
     </div>
   {% endif %}
   {% if not config.extra.generator == false %}

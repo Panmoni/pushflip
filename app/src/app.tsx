@@ -1,7 +1,13 @@
-import type { GameSession, PlayerState } from "@pushflip/client";
+import {
+  type Card,
+  CardType,
+  type GameSession,
+  type PlayerState,
+} from "@pushflip/client";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 
+import { GameCard } from "@/components/game/card";
 import { Toaster } from "@/components/ui/sonner";
 import { useGameSession } from "@/hooks/use-game-session";
 import { usePlayerState } from "@/hooks/use-player-state";
@@ -131,9 +137,76 @@ function PlayerStateSection() {
   );
 }
 
+/*
+ * Task 3.3.1 visual showcase — renders one of each GameCard variant so
+ * you can eyeball them in the dev server. Removed when Task 3.3.4
+ * (`<GameBoard>`) lands and consumes GameCard for real.
+ */
+const SHOWCASE_CARDS: Array<{ label: string; card: Card }> = [
+  { label: "Alpha ♠ A", card: { value: 1, cardType: CardType.Alpha, suit: 0 } },
+  {
+    label: "Alpha ♥ Q",
+    card: { value: 12, cardType: CardType.Alpha, suit: 1 },
+  },
+  { label: "Alpha ♦ 7", card: { value: 7, cardType: CardType.Alpha, suit: 2 } },
+  {
+    label: "Alpha ♣ K",
+    card: { value: 13, cardType: CardType.Alpha, suit: 3 },
+  },
+  {
+    label: "Protocol RugPull",
+    card: { value: 0, cardType: CardType.Protocol, suit: 0 },
+  },
+  {
+    label: "Protocol Airdrop",
+    card: { value: 1, cardType: CardType.Protocol, suit: 0 },
+  },
+  {
+    label: "Protocol Vampire",
+    card: { value: 2, cardType: CardType.Protocol, suit: 0 },
+  },
+  {
+    label: "Multiplier ×2",
+    card: { value: 2, cardType: CardType.Multiplier, suit: 0 },
+  },
+  {
+    label: "Multiplier ×5",
+    card: { value: 5, cardType: CardType.Multiplier, suit: 0 },
+  },
+];
+
+function CardShowcase() {
+  return (
+    <section className="rounded-lg border border-border bg-card p-4 text-card-foreground">
+      <h2 className="font-semibold text-lg">GameCard showcase (Task 3.3.1)</h2>
+      <p className="mt-1 text-muted-foreground text-sm">
+        Visual smoke test — all three variants plus the face-down state. Removed
+        when Task 3.3.4 ships <code className="text-xs">&lt;GameBoard&gt;</code>
+        .
+      </p>
+      <div className="mt-4 flex flex-wrap gap-3">
+        {SHOWCASE_CARDS.map(({ label, card }) => (
+          <div className="flex flex-col items-center gap-1" key={label}>
+            <GameCard card={card} />
+            <span className="text-muted-foreground text-xs">{label}</span>
+          </div>
+        ))}
+        <div className="flex flex-col items-center gap-1">
+          <GameCard
+            card={{ value: 0, cardType: CardType.Alpha, suit: 0 }}
+            faceDown
+          />
+          <span className="text-muted-foreground text-xs">Face-down</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function GameStatusPanel() {
   return (
     <div className="space-y-6 text-left">
+      <CardShowcase />
       <GameSessionSection />
       <PlayerStateSection />
     </div>
@@ -157,7 +230,8 @@ function App() {
           </main>
 
           <footer className="border-border border-t px-6 py-3 text-center text-muted-foreground text-sm">
-            devnet · @pushflip/app · Phase 3.2 hooks live
+            devnet · @pushflip/app · Phase 3.2 hooks live · Task 3.3.1 GameCard
+            live
           </footer>
         </div>
 

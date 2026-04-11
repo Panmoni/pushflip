@@ -1,11 +1,52 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#0a0a0f">
     <title>Pushflip</title>
+    <script>
+    "use strict";
+    // Resolve and apply the theme BEFORE React mounts to prevent a
+    // flash of the wrong theme on first paint. The full theme logic
+    // (with useSyncExternalStore subscribers + the OS-preference
+    // media-query listener) lives in `src/hooks/use-theme.ts` — this
+    // script just mirrors its initial-resolution rules so the DOM is
+    // correct on the very first frame.
+    //
+    // CROSS-REFERENCE: `STORAGE_KEY` below MUST stay in sync with
+    // `STORAGE_KEY` in `src/hooks/use-theme.ts`. The two values are
+    // duplicated because this IIFE runs before any ESM import (it
+    // *has* to, otherwise React boots and mounts components with the
+    // wrong theme class still applied). If you rename the key here,
+    // rename it in use-theme.ts too — the health check for this
+    // invariant is manual.
+    (() => {
+      let pref = "system";
+      let resolved = "dark";
+      try {
+        pref = localStorage.getItem("pushflip:theme") || "system";
+        const prefersDark = window.matchMedia?.(
+          "(prefers-color-scheme: dark)"
+        )?.matches;
+        if (pref === "dark") {
+          resolved = "dark";
+        } else if (pref === "light") {
+          resolved = "light";
+        } else {
+          resolved = prefersDark ? "dark" : "light";
+        }
+      } catch {
+        // localStorage unavailable (private browsing) — fall back to
+        // dark since that's the brand-aligned default.
+        resolved = "dark";
+      }
+      if (resolved === "dark") {
+        document.documentElement.classList.add("dark");
+      }
+    })();
+    </script>
   </head>
   <body class="bg-background text-foreground">
     <div id="root"></div>

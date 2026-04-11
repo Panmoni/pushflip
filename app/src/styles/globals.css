@@ -48,39 +48,67 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+ * Light theme — pushflip light variant.
+ *
+ * Same brand spine as the dark variant: deep purple primary, Solana
+ * green accent, but on a near-white background instead of near-black.
+ * Borders + muted tones lean slightly purple to keep the brand
+ * identity recognizable across both themes.
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: oklch(0.99 0.005 280);
+  --foreground: oklch(0.18 0.02 280);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.18 0.02 280);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.18 0.02 280);
+
+  /* Primary = deep purple (Solana #9945ff), same hue + chroma as
+     the dark theme's primary.
+     COUNTERINTUITIVE: this light-theme primary (L=0.5) is LOWER
+     lightness than the dark-theme primary (L=0.59, see `.dark` below).
+     That's because in light mode, --primary-foreground is near-white
+     (L=0.98), so the primary fill needs to be *darker* to pass AA
+     contrast against that foreground and to read as "primary" against
+     the near-white background. In dark mode the same hue lives against
+     a near-black background, so it can sit higher on the lightness
+     scale without losing contrast. Don't "fix" this by bumping L=0.5
+     up without also re-checking contrast. */
+  --primary: oklch(0.5 0.27 295);
+  --primary-foreground: oklch(0.98 0 0);
+
+  --secondary: oklch(0.96 0.01 285);
+  --secondary-foreground: oklch(0.2 0.02 285);
+
+  --muted: oklch(0.95 0.01 285);
+  --muted-foreground: oklch(0.45 0.02 285);
+
+  /* Accent = Solana green (#14f195), same hue as dark theme. */
+  --accent: oklch(0.78 0.21 155);
+  --accent-foreground: oklch(0.18 0.02 280);
+
+  --destructive: oklch(0.55 0.24 25);
+
+  --border: oklch(0.9 0.01 285);
+  --input: oklch(0.92 0.01 285);
+  --ring: oklch(0.5 0.27 295 / 50%);
+
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+
+  --sidebar: oklch(0.985 0.005 285);
+  --sidebar-foreground: oklch(0.18 0.02 280);
+  --sidebar-primary: oklch(0.5 0.27 295);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.96 0.01 285);
+  --sidebar-accent-foreground: oklch(0.2 0.02 285);
+  --sidebar-border: oklch(0.9 0.01 285);
+  --sidebar-ring: oklch(0.5 0.27 295 / 50%);
 }
 
 /*

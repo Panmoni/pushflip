@@ -4,6 +4,7 @@
 - logo
 - colosseum weekly video https://arena.colosseum.org/hackathon
 - how to best share deployment privkey with Alex
+- 3.3.1 next
 
 ### Future
 - should have a powers of tau ceremony involving humans at some point

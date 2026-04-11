@@ -1,10 +1,11 @@
 # NOTES
 
 ## ToDo
-- logo
-- colosseum weekly video https://arena.colosseum.org/hackathon
-- how to best share deployment privkey with Alex
 - 3.3.1 next
+- colosseum weekly video https://arena.colosseum.org/hackathon
+- update www to say we are currently shipping, no longer soon
+- how to best share deployment privkey with Alex
+- deployment for wiki, host at wiki.pushflip.xyz, link to wiki from www and readmes
 
 ### Future
 - should have a powers of tau ceremony involving humans at some point

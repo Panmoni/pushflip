@@ -22,20 +22,21 @@
 
 ---
 
-## Current Status (snapshot for new collaborators) — 2026-04-10
+## Current Status (snapshot for new collaborators) — 2026-04-11
 
 > **Living section.** Update at the end of every session so new contributors can find "where we are now" without scrolling. For full history see the **Phase 3 Prerequisites Status** block (~line 1759), the **Phase 3 Decisions Log** table (~line 1777), and the **Lessons Learned** section (~line 1819) — or use the `Where to find things in this plan` table at the bottom of this section.
 
 ### Where we are
 
 - **Phases 1, 2, 3A: COMPLETE.** On-chain program is deployed to devnet (Program ID `HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px`), all 16 instructions covered by smoke tests under resource caps, ZK pipeline (Circom + Groth16 + Poseidon Merkle) fully working with `sol_poseidon` syscall (~7771 CU per `hit`). Five heavy-duty security reviews shipped (1 Critical + 4 High + 17 Medium total fixed across the program surface).
-- **Phase 3B (frontend) Tasks 3.1.1 → 3.2.3: COMPLETE.** Vite 8 + React 19 + TypeScript 6 + Tailwind v4 + Biome/Ultracite scaffold in [app/](../app/), shadcn (radix base, nova preset) UI primitives installed (button, card, dialog, sonner), `WalletProvider` + `QueryProvider` + Kit RPC clients wired in, workspace-wide `@solana/kit` 2.x → 6.x migration done as part of 3.1.4. **Task 3.2 (program integration hooks) shipped 2026-04-10**: `useGameSession`, `usePlayerState`, `useGameActions` + the wallet adapter ↔ Kit signing bridge in [src/lib/wallet-bridge.ts](../app/src/lib/wallet-bridge.ts). Read hooks **manually verified end-to-end against devnet** (Solflare connect → publicKey bridged → both PDAs derived → empty-account state rendered correctly). Three more heavy-duty reviews (#6 + #7 + #8) shipped against the frontend; 33 findings fixed across all three.
-- **Working tree at 2026-04-10:** clean except `notes.md` (George's personal file — DO NOT EDIT) and the Task 3.2 commit chain (in flight as of this update — see proposed commits).
-- **All workspaces green:** `clients/js` 26/26 tests, `dealer` 11/11 tests, `app` typecheck/lint/build clean, `cargo check --all-targets` clean (14 + 8 + 4 = 26 deferred dead-code warnings tracked under Task 3.B.End).
+- **Phase 3B (frontend) Tasks 3.1.1 → 3.2.3: COMPLETE.** Vite 8 + React 19 + TypeScript 6 + Tailwind v4 + Biome/Ultracite scaffold in [app/](../app/), shadcn (radix base, nova preset) UI primitives installed (button, card, dialog, sonner), `WalletProvider` + `QueryProvider` + Kit RPC clients wired in, workspace-wide `@solana/kit` 2.x → 6.x migration done as part of 3.1.4. **Task 3.2 (program integration hooks) shipped 2026-04-10**: `useGameSession`, `usePlayerState`, `useGameActions` + the wallet adapter ↔ Kit signing bridge in [src/lib/wallet-bridge.ts](../app/src/lib/wallet-bridge.ts). Read hooks **manually verified end-to-end against devnet**: on 2026-04-11 the first persistent on-chain GameSession at `game_id=1` was created via the new [scripts/init-game.ts](../scripts/init-game.ts) (devnet PDA `Hk6RLHBZ8oppV4KtQFFRsHC21z9tCL5HYz3cLELEA64A`, init tx `4qmv1yBTrmJKmRmHXB11Wbucz1BbueyPXpCQdHyMrfsTjfA5nc6s7M89SSywspEN7Ex5H13B2NYXbCSpxYX75epf`), the frontend connected via Solflare → both PDAs derived → real-time `accountNotifications` subscription pushed live state into the React Query cache → UI rendered the freshly-initialized GameSession + empty PlayerState (Solflare wallet `AczL..MDjH`, PlayerState PDA `4G6fgxJbMTEv6pGmXyeA3f65G274nXkkHRwZF1MQesvC`). **Four heavy-duty reviews (#6 + #7 + #8 + #9) shipped against the frontend so far**; #6/#7/#8 fixed 33 findings against the Phase 3.2 hook surface, #9 reviewed the init-game.ts commit chain on 2026-04-11 and fixed 3 Mediums + 1 Low in the same session (BigInt-u64 silent-wrap re-occurrence, missing rich error context extraction, missing `process.exit(0)` for the WSS handle, logging style drift from smoke-test).
+- **First end-to-end on-chain → frontend round-trip is live.** Read paths verified empirically against `game_id=1`. Write paths (transaction signing through the wallet bridge) remain unverified — first proof will be the first user click on `<ActionButtons>` once Task 3.3.3 lands.
+- **Working tree at 2026-04-11:** modified files = `notes.md` (George's personal — DO NOT EDIT), `scripts/package.json` (added `init-game` script entry), `docs/EXECUTION_PLAN.md` (this update), `.claude/settings.json` (auto-added bash allowlist entry for `pnpm --filter @pushflip/scripts init-game`). New files = `scripts/init-game.ts`, `docs/GAME_SESSION_BYTE_LAYOUT.md`. The Task 3.2 commit chain is committed (commits `edb80fe` + `2010c9d`).
+- **All workspaces green** (re-verified 2026-04-11 post-init-game): `clients/js` 26/26 tests, `dealer` 11/11 tests, `app` typecheck/lint/build clean, `scripts` typecheck clean, `cargo check --all-targets` clean (14 + 8 + 4 = 26 deferred dead-code warnings tracked under Task 3.B.End — no new warnings from this session).
 
-### What's next: Task 3.3 (Game Board Components)
+### What's next: Task 3.3 (Game Board Components) — fully unblocked
 
-The next concrete unit of work is **Task 3.3** — five presentational components that consume the Phase 3.2 hooks and render the game state:
+**All prerequisites are now complete.** Task 3.2 hooks are shipped and verified end-to-end against `game_id=1` on devnet. The next concrete unit of work is **Task 3.3** — five presentational components that consume the Phase 3.2 hooks and render the game state:
 
 - **Task 3.3.1 — `<Card>`** — displays one card, three visual styles (Alpha/Protocol/Multiplier), face-down state. Pure presentational, no on-chain integration. (~20 min)
 - **Task 3.3.2 — `<PlayerHand>`** — renders an array of `<Card>`s with score + bust indicator. (~15 min)
@@ -53,12 +54,12 @@ If George and Alex want to split work:
 |---|---|---|---|
 | 3.3.1 `<card>` component | either | nothing | Pure presentational; first three lines establish the file naming convention (kebab-case per Ultracite) |
 | 3.3.2 `<player-hand>` | either | 3.3.1 | Renders an array of cards; needs 3.3.1's interface |
-| 3.3.3 `<action-buttons>` | either | nothing — uses existing `useGameActions` | First end-to-end test of the signing bridge happens when this lands. Use Solflare or Phantom on devnet against `game_id=1` once a game exists |
+| 3.3.3 `<action-buttons>` | either | nothing — uses existing `useGameActions` | First end-to-end test of the signing bridge happens when this lands. `game_id=1` is already initialized on devnet (PDA `Hk6RLHBZ8oppV4KtQFFRsHC21z9tCL5HYz3cLELEA64A`) — first user click should produce a `joinRound` transaction visible on Solana Explorer |
 | 3.3.4 `<game-board>` | either | 3.3.1 + 3.3.2 + 3.3.3 | The integration point. Replaces `<GameStatusPanel>` in `app.tsx` |
 | 3.3.5 `<pot-display>` + `<turn-indicator>` | either | nothing | Atomic; can ship in parallel with 3.3.1 |
 | 3.5.1 `calculateBustProbability` | either | nothing | Pure frontend math; no on-chain integration; can be developed alongside 3.3 |
 | 3.7.1 dark theme tokens | either | nothing | Adjusts the existing shadcn design tokens in [globals.css](../app/src/styles/globals.css); zero coupling to other tracks |
-| **Initialize a real game on devnet at `game_id=1`** | either | nothing | Edit one of the smoke tests to initialize a game with a fixed `game_id=1n` instead of a random one, then run it once. After this, `<GameStatusPanel>` populates with real data and the action hooks become testable in the browser. Required prerequisite for the first end-to-end action test |
+| ~~**Initialize a real game on devnet at `game_id=1`**~~ | ✅ **DONE 2026-04-11** | — | Shipped as a dedicated minimal script ([scripts/init-game.ts](../scripts/init-game.ts)), NOT by editing a smoke test (smoke-test.ts ends with `closeGame` which would have destroyed the account). Persistent GameSession at `Hk6RLHBZ8oppV4KtQFFRsHC21z9tCL5HYz3cLELEA64A`; idempotent on re-run. Run via `pnpm --filter @pushflip/scripts init-game`. See [docs/GAME_SESSION_BYTE_LAYOUT.md](GAME_SESSION_BYTE_LAYOUT.md) for the worked byte-layout decoding example using this exact account. |
 
 ### Quickstart for new contributors
 
@@ -80,7 +81,12 @@ cargo check --all-targets               # Rust on-chain (warnings deferred)
 pnpm --filter @pushflip/app dev         # http://localhost:5173
 
 # Run the on-chain smoke tests against devnet (requires a funded devnet keypair)
-cd scripts && pnpm tsx smoke-test.ts
+pnpm --filter @pushflip/scripts smoke-test
+
+# (Re-)initialize the test game at game_id=1 on devnet (idempotent — safe to re-run).
+# This is what the frontend's read hooks bind to. See docs/GAME_SESSION_BYTE_LAYOUT.md
+# for the worked byte-layout decoding example.
+pnpm --filter @pushflip/scripts init-game
 ```
 
 For a deeper conventions/onboarding doc see [CONTRIBUTING.md](../CONTRIBUTING.md) (toolchain versions, code conventions, project status by component).
@@ -97,12 +103,12 @@ For a deeper conventions/onboarding doc see [CONTRIBUTING.md](../CONTRIBUTING.md
 | **Wallet adapter ↔ Kit bridge** | The wallet adapter uses **web3.js v1** internally (`PublicKey`, `Transaction`); our hooks use **Kit** (`Address`, `Instruction`). Translate at the boundary using `fromLegacyPublicKey` / `fromLegacyTransactionInstruction` from `@solana/compat`. | See [src/providers/wallet-provider.tsx](../app/src/providers/wallet-provider.tsx) docstring and Decisions Log entry "App workspace uses individual `@solana/wallet-adapter-{phantom,solflare,base}` packages". |
 | **Env vars in `app/`** | Use `import.meta.env.VITE_FOO?.trim() \|\| "default"` — **never** `??`. Add new vars to [src/vite-env.d.ts](../app/src/vite-env.d.ts). | `??` doesn't catch empty strings; `vite-env.d.ts` augmentation makes typos compile errors. See Lessons #34, #35. |
 | **Module-level long-lived resources** | Modules that open WebSockets, intervals, or OS handles should call `import.meta.hot?.invalidate()` at the top. | Vite HMR re-eval otherwise leaks the resource on every save. See [src/lib/program.ts](../app/src/lib/program.ts) and Lesson #37. |
-| **Heavy-duty reviews** | Run `/heavy-duty-review` after any non-trivial commit chain. Pass 2 (verification) MUST diff agent claims against actual file contents AND session state — Pass 1 agents lie confidently. | See Lessons #20 and #29. **Eight heavy-duty reviews so far**; every one has caught at least one structural bug the unit tests missed (including a Critical cross-game claim exploit, a near-miss authority gating gap, and the Task 3.2 double-click double-spend pattern). |
-| **Pre-mainnet items** | Three items deferred from Phase 3 to Phase 5: reclaim the oversized program data slot (Task 5.0.1), threshold randomness / decentralized dealer (Task 5.0.2), final full-scope review (Task 5.0.3). Listed at [Pre-Mainnet Checklist](#pre-mainnet-checklist-deferred-items-not-blocking-devnet). | None block devnet work. |
+| **Heavy-duty reviews** | Run `/heavy-duty-review` after any non-trivial commit chain. Pass 2 (verification) MUST diff agent claims against actual file contents AND session state — Pass 1 agents lie confidently. | See Lessons #20 and #29. **Nine heavy-duty reviews so far**; every one has caught at least one structural bug the unit tests missed (including a Critical cross-game claim exploit, a near-miss authority gating gap, the Task 3.2 double-click double-spend pattern, and the second occurrence of the BigInt-u64 silent-wrap footgun in `init-game.ts` — see Lesson #42 + Pre-Mainnet 5.0.4). |
+| **Pre-mainnet items** | Four items deferred from Phase 3 to Phase 5: reclaim the oversized program data slot (Task 5.0.1), threshold randomness / decentralized dealer (Task 5.0.2), final full-scope review (Task 5.0.3), and the shared `parseU64` helper + `scripts/lib/script-helpers.ts` extraction (Task 5.0.4 — added 2026-04-11 after the BigInt-u64 footgun re-occurred). Listed at [Pre-Mainnet Checklist](#pre-mainnet-checklist-deferred-items-not-blocking-devnet). | None block devnet work. |
 
 ### Where to find things in this plan
 
-Line numbers shift; grep for the section header instead. Approximate locations as of 2026-04-10:
+Line numbers shift; grep for the section header instead. Approximate locations as of 2026-04-11:
 
 | Looking for... | Section header to grep | Approx. line |
 |---|---|---|
@@ -116,6 +122,7 @@ Line numbers shift; grep for the section header instead. Approximate locations a
 | Phase 3B frontend Task 3.3 (game board — next up) | `#### Task 3.3: Game Board Components` | ~2528 |
 | Phase 4 (House AI) | `### Phase 4: The House AI Agent` | ~2688 |
 | Phase 5 (deployment) and pre-mainnet checklist | `### Phase 5`, `#### Pre-Mainnet Checklist` | ~2817, ~2825 |
+| **Worked GameSession byte-layout decoding example** (separate doc) | [docs/GAME_SESSION_BYTE_LAYOUT.md](GAME_SESSION_BYTE_LAYOUT.md) | — |
 
 ---
 
@@ -1924,7 +1931,7 @@ day 1 if we built this again.
 
 41. **Action hooks must be intrinsically safe against re-entry — do NOT depend on UI button-disable for correctness.** React Query's `mutateAsync` does NOT debounce by default: two rapid calls to the same mutation each get a fresh blockhash, sign independently via the wallet, and broadcast as two distinct transactions. Without an in-hook guard, a double-click on a future "Join" button would produce two `joinRound` transactions both landing on-chain, with the user paying gas + staking twice. **The fix in [use-game-actions.ts](../app/src/hooks/use-game-actions.ts):** wrap each public action with `mutation.isPending ? Promise.reject(new Error("X already in progress")) : mutation.mutateAsync(...)`. The hook is now intrinsically safe; UI button-disable is a UX nicety on top, not a correctness contract. **The general rule for any hook that produces a side effect:** assume the caller will misuse it. Re-entry safety lives in the hook, not in the UI.
 
-42. **`new DataView(buf.buffer).setBigUint64(value, ...)` silently wraps negative bigints to huge u64s.** Verified empirically: `setBigUint64(0, -100n, true)` produces `[156, 255, 255, 255, 255, 255, 255, 255]` (= u64::MAX − 99) instead of throwing a `RangeError`. This bit Task 3.2 because `joinRound(stakeAmount: bigint)` accepts arbitrary bigints from caller code and the underlying `u64Le()` helper in `@pushflip/client` uses `setBigUint64` directly. The on-chain program would reject the wrapped value (because it exceeds the user's balance), but only after burning the user's gas. **Fix:** validate at the hook boundary BEFORE calling the instruction builder: `if (stakeAmount < MIN_STAKE) throw new Error(...);`. Also use `MIN_STAKE` imported from `@pushflip/client` so there's one source of truth across the workspace. **The general rule:** any function that takes a bigint and forwards it to a u64 encoder must validate the range explicitly. Don't trust JavaScript to throw.
+42. **`new DataView(buf.buffer).setBigUint64(value, ...)` silently wraps negative bigints to huge u64s.** Verified empirically: `setBigUint64(0, -100n, true)` produces `[156, 255, 255, 255, 255, 255, 255, 255]` (= u64::MAX − 99) instead of throwing a `RangeError`. This bit Task 3.2 because `joinRound(stakeAmount: bigint)` accepts arbitrary bigints from caller code and the underlying `u64Le()` helper in `@pushflip/client` uses `setBigUint64` directly. The on-chain program would reject the wrapped value (because it exceeds the user's balance), but only after burning the user's gas. **Fix:** validate at the hook boundary BEFORE calling the instruction builder: `if (stakeAmount < MIN_STAKE) throw new Error(...);`. Also use `MIN_STAKE` imported from `@pushflip/client` so there's one source of truth across the workspace. **The general rule:** any function that takes a bigint and forwards it to a u64 encoder must validate the range explicitly. Don't trust JavaScript to throw. **Re-occurred 2026-04-11 in [scripts/init-game.ts](../scripts/init-game.ts)** — the `GAME_ID` env parser used raw `BigInt(raw)` and would silently accept `"0xff"` (hex → 255), `"-1"` (negative), and `"18446744073709551616"` (= 2^64, wraps to 0n on the wire = collides with game_id=0). Caught in the **ninth heavy-duty review** and fixed in the same session with a local `parseU64(raw, fieldName)` helper that does `/^\d+$/.test(raw)` then bounds-checks against `0xffff_ffff_ffff_ffffn`. **The fact that this footgun has now bitten the codebase TWICE in two weeks means a shared helper is overdue** — tracked as Pre-Mainnet Checklist item [5.0.4](#504-extract-shared-parseu64-helper--scripts-lib-script-helpersts).
 
 43. **Wallet adapter ↔ Kit signing bridges must verify the wallet returned the same message bytes they sent.** When the bridge does `compileTransaction → wrap as VersionedTransaction → walletSignTransaction → fromVersionedTransaction → send`, it's trusting the wallet 100% to return a transaction whose message body matches what it received. A buggy wallet adapter — or a malicious browser extension intercepting the wallet RPC — could swap the message body and have the user sign an attacker's transaction. **The fix in [wallet-bridge.ts](../app/src/lib/wallet-bridge.ts):** after the wallet returns, serialize `signedVersionedTx.message` and compare it byte-for-byte against the original `compiled.messageBytes`. Length check first (cheap rejection), then byte loop. Throws with the offending byte index. Cost: one serialize call + one Uint8Array loop per signed transaction. **The general rule:** at the trust boundary between your code and an external signer, always verify what came back matches what you sent. The wallet has full control over the return value; nothing else in your stack will catch a swap.
 
@@ -2859,6 +2866,35 @@ These are items we explicitly chose NOT to fix during the devnet build cycle but
 **Context:** The third heavy-duty review was post-Task-2.10 and focused on the session's diff. The fourth (Task 3.A.5) is circuit-focused. Before mainnet, run a full-scope review one more time covering the entire codebase as a single unit, with adversarial-input fuzzing for the instruction handlers if practical.
 
 **Done when:** No High or Critical findings remain.
+
+##### 5.0.4: Extract shared `parseU64` helper + `scripts/lib/script-helpers.ts`
+**Context:** Two distinct DRY violations surfaced together in the **ninth heavy-duty review** (2026-04-11) after [scripts/init-game.ts](../scripts/init-game.ts) shipped:
+
+1. **The `BigInt(userInput)` → `setBigUint64` silent-wrap footgun has now appeared TWICE.** First in `useGameActions.joinRound`'s stakeAmount (caught in 8th review, fix in [use-game-actions.ts](../app/src/hooks/use-game-actions.ts)). Then in `init-game.ts`'s `GAME_ID` env parser (caught in 9th review, fix in [init-game.ts](../scripts/init-game.ts) with a local `parseU64` helper). Each fix re-implements the same `/^\d+$/` + max-value validation pattern. There is currently **no shared `parseU64` helper in `@pushflip/client`**. See Lessons Learned #42.
+
+2. **`scripts/init-game.ts` and `scripts/smoke-test.ts` duplicate ~80 lines** of helpers (logging color palette, `ok`/`info`/`step`/`fail` functions, `loadCliKeypair`, `RpcContext` interface, `sendTx` builder, `printRpcError` extraction). With two scripts the duplication is tolerable; with three (likely candidates: `commit-deck.ts` for the dealer flow, `mint-test-flip.ts` for token setup, `close-game.ts` for cleanup) it becomes a maintenance liability. The 9th review explicitly deferred this with the dismissal rationale: "touching `smoke-test.ts` is the Poseidon syscall regression guard and that refactor deserves its own focused session."
+
+**Why we're not fixing it now:** The `parseU64` helper extraction is small but coupled to a workspace-package change in `@pushflip/client` that needs its own test additions. The script-helpers extraction requires touching `smoke-test.ts`, which is the Poseidon `sol_poseidon` syscall regression guard from Task 2.10 — any change there must be re-verified with a full smoke-test run against devnet (~30s + lamports). Both are appropriate for a focused refactor session, not a tail-end of a Phase 3.2 commit chain.
+
+**What to do (whichever trigger fires first — script #3 OR mainnet prep):**
+1. **`parseU64` helper:**
+   - Add `parseU64(raw: string, fieldName: string): bigint` to [clients/js/src/bytes.ts](../clients/js/src/bytes.ts) (next to the existing `u64Le` encoder).
+   - Implementation: `/^\d+$/.test(raw)` regex check (rejects hex/sign/scientific/garbage) → `BigInt(raw)` → `if (parsed > 0xffff_ffff_ffff_ffffn) throw`.
+   - Re-export from [clients/js/src/index.ts](../clients/js/src/index.ts).
+   - Add unit tests covering the 12 cases in [scripts/init-game.ts](../scripts/init-game.ts)'s parseU64 (4 accept, 8 reject).
+   - Migrate `init-game.ts` to import it from `@pushflip/client`. Delete the local copy.
+   - Audit `useGameActions.joinRound` and any other call sites that take a bigint from string input — migrate them to `parseU64` for consistency.
+2. **`scripts/lib/script-helpers.ts`:**
+   - Extract: color palette `c`, `ok`/`info`/`step`/`fail` logging helpers, `loadCliKeypair`, `RpcContext` interface, `sendTx` (use the smoke-test version with the optional `_signers` arg so both scripts can share it), `printRpcError`.
+   - Migrate `init-game.ts` first (the new file, easy to verify), then `smoke-test.ts`.
+   - **Verification gate:** after migrating `smoke-test.ts`, run `pnpm --filter @pushflip/scripts smoke-test` end-to-end against devnet and confirm all 8 lifecycle steps pass (initialize → join × 2 → commit_deck → start_round → hit → stay → end_round → leave_game → close_game). This is the only acceptable proof that the refactor didn't break the Poseidon regression guard.
+3. **Optional follow-up:** add a Biome lint rule that flags raw `BigInt(stringFromUserSpace)` calls outside of `parseU64` itself. The lint rule is the *only* mechanism that prevents this footgun from coming back a third time. Markdown alone doesn't stop the bug — see feedback memory `feedback_workflow_to_mechanism.md`.
+
+**Trigger to do this work:** Whichever comes first:
+- **Before script #3 lands** (the duplication-cost crossover point), OR
+- **Before mainnet** (so the program client surface area is consolidated and fuzz-testable).
+
+**Done when:** `parseU64` lives in `@pushflip/client` with tests; both scripts import from `scripts/lib/script-helpers.ts`; smoke test passes end-to-end against devnet after the migration; (optional) Biome lint rule rejects raw `BigInt(userInput)` patterns.
 
 ---
 

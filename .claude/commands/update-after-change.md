@@ -9,6 +9,7 @@ When you change code, update as needed:
 | Area | What to do |
 |------|------------|
 | **Documentation** | Update README(s), `docs/`, and inline comments in the touched area. |
+| **Wiki** | If you touched anything under `docs/wiki/` or `wiki/`, update `last_compiled` frontmatter on every edited page to today's date, then run `bash scripts/wiki-health-check.sh --strict` and `mkdocs build -f wiki/mkdocs.yml --strict`. Fix any warnings about missing/invalid frontmatter, stale pages, broken `related_wiki` refs, or pages omitted from the nav. |
 | **Formatting** | Run `cargo fmt` to ensure consistent formatting. |
 | **Linting** | Run `cargo clippy` and fix new warnings. Do not leave new warnings introduced by the change. |
 | **Tests** | Add or adjust tests for new/changed behavior; run related tests. |
@@ -25,6 +26,13 @@ When you change code, update as needed:
    - For each touched area, update the relevant docs.
    - If instructions or account layouts changed: update any docs describing the on-chain interface.
    - If client code changed: update relevant docs in `docs/`.
+
+2.5. **Wiki verification (only if you touched `docs/wiki/` or `wiki/`)**
+   - For every wiki page you edited, set the `last_compiled` frontmatter field to today's date.
+   - Run: `bash scripts/wiki-health-check.sh --strict`
+   - Run: `mkdocs build -f wiki/mkdocs.yml --strict`
+   - Fix: missing or invalid frontmatter (`title`, `diataxis_type`, `last_compiled`), stale `last_compiled` (>60 days), broken `related_wiki` references, pages omitted from `mkdocs.yml`'s `nav:` block.
+   - If the wiki Python venv hasn't been set up yet: `python3 -m venv wiki/.venv && wiki/.venv/bin/pip install -r wiki/requirements.txt`. Then prefix the commands above with `wiki/.venv/bin/` so you don't need to activate the venv every time.
 
 3. **Format and Lint**
    - Run: `cargo fmt --all`
@@ -54,6 +62,9 @@ When you change code, update as needed:
 - Test (specific): `cargo test <name>`
 - Test (all): `cargo test`
 - Check (fast compile check): `cargo check --all-targets`
+- Wiki health check: `bash scripts/wiki-health-check.sh --strict`
+- Wiki strict build: `wiki/.venv/bin/mkdocs build -f wiki/mkdocs.yml --strict`
+- Wiki local serve: `wiki/.venv/bin/mkdocs serve -f wiki/mkdocs.yml` (then open <http://127.0.0.1:8000>)
 
 ## Output
 

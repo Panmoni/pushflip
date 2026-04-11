@@ -74,7 +74,7 @@ loud `cargo:warning=` block if you do.
 
 - **Pinocchio, not Anchor.** All on-chain account validation is manual. See
   [.claude/rules/blockchain-patterns.md](.claude/rules/blockchain-patterns.md)
-  and [docs/PINOCCHIO_RESOURCE_GUIDE.md](docs/PINOCCHIO_RESOURCE_GUIDE.md).
+  and the [Pinocchio Guide](docs/wiki/reference/pinocchio-guide.md) in the wiki.
 - **`@solana/kit`, not `web3.js` v1 or `gill`.** All client code uses the
   current Anza-maintained SDK.
 - **Hand-written TS client, not Codama.** Pinocchio's manual byte layouts
@@ -85,6 +85,33 @@ loud `cargo:warning=` block if you do.
   imperative-mood subjects. No co-author trailers.
 - **Run `cargo fmt` and `cargo clippy -- -D warnings` before opening a PR.**
 - **Never silence pre-commit hooks** (`--no-verify`, `--no-gpg-sign`).
+
+## Wiki contributions
+
+Project documentation lives in an MkDocs Material wiki at [`docs/wiki/`](docs/wiki/index.md). When editing or adding wiki pages:
+
+- **Every page declares frontmatter** with at minimum `title`, `diataxis_type`, and `last_compiled` (YYYY-MM-DD). See [`docs/wiki/meta/frontmatter-template.md`](docs/wiki/meta/frontmatter-template.md) for the full schema. The health check script will fail your PR if any required field is missing.
+- **`diataxis_type` follows the [Diátaxis framework](https://diataxis.fr/)** — exactly one of `how-to`, `reference`, `explanation`, or `tutorial`. If you're unsure, default to `explanation` for prose docs and `reference` for tables/specifications.
+- **Update `last_compiled` to today's date** every time you edit a page. The weekly CI sweep flags pages older than 60 days.
+- **Cross-reference between wiki pages** with relative paths inside `docs/wiki/`. Cross-reference into the rest of the repo with paths relative to `docs/wiki/<section>/` — three levels up to reach the repo root.
+
+### Local preview
+
+```bash
+# One-time setup (Python 3.12+ required)
+python3 -m venv wiki/.venv
+wiki/.venv/bin/pip install -r wiki/requirements.txt
+
+# Health check + strict build (CI runs the same)
+bash scripts/wiki-health-check.sh --strict
+wiki/.venv/bin/mkdocs build -f wiki/mkdocs.yml --strict
+
+# Live preview
+wiki/.venv/bin/mkdocs serve -f wiki/mkdocs.yml
+# → http://127.0.0.1:8000
+```
+
+The wiki is validated on every PR via `.github/workflows/wiki-build.yml`, plus a weekly Monday cron job that runs the staleness sweep against `main`.
 
 ## Open work for outside contributors
 

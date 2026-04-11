@@ -90,6 +90,68 @@ export function u64Le(value: bigint): Uint8Array {
   return buf;
 }
 
+/** Maximum value for a u64 — used as the upper bound in `parseU64`. */
+export const U64_MAX: bigint = 0xffff_ffff_ffff_ffffn;
+
+// Hoisted to module scope per biome's useTopLevelRegex rule.
+const POSITIVE_INTEGER_RE = /^\d+$/;
+
+/**
+ * Parse a user-supplied decimal string into a u64-bounded `bigint`, with
+ * strict validation. This is the single source of truth for all u64 input
+ * parsing across the monorepo — the frontend, scripts, and dealer all
+ * share this helper so rejection rules can never drift.
+ *
+ * **Why this is necessary**: `BigInt(userInput)` silently accepts hex
+ * (`"0xff"` → 255), negatives (`"-1"`), and values beyond 2^64. When those
+ * bigints later hit `setBigUint64` (inside `u64Le()`), JavaScript silently
+ * *wraps*: `2^64` becomes `0n` (would collide with id=0), `-1n` becomes
+ * u64::MAX. This footgun has bitten the codebase four times — see
+ * `docs/EXECUTION_PLAN.md` Lesson #42. The fix is centralizing the
+ * validation here so every bigint that flows into a u64 encoder is
+ * range-checked first.
+ *
+ * Accepts: positive decimal integers in `[0, 2^64 - 1]`.
+ * Rejects: hex prefixes, negatives, scientific notation, decimals,
+ *          empty strings, anything `BigInt()` can't parse, and values
+ *          that would overflow u64.
+ *
+ * @param raw       The user-supplied string (already trimmed; the caller
+ *                  should `.trim()` if the input came from a form field).
+ * @param fieldName Human-readable name used in error messages.
+ */
+export function parseU64(raw: string, fieldName: string): bigint {
+  if (!POSITIVE_INTEGER_RE.test(raw)) {
+    return throwInvalidU64(
+      fieldName,
+      raw,
+      "expected a positive decimal integer (no hex, no signs, no scientific notation)",
+    );
+  }
+  let parsed: bigint;
+  try {
+    parsed = BigInt(raw);
+  } catch {
+    return throwInvalidU64(fieldName, raw, "BigInt() rejected the value");
+  }
+  if (parsed > U64_MAX) {
+    return throwInvalidU64(
+      fieldName,
+      raw,
+      `exceeds u64 max (${U64_MAX.toString()})`,
+    );
+  }
+  return parsed;
+}
+
+function throwInvalidU64(
+  fieldName: string,
+  raw: string,
+  reason: string,
+): never {
+  throw new Error(`Invalid ${fieldName}: ${JSON.stringify(raw)} — ${reason}`);
+}
+
 /** Encode a u16 as 2 little-endian bytes. */
 export function u16Le(value: number): Uint8Array {
   const buf = new Uint8Array(2);

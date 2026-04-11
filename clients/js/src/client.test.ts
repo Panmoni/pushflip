@@ -14,7 +14,7 @@ import {
   decodeGameSession,
   decodePlayerState,
 } from "./index.js";
-import { u64Le } from "./bytes.js";
+import { parseU64, U64_MAX, u64Le } from "./bytes.js";
 import {
   BOUNTY_BOARD_DISCRIMINATOR,
   GAME_SESSION_DISCRIMINATOR,
@@ -440,6 +440,84 @@ describe("Account deserializers", () => {
 // our builders cannot be appended to a Kit @solana/kit transaction message.
 // Pure encoding tests above would not catch a `Instruction<T>` generic
 // parameter weakening or an `accounts` shape mismatch — this would.
+describe("parseU64", () => {
+  it("accepts positive decimal integers", () => {
+    assert.equal(parseU64("0", "stake"), 0n);
+    assert.equal(parseU64("1", "stake"), 1n);
+    assert.equal(parseU64("1000", "stake"), 1000n);
+    assert.equal(
+      parseU64("18446744073709551615", "stake"),
+      U64_MAX,
+    );
+  });
+
+  it("rejects the empty string", () => {
+    assert.throws(() => parseU64("", "stake"), /Invalid stake/);
+  });
+
+  it("rejects hex prefixes", () => {
+    assert.throws(() => parseU64("0xff", "stake"), /Invalid stake/);
+    assert.throws(() => parseU64("0X10", "stake"), /Invalid stake/);
+  });
+
+  it("rejects negatives", () => {
+    assert.throws(() => parseU64("-1", "stake"), /Invalid stake/);
+    assert.throws(() => parseU64("-100", "stake"), /Invalid stake/);
+  });
+
+  it("rejects decimals and scientific notation", () => {
+    assert.throws(() => parseU64("1.5", "stake"), /Invalid stake/);
+    assert.throws(() => parseU64("1e10", "stake"), /Invalid stake/);
+    assert.throws(() => parseU64("1E10", "stake"), /Invalid stake/);
+  });
+
+  it("rejects values above u64::MAX", () => {
+    // 2^64 — one past u64::MAX
+    assert.throws(
+      () => parseU64("18446744073709551616", "stake"),
+      /exceeds u64 max/,
+    );
+    // Comfortably above u64::MAX
+    assert.throws(
+      () => parseU64("999999999999999999999", "stake"),
+      /exceeds u64 max/,
+    );
+  });
+
+  it("rejects whitespace and non-digit junk", () => {
+    assert.throws(() => parseU64(" 100", "stake"), /Invalid stake/);
+    assert.throws(() => parseU64("100 ", "stake"), /Invalid stake/);
+    assert.throws(() => parseU64("10_000", "stake"), /Invalid stake/);
+    assert.throws(() => parseU64("abc", "stake"), /Invalid stake/);
+  });
+
+  it("uses the supplied field name in error messages", () => {
+    assert.throws(
+      () => parseU64("-1", "game_id"),
+      /Invalid game_id/,
+    );
+  });
+
+  it("bounds-checks before u64Le encoding (silent-wrap guard)", () => {
+    // This is the exact footgun parseU64 exists to prevent: if a caller
+    // skipped parseU64 and passed raw `BigInt("18446744073709551616")`
+    // into u64Le, setBigUint64 would silently wrap it to 0n. parseU64
+    // must reject that value so no caller ever gets a wrapped bigint.
+    assert.throws(
+      () => parseU64("18446744073709551616", "stake"),
+      /exceeds u64 max/,
+    );
+    // And the valid boundary value still round-trips through u64Le.
+    const max = parseU64("18446744073709551615", "stake");
+    const bytes = u64Le(max);
+    assert.equal(bytes.length, 8);
+    // All bytes should be 0xff for u64::MAX
+    for (const b of bytes) {
+      assert.equal(b, 0xff);
+    }
+  });
+});
+
 describe("Kit transaction-builder integration", () => {
   it("instruction can be appended to a Kit transaction message", () => {
     const ix = getStayInstruction({

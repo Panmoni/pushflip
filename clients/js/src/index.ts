@@ -26,7 +26,14 @@ export * from "./constants.js";
 export * from "./pda.js";
 
 // Byte helpers
-export { ByteReader, concatBytes, u16Le, u64Le } from "./bytes.js";
+export {
+  ByteReader,
+  concatBytes,
+  parseU64,
+  U64_MAX,
+  u16Le,
+  u64Le,
+} from "./bytes.js";
 
 // Account deserializers
 export {

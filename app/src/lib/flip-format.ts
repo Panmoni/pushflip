@@ -1,20 +1,15 @@
 /**
- * `$FLIP` token formatting + parsing helpers.
+ * `$FLIP` token formatting helpers.
  *
- * Single source of truth for:
- *   - `FLIP_SCALE` — the bigint multiplier converting whole $FLIP to base units
- *   - `formatFlip` — bigint → human-readable display string (full + compact modes)
- *   - `parseU64` — string → validated bigint, with the same `/^\d+$/` + bounds
- *     check pattern that init-game.ts uses (the canonical fix for the recurring
- *     BigInt-u64 silent-wrap footgun documented in EXECUTION_PLAN.md Lesson #42)
+ * Display-only helpers for rendering $FLIP base-unit `bigint` values as
+ * human-readable strings (full-precision and compact k/M/B modes). These
+ * cannot live in `@pushflip/client` because they are React-adjacent
+ * presentation logic; the client package stays on-chain-only.
  *
- * Lives in `app/src/lib/` rather than `@pushflip/client` because:
- *  - Pre-Mainnet 5.0.4 will eventually move `parseU64` into `@pushflip/client`
- *    so the dealer + scripts + frontend share one helper. Until then, the
- *    frontend gets its own copy that mirrors the same regex + bounds shape.
- *  - The format helpers are display-only and don't belong in the on-chain
- *    client package — they would create a circular dep with React-only
- *    formatting logic.
+ * **Parsing lives in `@pushflip/client`** — `parseU64` and `U64_MAX`
+ * live there (added in Pre-Mainnet 5.0.4) so the frontend, scripts, and
+ * dealer share one validator. Import them from `@pushflip/client`
+ * directly; don't route parsing through this module.
  *
  * **WHY THIS FILE EXISTS** — heavy-duty review #10 caught three separate
  * copies of `FLIP_SCALE = 10n ** BigInt(FLIP_DECIMALS)` and four nearly
@@ -26,65 +21,6 @@ import { FLIP_DECIMALS } from "@pushflip/client";
 
 /** Multiplier to convert whole $FLIP to base units. 10^9 since FLIP_DECIMALS = 9. */
 export const FLIP_SCALE: bigint = 10n ** BigInt(FLIP_DECIMALS);
-
-/** Maximum value for a u64 — used as the upper bound in `parseU64`. */
-export const U64_MAX: bigint = 0xffff_ffff_ffff_ffffn;
-
-// --- Parse helpers -------------------------------------------------------
-
-// Hoisted to module scope per biome's useTopLevelRegex rule.
-const POSITIVE_INTEGER_RE = /^\d+$/;
-
-/**
- * Parse a user-supplied decimal string into a u64-bounded `bigint`, with
- * strict validation. Mirrors `scripts/init-game.ts::parseU64` so the
- * frontend and the script share the same rejection rules.
- *
- * **Why this is necessary**: `BigInt(userInput)` silently accepts hex
- * (`"0xff"` → 255), negatives (`"-1"`), and values beyond 2^64. When those
- * bigints later hit `setBigUint64` (inside `u64Le()` from `@pushflip/client`),
- * JavaScript silently *wraps*: `2^64` becomes `0n` (would collide with id=0),
- * `-1n` becomes u64::MAX. This footgun has bitten the codebase three times
- * (use-game-actions.joinRound, init-game.ts, and now in this file's earlier
- * draft). The fix is centralizing the validation here so every bigint that
- * flows into a u64 encoder is range-checked first.
- *
- * Accepts: positive decimal integers in `[0, 2^64 - 1]`.
- * Rejects: hex prefixes, negatives, scientific notation, decimals,
- *          empty strings, anything `BigInt()` can't parse, and values
- *          that would overflow u64.
- *
- * @param raw       The user-supplied string (already trimmed; the caller
- *                  should `.trim()` if the input came from a form field).
- * @param fieldName Human-readable name used in error messages.
- */
-export function parseU64(raw: string, fieldName: string): bigint {
-  if (!POSITIVE_INTEGER_RE.test(raw)) {
-    return throwInvalid(
-      fieldName,
-      raw,
-      "expected a positive decimal integer (no hex, no signs, no scientific notation)"
-    );
-  }
-  let parsed: bigint;
-  try {
-    parsed = BigInt(raw);
-  } catch {
-    return throwInvalid(fieldName, raw, "BigInt() rejected the value");
-  }
-  if (parsed > U64_MAX) {
-    return throwInvalid(
-      fieldName,
-      raw,
-      `exceeds u64 max (${U64_MAX.toString()})`
-    );
-  }
-  return parsed;
-}
-
-function throwInvalid(fieldName: string, raw: string, reason: string): never {
-  throw new Error(`Invalid ${fieldName}: ${JSON.stringify(raw)} — ${reason}`);
-}
 
 // --- Format helpers ------------------------------------------------------
 

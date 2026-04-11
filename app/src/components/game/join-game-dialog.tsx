@@ -20,8 +20,9 @@
  * Spec: docs/EXECUTION_PLAN.md Task 3.4.3.
  */
 
-import { MIN_STAKE } from "@pushflip/client";
-import { useState } from "react";
+import { MIN_STAKE, parseU64, U64_MAX } from "@pushflip/client";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -35,7 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { useGameActions } from "@/hooks/use-game-actions";
 import { useTokenBalance } from "@/hooks/use-token-balance";
-import { FLIP_SCALE, formatFlip, parseU64, U64_MAX } from "@/lib/flip-format";
+import { FLIP_SCALE, formatFlip } from "@/lib/flip-format";
 import { cn } from "@/lib/utils";
 
 const MIN_STAKE_WHOLE = MIN_STAKE / FLIP_SCALE;
@@ -74,7 +75,7 @@ interface ParseResult {
 
 /**
  * Parse a user-supplied whole-$FLIP string into base units, with
- * validation. Uses `parseU64` from `@/lib/flip-format` for the
+ * validation. Uses `parseU64` from `@pushflip/client` for the
  * regex + upper-bound check (the canonical fix for the recurring
  * BigInt-u64 silent-wrap footgun — heavy-duty review #10 finding #6).
  *
@@ -133,12 +134,25 @@ export function JoinGameDialog({ trigger, className }: JoinGameDialogProps) {
   const [open, setOpen] = useState(false);
   const [rawStake, setRawStake] = useState(MIN_STAKE_WHOLE.toString());
 
+  const { publicKey } = useWallet();
+  const publicKeyBase58 = publicKey?.toBase58() ?? null;
   const balanceQuery = useTokenBalance();
   const { joinRound, isPending } = useGameActions();
 
   const balance = balanceQuery.data?.balance ?? null;
   const balanceLoading = balanceQuery.isLoading;
   const parsed = parseStakeInput(rawStake);
+
+  // Close the dialog automatically if the wallet disconnects while it is
+  // open. Otherwise the no-ATA branch can render `<your-address>` as a
+  // literal placeholder, and the Join button is stuck disabled with no
+  // way forward — "reconnect your wallet" isn't discoverable from inside
+  // the dialog. Fires in the same tick as the publicKey→null transition.
+  useEffect(() => {
+    if (open && publicKey === null) {
+      setOpen(false);
+    }
+  }, [open, publicKey]);
 
   // Three layered errors, checked in order so the user sees the most
   // actionable one first:
@@ -147,15 +161,26 @@ export function JoinGameDialog({ trigger, className }: JoinGameDialogProps) {
   //     receive test FLIP before joining; the on-chain join would
   //     otherwise fail with a confusing "account does not exist")
   //  3. Insufficient-balance error (has an ATA but not enough $FLIP)
+  //
+  // The `no-ata` sentinel is treated as informational rather than as a
+  // validation error: the input itself is fine, the wallet just needs
+  // faucet-ing. The distinction matters for styling — a well-formed
+  // stake should NOT paint the input red when the only "error" is a
+  // missing ATA.
   let formError: string | null = parsed.error;
   if (formError === null && parsed.ok && !balanceLoading) {
-    if (balance === null) {
-      formError =
-        "You don't have a $FLIP token account yet. Receive some test $FLIP first, then try again.";
-    } else if (parsed.stakeBaseUnits > balance) {
+    if (balance === null && publicKey !== null) {
+      formError = "no-ata";
+    } else if (balance !== null && parsed.stakeBaseUnits > balance) {
       formError = `Insufficient balance — wallet has ${formatFlip(balance)} $FLIP`;
     }
   }
+
+  // The input is "in an error state" when there is an actual validation
+  // failure — parse error or insufficient balance. The `no-ata` case is
+  // informational (the user entered a valid number; the wallet just
+  // needs to be funded first), so the input border stays neutral.
+  const inputHasError = formError !== null && formError !== "no-ata";
 
   // Submit is disabled if: parse failed, any layered form error fires,
   // a join is in flight, OR the balance query is still loading (we
@@ -163,13 +188,23 @@ export function JoinGameDialog({ trigger, className }: JoinGameDialogProps) {
   const submitDisabled =
     !parsed.ok || formError !== null || isPending || balanceLoading;
 
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) {
+      // Reset the input to the minimum stake so a subsequent open shows
+      // a clean starting value rather than whatever the user typed last
+      // time (possibly a now-stale huge number that just got rejected).
+      setRawStake(MIN_STAKE_WHOLE.toString());
+    }
+  }, []);
+
   function handleSubmit() {
     if (!parsed.ok) {
       return;
     }
     joinRound(parsed.stakeBaseUnits)
       .then(() => {
-        setOpen(false);
+        handleOpenChange(false);
       })
       .catch(() => {
         // No-op — `useGameActions.runAction` already raises a toast on
@@ -180,7 +215,7 @@ export function JoinGameDialog({ trigger, className }: JoinGameDialogProps) {
   }
 
   return (
-    <Dialog onOpenChange={setOpen} open={open}>
+    <Dialog onOpenChange={handleOpenChange} open={open}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className={cn("sm:max-w-md", className)}>
         <DialogHeader>
@@ -209,7 +244,7 @@ export function JoinGameDialog({ trigger, className }: JoinGameDialogProps) {
               className={cn(
                 "mt-1 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-foreground tabular-nums",
                 "placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/40",
-                formError && "border-destructive focus:ring-destructive/40"
+                inputHasError && "border-destructive focus:ring-destructive/40"
               )}
               inputMode="numeric"
               onChange={(e) => setRawStake(e.target.value)}
@@ -223,18 +258,45 @@ export function JoinGameDialog({ trigger, className }: JoinGameDialogProps) {
             </span>
           </label>
 
-          {formError && (
-            <p
+          {formError === "no-ata" && publicKeyBase58 !== null ? (
+            <div
               aria-live="polite"
-              className="rounded border border-destructive/40 bg-destructive/10 p-2 text-destructive text-sm"
+              className="space-y-2 rounded border border-amber-400/50 bg-amber-500/10 p-3 text-sm"
             >
-              {formError}
-            </p>
+              <p className="font-semibold text-amber-100">
+                You don't have a $FLIP token account yet.
+              </p>
+              <p className="text-amber-50/90">
+                Test $FLIP is mintable on devnet by the test mint authority.
+                Send your wallet address{" "}
+                <code className="rounded bg-black/30 px-1 py-0.5 font-mono text-amber-100 text-xs">
+                  {publicKeyBase58}
+                </code>{" "}
+                to the maintainer and ask them to run:
+              </p>
+              <pre className="overflow-x-auto rounded bg-black/40 p-2 font-mono text-amber-50 text-xs">
+                {`pnpm --filter @pushflip/scripts mint-test-flip \\\n  --to ${publicKeyBase58}`}
+              </pre>
+              <p className="text-amber-100/70 text-xs">
+                A self-service in-app faucet is tracked as a Phase 4 task — see
+                EXECUTION_PLAN.md.
+              </p>
+            </div>
+          ) : (
+            formError &&
+            formError !== "no-ata" && (
+              <p
+                aria-live="polite"
+                className="rounded border border-destructive/40 bg-destructive/10 p-2 text-destructive text-sm"
+              >
+                {formError}
+              </p>
+            )
           )}
         </div>
 
         <DialogFooter>
-          <Button onClick={() => setOpen(false)} variant="ghost">
+          <Button onClick={() => handleOpenChange(false)} variant="ghost">
             Cancel
           </Button>
           <Button disabled={submitDisabled} onClick={handleSubmit}>

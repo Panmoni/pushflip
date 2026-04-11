@@ -65,6 +65,7 @@ import {
   deriveGamePda,
   deriveVaultPda,
   getInitializeInstruction,
+  parseU64,
   PUSHFLIP_PROGRAM_ID,
 } from "@pushflip/client";
 
@@ -78,46 +79,6 @@ import { TEST_FLIP_MINT } from "./devnet-config.js";
 
 const DEVNET_RPC_URL = "https://api.devnet.solana.com";
 const DEVNET_WS_URL = "wss://api.devnet.solana.com";
-
-/**
- * Parse a u64 from a user-supplied decimal string.
- *
- * `BigInt(str)` is too permissive for u64 input: it silently accepts
- * `"0xff"` (hex → 255), `"-1"` (negative), and values beyond 2^64-1.
- * Worse, when those bigints are later passed through `setBigUint64`,
- * JavaScript silently *wraps*: `2n ** 64n` becomes `0n` (which would
- * collide with game_id=0), and `-1n` becomes `0xffff_ffff_ffff_ffffn`.
- *
- * Phase 3.2's heavy-duty review caught the same footgun in
- * `useGameActions.joinRound`'s stake validation. This guard mirrors
- * that fix so the same bug doesn't ship twice.
- *
- * Accepts: positive decimal integers in `[0, 2^64 - 1]`.
- * Rejects: hex prefixes, negative numbers, floats, scientific notation,
- *          empty strings, anything `BigInt()` can't parse, and values
- *          that would overflow u64 on the wire.
- */
-const U64_MAX = 0xffff_ffff_ffff_ffffn;
-
-function parseU64(raw: string, fieldName: string): bigint {
-  if (!/^\d+$/.test(raw)) {
-    throw new Error(
-      `Invalid ${fieldName}: ${JSON.stringify(raw)} — expected a positive decimal integer (no hex, no signs, no scientific notation)`,
-    );
-  }
-  let parsed: bigint;
-  try {
-    parsed = BigInt(raw);
-  } catch {
-    throw new Error(`Invalid ${fieldName}: ${JSON.stringify(raw)}`);
-  }
-  if (parsed > U64_MAX) {
-    throw new Error(
-      `Invalid ${fieldName}: ${raw} exceeds u64 max (${U64_MAX})`,
-    );
-  }
-  return parsed;
-}
 
 // `game_id` is u64. Default 1n to match `app/src/lib/constants.ts:62`.
 // Override via env var for non-default ids: `GAME_ID=42 pnpm ...`.

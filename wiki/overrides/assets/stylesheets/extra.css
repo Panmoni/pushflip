@@ -1,0 +1,60 @@
+/* PushFlip wiki — Material theme customizations.
+ *
+ * Goals:
+ * - Keep the look close to stock Material so theme upgrades don't break it.
+ * - Tighten max content width for readability on wide monitors.
+ * - Make code blocks and admonitions feel a touch denser and more "ops console".
+ * - Small-caps treatment on the footer build metadata so the git hash stands out.
+ */
+
+:root {
+  --md-text-font: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --md-code-font: "JetBrains Mono", "SF Mono", "Cascadia Code", monospace;
+}
+
+/* Tighter content column for prose readability (~75 chars). */
+.md-grid {
+  max-width: 64rem;
+}
+
+/* Code blocks: slightly smaller, slightly denser. */
+.md-typeset code,
+.md-typeset pre > code {
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+/* Inline code: a touch more padding so it doesn't visually collide with prose. */
+.md-typeset :not(pre) > code {
+  padding: 0.1em 0.35em;
+  border-radius: 0.25em;
+}
+
+/* Admonition left border thicker — looks more like a runbook callout. */
+.md-typeset .admonition,
+.md-typeset details {
+  border-left-width: 0.25rem;
+}
+
+/* Table headers: subtle accent tinting (uses Material's theme accent variable). */
+.md-typeset table:not([class]) th {
+  background-color: var(--md-accent-fg-color--transparent);
+  font-weight: 600;
+}
+
+/* Footer build metadata: small caps so the git hash reads as build metadata
+ * rather than body copy. */
+.md-footer-meta {
+  font-feature-settings: "smcp" 1;
+  letter-spacing: 0.02em;
+}
+
+/* Search input: a hair more breathing room. */
+.md-search__input {
+  font-size: 0.85rem;
+}
+
+/* TOC sidebar: a touch lighter so it doesn't compete with the body. */
+.md-nav--secondary .md-nav__link {
+  font-size: 0.78rem;
+}

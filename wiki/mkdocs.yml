@@ -1,0 +1,111 @@
+site_name: PushFlip Wiki
+site_description: Architecture, reference, operations, and history for the PushFlip on-chain card game.
+site_url: https://wiki.pushflip.xyz/
+site_author: PushFlip
+copyright: >-
+  © 2026 PushFlip — built {{ config.extra.git_hash }} on {{ config.extra.build_date }}
+
+repo_url: https://github.com/Panmoni/pushflip
+repo_name: Panmoni/pushflip
+edit_uri: edit/main/docs/wiki/
+
+# Content lives outside the wiki/ config root so contributors find docs under
+# the familiar docs/ tree. Build output goes to wiki/site/ (gitignored).
+docs_dir: ../docs/wiki
+site_dir: site
+
+theme:
+  name: material
+  custom_dir: overrides
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+  favicon: assets/favicon.svg
+
+extra_css:
+  - assets/stylesheets/extra.css
+
+extra:
+  generator: false
+  # Filled in by hooks.py at build time. Defaults shown so the template
+  # interpolation in `copyright:` always renders something.
+  git_hash: dev
+  build_date: unknown
+
+plugins:
+  - search
+
+markdown_extensions:
+  - meta
+  - tables
+  - admonition
+  - attr_list
+  - md_in_html
+  - footnotes
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.keys
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+# Permissive link validation: many wiki pages link OUT to source files in
+# program/, app/, clients/ etc. that live above the docs_dir. Strict link
+# validation would flag every one of those as broken.
+validation:
+  links:
+    absolute_links: ignore
+    unrecognized_links: ignore
+    not_found: ignore
+  nav:
+    omitted_files: warn
+    not_found: warn
+
+hooks:
+  - hooks.py
+
+# Minimal nav for commit 1 (shell). Expanded in commit 2 once migrations
+# land and the section pages exist. Strict build passes against this nav
+# because every referenced file is present.
+nav:
+  - Home: index.md

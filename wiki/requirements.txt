@@ -1,0 +1,5 @@
+# PushFlip wiki Python dependencies.
+# Pinned with upper bounds so CI doesn't silently absorb a major breaking change.
+mkdocs>=1.6,<2
+mkdocs-material>=9.7,<10
+pymdown-extensions>=10.7

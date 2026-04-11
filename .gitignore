@@ -8,3 +8,7 @@ program/keypair.json
 !.env.example
 zk-circuits/build/
 .claude/command-log.txt
+# Wiki (MkDocs Material) build artifacts and Python venv
+wiki/site/
+wiki/.venv/
+wiki/__pycache__/

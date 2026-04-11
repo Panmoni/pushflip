@@ -259,25 +259,31 @@ export function JoinGameDialog({ trigger, className }: JoinGameDialogProps) {
           </label>
 
           {formError === "no-ata" && publicKeyBase58 !== null ? (
+            // Theme-aware palette: in light mode the text sits on a very
+            // pale amber background so the foreground must be DARK amber
+            // (900/800) to pass contrast. In dark mode the same box lives
+            // on a near-black background, so the text flips to LIGHT amber
+            // (100/50). The `<code>` + `<pre>` blocks keep their dark
+            // backgrounds in both modes so they read like terminal output.
             <div
               aria-live="polite"
-              className="space-y-2 rounded border border-amber-400/50 bg-amber-500/10 p-3 text-sm"
+              className="space-y-2 rounded border border-amber-500/60 bg-amber-100/70 p-3 text-sm dark:border-amber-400/50 dark:bg-amber-500/10"
             >
-              <p className="font-semibold text-amber-100">
+              <p className="font-semibold text-amber-900 dark:text-amber-100">
                 You don't have a $FLIP token account yet.
               </p>
-              <p className="text-amber-50/90">
+              <p className="text-amber-900/90 dark:text-amber-50/90">
                 Test $FLIP is mintable on devnet by the test mint authority.
                 Send your wallet address{" "}
-                <code className="rounded bg-black/30 px-1 py-0.5 font-mono text-amber-100 text-xs">
+                <code className="rounded bg-amber-950/80 px-1 py-0.5 font-mono text-amber-50 text-xs dark:bg-black/40">
                   {publicKeyBase58}
                 </code>{" "}
                 to the maintainer and ask them to run:
               </p>
-              <pre className="overflow-x-auto rounded bg-black/40 p-2 font-mono text-amber-50 text-xs">
+              <pre className="overflow-x-auto rounded bg-amber-950/90 p-2 font-mono text-amber-50 text-xs dark:bg-black/50">
                 {`pnpm --filter @pushflip/scripts mint-test-flip \\\n  --to ${publicKeyBase58}`}
               </pre>
-              <p className="text-amber-100/70 text-xs">
+              <p className="text-amber-900/80 text-xs dark:text-amber-100/70">
                 A self-service in-app faucet is tracked as a Phase 4 task — see
                 EXECUTION_PLAN.md.
               </p>

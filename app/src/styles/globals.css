@@ -83,38 +83,82 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
+/*
+ * Dark theme — pushflip "degen" aesthetic.
+ *
+ * Background: near-black (#0a0a0f-ish) matching the brand logo's
+ * canvas — deeper than vanilla shadcn dark to make the gradient
+ * cards pop.
+ *
+ * Primary: deep purple (#9945ff, the Solana brand purple, also the
+ * left-stop of the brand logo's gradient) — used for primary action
+ * buttons (Hit) and accent borders.
+ *
+ * Accent: Solana green (#14f195, the right-stop of the brand
+ * gradient) — used for "in-range" / "go" semantics.
+ *
+ * Destructive: red (#ef4444) for bust / dangerous actions.
+ *
+ * Game-component colors (Alpha=blue, Protocol=red, Multiplier=gold,
+ * Hit=green) are inlined as Tailwind utility classes inside the
+ * components themselves rather than indirected through additional
+ * custom properties. The earlier draft of this file defined
+ * `--color-hit` / `--color-bust` / `--color-multiplier` tokens, but
+ * heavy-duty review #10 finding #3 caught that nothing referenced
+ * them — removed to avoid dead code.
+ */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
+  /* Deep near-black canvas, slightly cooler than pure #000 to match
+     the brand logo background tile. */
+  --background: oklch(0.12 0.01 280);
+  --foreground: oklch(0.98 0 0);
+
+  /* Cards a touch lighter than the canvas so the elevation reads. */
+  --card: oklch(0.17 0.015 280);
+  --card-foreground: oklch(0.98 0 0);
+  --popover: oklch(0.18 0.015 280);
+  --popover-foreground: oklch(0.98 0 0);
+
+  /* Primary = deep purple (Solana #9945ff). */
+  --primary: oklch(0.59 0.27 295);
+  --primary-foreground: oklch(0.98 0 0);
+
+  /* Secondary = muted purple-tinted gray. */
+  --secondary: oklch(0.25 0.02 285);
+  --secondary-foreground: oklch(0.98 0 0);
+
+  --muted: oklch(0.22 0.015 285);
+  --muted-foreground: oklch(0.7 0.02 285);
+
+  /* Accent = Solana green (#14f195). */
+  --accent: oklch(0.85 0.21 155);
+  --accent-foreground: oklch(0.12 0 0);
+
+  --destructive: oklch(0.65 0.23 25);
+
+  /* Subtle purple-tinted borders so the dark cards feel intentional. */
+  --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --ring: oklch(0.59 0.27 295 / 60%);
+
+  /* Chart colors — leave at vanilla shadcn defaults; not used by
+     pushflip yet but kept for future stat panels. */
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+
+  /* Sidebar — not currently rendered but shadcn includes it as
+     standard tokens. Mirrors the card palette. */
+  --sidebar: oklch(0.17 0.015 280);
+  --sidebar-foreground: oklch(0.98 0 0);
+  --sidebar-primary: oklch(0.59 0.27 295);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.25 0.02 285);
+  --sidebar-accent-foreground: oklch(0.98 0 0);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.59 0.27 295 / 60%);
 }
 
 @layer base {

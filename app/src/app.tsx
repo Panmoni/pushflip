@@ -1,5 +1,6 @@
 import { GameBoard } from "@/components/game/game-board";
 import { Toaster } from "@/components/ui/sonner";
+import { ClusterHint } from "@/components/wallet/cluster-hint";
 import { ConnectionStatus } from "@/components/wallet/connection-status";
 import { ThemeToggle } from "@/components/wallet/theme-toggle";
 import { WalletButton } from "@/components/wallet/wallet-button";
@@ -30,6 +31,12 @@ function App() {
               <WalletButton />
             </div>
           </header>
+
+          {/* Devnet-cluster reminder. Only renders when a wallet is
+              connected; dismissible per-session. Pairs with the
+              wallet-bridge's reactive `isWalletClusterMismatch`
+              detection as belt-and-suspenders. */}
+          <ClusterHint />
 
           <main className="flex flex-1 justify-center p-6">
             <div className="w-full max-w-3xl">

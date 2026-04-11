@@ -11,7 +11,7 @@ last_compiled: 2026-04-11
 The 11 KB stack frame issue with `light_poseidon::parameters::bn254_x5::get_poseidon_parameters`
 has been eliminated by replacing all on-chain `light_poseidon` calls with a thin
 wrapper around Solana's native `sol_poseidon` syscall. See
-[program/src/zk/poseidon_native.rs](../../../program/src/zk/poseidon_native.rs).
+[program/src/zk/poseidon_native.rs](https://github.com/Panmoni/pushflip/blob/main/program/src/zk/poseidon_native.rs).
 
 ### Verification (2026-04-09)
 
@@ -145,7 +145,7 @@ We have a strong but **incomplete** signal that the warning is harmless:
 
 **What we have NOT yet verified:** Calling `hit` (or `commit_deck` with a real proof) on the actual devnet program. That's the call path that exercises `light_poseidon::Poseidon::new_circom`, which internally invokes the function with the 11 KB stack frame.
 
-A planned smoke test in Phase 3 will close this gap (see [EXECUTION_PLAN.md Task 3.0](../../EXECUTION_PLAN.md#task-30)).
+A planned smoke test in Phase 3 will close this gap (see [EXECUTION_PLAN.md Task 3.0](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md#task-30)).
 
 ## If the runtime check does fire
 
@@ -167,9 +167,9 @@ Submit a PR to `light_poseidon` to declare the round constants as `const` arrays
 
 Solana 1.16+ ships a `sol_poseidon` syscall accessible via `solana_program::poseidon`. The validator implements Poseidon natively in optimized code and there's no stack issue at all.
 
-**Tradeoff**: It requires importing `solana-program` (or a thin wrapper), which conflicts with our Pinocchio "zero-dependency" architectural choice. The whole point of Pinocchio is to *not* depend on `solana-program`. If we import it just for one syscall, we lose part of the portfolio story.
+**Tradeoff**: It requires importing `solana-program` (or a thin wrapper), which conflicts with our Pinocchio "zero-dependency" architectural choice. The whole point of Pinocchio is to *not* depend on `solana-program`. If we import it just for one syscall, we lose the architectural-purity argument.
 
-There is no `pinocchio-poseidon` crate yet that wraps the syscall in a Pinocchio-friendly way. We could write one — and that would be a portfolio-positive contribution to the Pinocchio ecosystem.
+There is no `pinocchio-poseidon` crate yet that wraps the syscall in a Pinocchio-friendly way. We could write one — and that would be a useful contribution to the Pinocchio ecosystem upstream.
 
 ### Option 3: Implement Poseidon ourselves
 
@@ -182,7 +182,7 @@ Write our own Poseidon implementation that's stack-friendly.
 1. **All available test signals are green** — 94 tests passing across unit, integration, dealer, and client.
 2. **The "proper" fixes are non-trivial** — they require either upstream changes or architectural compromises.
 3. **The smoke test cost is low** — once Phase 3 has a working `hit` flow, we can verify in 5 minutes whether the warning matters.
-4. **If it does fire, Option 2 (write `pinocchio-poseidon`) is portfolio-positive** — it would be a small open-source contribution to the Pinocchio ecosystem and would actually demonstrate deeper Solana internals knowledge.
+4. **If it does fire, Option 2 (write `pinocchio-poseidon`) is upstream-friendly** — it would be a small open-source contribution to the Pinocchio ecosystem and would actually demonstrate deeper Solana internals knowledge.
 
 ## TL;DR
 

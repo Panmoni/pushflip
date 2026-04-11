@@ -20,7 +20,7 @@ Terms are listed in dependency order: cryptographic primitives first, then on-ch
 
 ### Groth16 proof
 
-A Groth16 zero-knowledge succinct non-interactive argument of knowledge (zk-SNARK). PushFlip uses Groth16 to prove "the dealer knows a valid permutation that produces the committed deck" without revealing the permutation itself. The proof is ~256 bytes regardless of circuit size, and on-chain verification costs ~85K compute units via Solana's [`alt_bn128` syscalls](#alt_bn128-syscalls). The Circom circuit lives at [`zk-circuits/circuits/shuffle_verify.circom`](../../../zk-circuits/circuits/shuffle_verify.circom). For the full landscape comparison and rationale for choosing Groth16 over alternatives (Plonk, Halo2, etc.), see the [ZK Research](../reference/zk-research.md) survey.
+A Groth16 zero-knowledge succinct non-interactive argument of knowledge (zk-SNARK). PushFlip uses Groth16 to prove "the dealer knows a valid permutation that produces the committed deck" without revealing the permutation itself. The proof is ~256 bytes regardless of circuit size, and on-chain verification costs ~85K compute units via Solana's [`alt_bn128` syscalls](#alt_bn128-syscalls). The Circom circuit lives at [`zk-circuits/circuits/shuffle_verify.circom`](https://github.com/Panmoni/pushflip/blob/main/zk-circuits/circuits/shuffle_verify.circom). For the full landscape comparison and rationale for choosing Groth16 over alternatives (Plonk, Halo2, etc.), see the [ZK Research](../reference/zk-research.md) survey.
 
 ### Poseidon hash
 
@@ -40,7 +40,7 @@ Solana's native syscalls for elliptic curve operations on the BN254 (also called
 
 ### `sol_poseidon` syscall
 
-Solana's native syscall for Poseidon hashing on the BN254 curve. PushFlip's on-chain Merkle proof verification (called from `hit`) uses this syscall, which costs ~7,771 CU per `hit`. The historical alternative was `light_poseidon` (an in-program implementation) which consumed ~211K CU AND overflowed the BPF stack frame. The migration to the syscall is the closest thing this repo has to a portfolio-positive open-source contribution. The full retrospective is at [Poseidon Stack Warning](../history/poseidon-stack-warning.md).
+Solana's native syscall for Poseidon hashing on the BN254 curve. PushFlip's on-chain Merkle proof verification (called from `hit`) uses this syscall, which costs ~7,771 CU per `hit`. The historical alternative was `light_poseidon` (an in-program implementation) which consumed ~211K CU AND overflowed the BPF stack frame. The migration to the syscall is the closest thing this repo has to a useful open-source contribution upstream. The full retrospective is at [Poseidon Stack Warning](../history/poseidon-stack-warning.md).
 
 ## On-chain accounts
 
@@ -72,11 +72,11 @@ The wallet that initialized the [`GameSession`](#gamesession) and is allowed to 
 
 ### Dealer
 
-The off-chain service that shuffles the deck, generates the Groth16 proof, calls `commit_deck` (must sign as the dealer), and serves Merkle proofs for each card on `hit`. Lives at [`dealer/`](../../../dealer/). The dealer's identity is stored as a pubkey in the [`GameSession`](#gamesession) and validated on every signature. **The dealer is the only entity in the system that knows the deck preimage before reveal** — this is the single trust assumption documented in the [Threat Model](threat-model.md).
+The off-chain service that shuffles the deck, generates the Groth16 proof, calls `commit_deck` (must sign as the dealer), and serves Merkle proofs for each card on `hit`. Lives at [`dealer/`](https://github.com/Panmoni/pushflip/blob/main/dealer). The dealer's identity is stored as a pubkey in the [`GameSession`](#gamesession) and validated on every signature. **The dealer is the only entity in the system that knows the deck preimage before reveal** — this is the single trust assumption documented in the [Threat Model](threat-model.md).
 
 ### House
 
-The AI opponent that plays against humans. Has its own seat in the game's [`turn_order`](#turn_order). Implementation: see [`house-ai/`](../../../house-ai/) (in-progress as of Phase 4). The House's pubkey is stored as identity-only in the GameSession — it never signs on its own, instead the AI service builds and submits transactions on the House's behalf via a separate signing account.
+The AI opponent that plays against humans. Has its own seat in the game's [`turn_order`](#turn_order). Implementation: see [`house-ai/`](https://github.com/Panmoni/pushflip/blob/main/house-ai) (in-progress as of Phase 4). The House's pubkey is stored as identity-only in the GameSession — it never signs on its own, instead the AI service builds and submits transactions on the House's behalf via a separate signing account.
 
 ### Treasury
 
@@ -110,7 +110,7 @@ The SPL token that drives the PushFlip economy. Decimals: 9. Used for staking (d
 
 ### `MIN_STAKE`
 
-A constant in [`@pushflip/client`](../../../clients/js/src/) that defines the minimum number of `$FLIP` base units required to call `join_round`. Validated on the client side by `useGameActions.joinRound` and on the chain side by the program. Defending against negative bigints and other footgun inputs is the same pattern documented in open-brain memory `#167`.
+A constant in [`@pushflip/client`](https://github.com/Panmoni/pushflip/blob/main/clients/js/src) that defines the minimum number of `$FLIP` base units required to call `join_round`. Validated on the client side by `useGameActions.joinRound` and on the chain side by the program. Defending against negative bigints and other footgun inputs is the same pattern documented in open-brain memory `#167`.
 
 ### `turn_order`
 

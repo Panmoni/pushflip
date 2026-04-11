@@ -444,7 +444,7 @@ After evaluating all options, the recommended stack for PushFlip Phase 6 is:
 |-------------|-----------------|
 | SP1/Succinct | Higher CU cost (~280K), not audited, overkill for a simple shuffle circuit |
 | Bonsol/RISC Zero | Infrastructure dependency, less mature, PushFlip's circuit is simple enough for Circom |
-| Zypher SDK | External dependency, unclear Solana SVM support maturity, less portfolio-impressive than custom circuit |
+| Zypher SDK | External dependency, unclear Solana SVM support maturity, less educational than a custom circuit |
 | PLONK/halo2 | Larger proofs, more expensive on-chain verification, no Solana-native verifier |
 | Full Mental Poker (zkShuffle) | Massive overkill — PushFlip has a trusted dealer (The House), not a peer-to-peer poker game. Full mental poker requires every player to shuffle, generating 87K-constraint proofs per player per round. PushFlip only needs to prove the single dealer's shuffle is valid. |
 
@@ -519,7 +519,7 @@ Verification CU: <200,000
 
 ### Key Implementation Notes
 
-1. **Trusted setup:** Groth16 requires a per-circuit trusted setup. For a portfolio project, a solo ceremony is fine. Document the trust assumption in the README. For production, you would use a multi-party computation ceremony.
+1. **Trusted setup:** Groth16 requires a per-circuit trusted setup. For a side project, a solo ceremony is fine. Document the trust assumption in the README. For production, you would use a multi-party computation ceremony.
 
 2. **Endianness:** Solana's `alt_bn128_pairing` expects specific byte ordering. The groth16-solana crate handles this, but if using arkworks directly, you must convert endianness manually (see solana-zk-proof-example).
 

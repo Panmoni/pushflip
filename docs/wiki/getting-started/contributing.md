@@ -6,7 +6,7 @@ last_compiled: 2026-04-11
 
 # Contributing
 
-The canonical contributor guide is the repository's [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) at the project root. It covers:
+The canonical contributor guide is the repository's [`CONTRIBUTING.md`](https://github.com/Panmoni/pushflip/blob/main/CONTRIBUTING.md) at the project root. It covers:
 
 - Toolchain prerequisites (Rust, Solana CLI, Node + pnpm, Python)
 - Workspace layout and which package owns what

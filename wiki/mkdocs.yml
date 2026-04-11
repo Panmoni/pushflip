@@ -2,8 +2,10 @@ site_name: PushFlip Wiki
 site_description: Architecture, reference, operations, and history for the PushFlip on-chain card game.
 site_url: https://wiki.pushflip.xyz/
 site_author: PushFlip
-copyright: >-
-  © 2026 PushFlip — built {{ config.extra.git_hash }} on {{ config.extra.build_date }}
+# Static fallback used by the default copyright partial.
+# `wiki/overrides/partials/copyright.html` extends this to also render
+# the build hash + date from config.extra (set by hooks.py).
+copyright: © 2026 PushFlip
 
 repo_url: https://github.com/Panmoni/pushflip
 repo_name: Panmoni/pushflip

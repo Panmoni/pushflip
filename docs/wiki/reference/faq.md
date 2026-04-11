@@ -6,9 +6,9 @@ last_compiled: 2026-04-11
 
 # PushFlip — FAQ
 
-If you want the user-facing pitch first, read [README.md](../../../README.md). If
+If you want the user-facing pitch first, read [README.md](https://github.com/Panmoni/pushflip/blob/main/README.md). If
 you want the full task-by-task history with lessons learned, read
-[docs/EXECUTION_PLAN.md](../../EXECUTION_PLAN.md). This document is for the
+[docs/EXECUTION_PLAN.md](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md). This document is for the
 *technical* questions those two don't directly answer.
 
 ## Table of Contents
@@ -44,10 +44,10 @@ you want the full task-by-task history with lessons learned, read
 
 The program is a single-binary card game with 11 instruction handlers,
 dispatched on the first byte of `instruction_data`. The entrypoint is at
-[program/src/lib.rs:17](../../../program/src/lib.rs#L17) using
+[program/src/lib.rs:17](https://github.com/Panmoni/pushflip/blob/main/program/src/lib.rs#L17) using
 `program_entrypoint!` (the eager parser, not `lazy_program_entrypoint!`),
 and the dispatch table is the `match` block at
-[program/src/lib.rs:28-41](../../../program/src/lib.rs#L28-L41).
+[program/src/lib.rs:28-41](https://github.com/Panmoni/pushflip/blob/main/program/src/lib.rs#L28-L41).
 
 The 11 instructions, in dispatch order:
 
@@ -66,9 +66,9 @@ The 11 instructions, in dispatch order:
 | 10 | `burn_scry` | Burns 25 $FLIP via SPL CPI, lets player peek the next card off-chain |
 
 State lives in three PDA types: `GameSession` (512 B,
-[program/src/state/game_session.rs](../../../program/src/state/game_session.rs)),
+[program/src/state/game_session.rs](https://github.com/Panmoni/pushflip/blob/main/program/src/state/game_session.rs)),
 `PlayerState` (256 B,
-[program/src/state/player_state.rs](../../../program/src/state/player_state.rs)),
+[program/src/state/player_state.rs](https://github.com/Panmoni/pushflip/blob/main/program/src/state/player_state.rs)),
 and a vault SPL token account at `["vault", game_session_pda]`. The
 typical session is `initialize → join_round × N → commit_deck →
 start_round → (hit | stay) loop → end_round → close_game`. Both
@@ -79,7 +79,7 @@ length so all subsequent reads are bounds-safe.
 
 The deployed program ID is `HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px`
 on devnet, declared at
-[program/src/lib.rs:13](../../../program/src/lib.rs#L13).
+[program/src/lib.rs:13](https://github.com/Panmoni/pushflip/blob/main/program/src/lib.rs#L13).
 
 ### <a id="q2"></a>Q2. What does the ZK proof actually prove? Walk me through the deck commitment scheme end-to-end.
 
@@ -94,42 +94,42 @@ distinction; it returns in [Q10](#q10).
 The pipeline:
 
 1. **Off-chain (dealer).** The dealer in
-   [dealer/src/](../../../dealer/src/) shuffles the canonical deck with a
+   [dealer/src/](https://github.com/Panmoni/pushflip/blob/main/dealer/src) shuffles the canonical deck with a
    Fisher-Yates pass, builds a depth-7 Poseidon Merkle tree (128 leaves =
    94 real cards + 34 padding leaves), then runs snarkjs to generate a
    Groth16 proof against the `shuffle_verify` circuit
-   ([zk-circuits/circuits/shuffle_verify.circom](../../../zk-circuits/circuits/shuffle_verify.circom)).
+   ([zk-circuits/circuits/shuffle_verify.circom](https://github.com/Panmoni/pushflip/blob/main/zk-circuits/circuits/shuffle_verify.circom)).
    The circuit asserts a grand-product permutation argument plus per-card
    range checks. The output is a Merkle root + a 256-byte proof
    (`(proof_a, proof_b, proof_c)` = 64 + 128 + 64 bytes).
 
 2. **On-chain (commit phase).** The dealer sends `commit_deck`. The
    handler at
-   [program/src/instructions/commit_deck.rs](../../../program/src/instructions/commit_deck.rs)
+   [program/src/instructions/commit_deck.rs](https://github.com/Panmoni/pushflip/blob/main/program/src/instructions/commit_deck.rs)
    verifies `dealer == game_session.dealer`, refuses if the round is
    already active or the deck is already committed, then calls
    `verify_shuffle_proof`
-   ([program/src/zk/groth16.rs](../../../program/src/zk/groth16.rs)) which
+   ([program/src/zk/groth16.rs](https://github.com/Panmoni/pushflip/blob/main/program/src/zk/groth16.rs)) which
    wraps `pinocchio_groth16::Groth16Verifier`. Public inputs are
    `[merkle_root, CANONICAL_DECK_HASH]`. The canonical deck hash is a
    precomputed Poseidon chain hash of the canonical deck, baked in at
-   [program/src/zk/verifying_key.rs:21-24](../../../program/src/zk/verifying_key.rs#L21-L24).
+   [program/src/zk/verifying_key.rs:21-24](https://github.com/Panmoni/pushflip/blob/main/program/src/zk/verifying_key.rs#L21-L24).
    On success the Merkle root is stored on-chain, `deck_committed` is
    flipped, and `draw_counter` is reset. Measured cost: **84,834 CU**
    total (alt_bn128 syscalls included).
 
 3. **On-chain (reveal phase).** Each `hit` instruction
-   ([program/src/instructions/hit.rs](../../../program/src/instructions/hit.rs))
+   ([program/src/instructions/hit.rs](https://github.com/Panmoni/pushflip/blob/main/program/src/instructions/hit.rs))
    carries `(card_value, card_type, card_suit, leaf_index, proof[7×32])`.
    The handler enforces `leaf_index == draw_counter` (no skipping ahead,
    no replays), then calls
-   [program/src/zk/merkle.rs:22](../../../program/src/zk/merkle.rs#L22)
+   [program/src/zk/merkle.rs:22](https://github.com/Panmoni/pushflip/blob/main/program/src/zk/merkle.rs#L22)
    which Poseidons the leaf, walks up 7 levels with the supplied
    siblings, and compares the recomputed root to the stored one.
    Measured cost: **7,771 CU** end-to-end.
 
 The README has the same pipeline drawn as a diagram in the
-[How the ZK System Works](../../../README.md#how-the-zk-system-works) section,
+[How the ZK System Works](https://github.com/Panmoni/pushflip/blob/main/README.md#how-the-zk-system-works) section,
 and [docs/ZK_RESEARCH.md](zk-research.md) is the long-form write-up of
 why this stack was chosen over Halo2/STARKs/SP1.
 
@@ -148,7 +148,7 @@ operations through Anchor's wrappers. The whole project's hot-path budget
 in the dispatch path pays Anchor's deserialization tax.
 
 **Zero-copy is the default, not an optimization.** The state structs at
-[program/src/state/game_session.rs:10-33](../../../program/src/state/game_session.rs#L10-L33)
+[program/src/state/game_session.rs:10-33](https://github.com/Panmoni/pushflip/blob/main/program/src/state/game_session.rs#L10-L33)
 are explicit byte offsets, not Borsh-derived structs. You read the bytes
 in place; you write the bytes in place. No allocator, no
 serialize/deserialize round-trip. This is the same model the Solana
@@ -186,7 +186,7 @@ in-repo distillation of every Pinocchio gotcha discovered along the way.
 
 The on-chain Poseidon hash goes through Solana's native `sol_poseidon`
 syscall via a thin `extern "C"` wrapper at
-[program/src/zk/poseidon_native.rs](../../../program/src/zk/poseidon_native.rs).
+[program/src/zk/poseidon_native.rs](https://github.com/Panmoni/pushflip/blob/main/program/src/zk/poseidon_native.rs).
 The wrapper is conditionally compiled — `#[cfg(target_os = "solana")]`
 calls the syscall directly, `#[cfg(not(target_os = "solana"))]` falls
 back to the `light_poseidon` crate for host-side `cargo test`
@@ -209,13 +209,13 @@ of the program's own BPF stack. The same `hit` instruction now consumes
 soundness issue.
 
 The byte-compatibility argument for the swap is in the doc comment at
-[program/src/zk/poseidon_native.rs:16-30](../../../program/src/zk/poseidon_native.rs#L16-L30):
+[program/src/zk/poseidon_native.rs:16-30](https://github.com/Panmoni/pushflip/blob/main/program/src/zk/poseidon_native.rs#L16-L30):
 `solana-poseidon-3.1.11`'s host fallback delegates to the same
 `light_poseidon::Poseidon::<ark_bn254::Fr>::new_circom(N).hash_bytes_be`
 call the program used to make, so the syscall and the host fallback
 produce byte-identical output for the BN254-X5 circom variant. The
 `test_canonical_deck_hash_matches_js` host test at
-[program/src/zk/merkle.rs:193-220](../../../program/src/zk/merkle.rs#L193-L220)
+[program/src/zk/merkle.rs:193-220](https://github.com/Panmoni/pushflip/blob/main/program/src/zk/merkle.rs#L193-L220)
 chains the canonical 94-card deck through the wrapper and compares
 against `CANONICAL_DECK_HASH`, cross-validating against circomlibjs.
 
@@ -232,12 +232,12 @@ is in [Q16](#q16).
 | Layer | Count | Where | What it catches |
 |---|---|---|---|
 | Program lib unit tests | 42 | `program/src/**/tests` | Byte-offset round-trips, scoring logic, deck construction, Merkle proof math |
-| LiteSVM integration tests | 20 | [tests/src/](../../../tests/src/) (9 Phase 1 + 11 Phase 2) | Full instruction handlers including account validation paths, token CPIs, lifecycle |
-| Dealer ZK tests | 11 | [dealer/src/](../../../dealer/src/) (8 merkle + 3 prover G2-swap fixtures) | Merkle tree construction, proof serialization, the G2 byte-order convention |
-| TypeScript client tests | 25 | [clients/js/src/client.test.ts](../../../clients/js/src/client.test.ts) | Instruction-builder byte layouts, PDA derivation, account decoders |
+| LiteSVM integration tests | 20 | [tests/src/](https://github.com/Panmoni/pushflip/blob/main/tests/src) (9 Phase 1 + 11 Phase 2) | Full instruction handlers including account validation paths, token CPIs, lifecycle |
+| Dealer ZK tests | 11 | [dealer/src/](https://github.com/Panmoni/pushflip/blob/main/dealer/src) (8 merkle + 3 prover G2-swap fixtures) | Merkle tree construction, proof serialization, the G2 byte-order convention |
+| TypeScript client tests | 25 | [clients/js/src/client.test.ts](https://github.com/Panmoni/pushflip/blob/main/clients/js/src/client.test.ts) | Instruction-builder byte layouts, PDA derivation, account decoders |
 
 Plus the devnet smoke test
-([scripts/smoke-test.ts](../../../scripts/smoke-test.ts)) as a fifth layer
+([scripts/smoke-test.ts](https://github.com/Panmoni/pushflip/blob/main/scripts/smoke-test.ts)) as a fifth layer
 that runs the whole stack against `HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px`
 on real devnet. It's not yet in CI; it's run manually before any change
 that touches the ZK or syscall path.
@@ -251,7 +251,7 @@ exercises the real `sol_poseidon` syscall, the real alt_bn128 syscalls,
 real BPF stack frames, and real CU accounting. After Task 2.10, running
 it before merging any ZK-touching change is mandatory.
 
-The build script at [tests/build.rs](../../../tests/build.rs) is part of the
+The build script at [tests/build.rs](https://github.com/Panmoni/pushflip/blob/main/tests/build.rs) is part of the
 testing story — it isolates the test binary into `target/deploy-test/`
 with `--features skip-zk-verify`, away from the production
 `target/deploy/pushflip.so`, so the two builds can never clobber each
@@ -261,7 +261,7 @@ borrow-semantics issue in [Q12](#q12).
 ### <a id="q6"></a>Q6. Show me how you validate accounts without `#[derive(Accounts)]`.
 
 There are three centralized helpers in
-[program/src/utils/accounts.rs:6-30](../../../program/src/utils/accounts.rs#L6-L30):
+[program/src/utils/accounts.rs:6-30](https://github.com/Panmoni/pushflip/blob/main/program/src/utils/accounts.rs#L6-L30):
 
 ```rust
 pub fn verify_account_owner(account: &AccountView, expected: &Address) -> Result<(), ProgramError>
@@ -271,7 +271,7 @@ pub fn verify_writable(account: &AccountView) -> Result<(), ProgramError>
 
 Each handler calls them inline at the top of `process()`. For a concrete
 example, `hit` at
-[program/src/instructions/hit.rs:70-75](../../../program/src/instructions/hit.rs#L70-L75):
+[program/src/instructions/hit.rs:70-75](https://github.com/Panmoni/pushflip/blob/main/program/src/instructions/hit.rs#L70-L75):
 
 ```rust
 let owner = pinocchio::Address::new_from_array(ID);
@@ -284,7 +284,7 @@ verify_signer(player)?;
 
 After ownership/writability/signer checks, every state read goes through
 a discriminator gate — e.g.
-[program/src/instructions/hit.rs:84-86](../../../program/src/instructions/hit.rs#L84-L86):
+[program/src/instructions/hit.rs:84-86](https://github.com/Panmoni/pushflip/blob/main/program/src/instructions/hit.rs#L84-L86):
 
 ```rust
 if gs.discriminator() != GAME_SESSION_DISCRIMINATOR {
@@ -294,7 +294,7 @@ if gs.discriminator() != GAME_SESSION_DISCRIMINATOR {
 
 PDAs are validated by re-deriving the address from seeds and comparing
 byte-for-byte against the supplied account address (see
-[program/src/instructions/initialize.rs](../../../program/src/instructions/initialize.rs)
+[program/src/instructions/initialize.rs](https://github.com/Panmoni/pushflip/blob/main/program/src/instructions/initialize.rs)
 for the canonical example). Cross-account invariants — the player must
 match the current `turn_order` slot, the dealer must match
 `game_session.dealer`, the player must own the `PlayerState` account it
@@ -307,44 +307,44 @@ right order, before any borrow. Nothing in the type system enforces it.
 The only protections are the centralized helpers (so the *implementation*
 of each check lives in one place), the LiteSVM tests covering unhappy
 paths, and the four-plus heavy-duty review checkpoints recorded in
-[docs/EXECUTION_PLAN.md](../../EXECUTION_PLAN.md) (search for
+[docs/EXECUTION_PLAN.md](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) (search for
 `heavy-duty-review`). [Q11](#q11) and [Q12](#q12) explore where this
 fragility has actually bitten.
 
 ### <a id="q7"></a>Q7. How do you keep the TypeScript client honest with the on-chain account layout when there's no IDL?
 
 There is no IDL. The client at
-[clients/js/src/](../../../clients/js/src/) is hand-written against the same
+[clients/js/src/](https://github.com/Panmoni/pushflip/blob/main/clients/js/src) is hand-written against the same
 byte offsets the Rust struct uses, and the synchronization is enforced
 by tests on both sides plus a devnet round-trip.
 
 The Rust account layout in
-[program/src/state/game_session.rs:10-33](../../../program/src/state/game_session.rs#L10-L33)
+[program/src/state/game_session.rs:10-33](https://github.com/Panmoni/pushflip/blob/main/program/src/state/game_session.rs#L10-L33)
 is the source of truth — it's a list of `const FIELD: usize` offsets at
 the top of the file, with a comment for each field's size. The TS
 decoder mirrors that list. Instruction builders are at
-[clients/js/src/instructions.ts](../../../clients/js/src/instructions.ts) and
+[clients/js/src/instructions.ts](https://github.com/Panmoni/pushflip/blob/main/clients/js/src/instructions.ts) and
 encode their data the same way the on-chain handlers decode it (e.g.
 `commit_deck` packs `merkle_root[32] || proof_a[64] || proof_b[128] ||
 proof_c[64]`, the handler at
-[program/src/instructions/commit_deck.rs:43-46](../../../program/src/instructions/commit_deck.rs#L43-L46)
+[program/src/instructions/commit_deck.rs:43-46](https://github.com/Panmoni/pushflip/blob/main/program/src/instructions/commit_deck.rs#L43-L46)
 unpacks the same offsets).
 
 What keeps this from drifting:
 
 1. **25 client unit tests** at
-   [clients/js/src/client.test.ts](../../../clients/js/src/client.test.ts) pin
+   [clients/js/src/client.test.ts](https://github.com/Panmoni/pushflip/blob/main/clients/js/src/client.test.ts) pin
    every byte offset, every PDA derivation, and every encode/decode
    round-trip.
 2. **The devnet smoke test** at
-   [scripts/smoke-test.ts](../../../scripts/smoke-test.ts) round-trips a
+   [scripts/smoke-test.ts](https://github.com/Panmoni/pushflip/blob/main/scripts/smoke-test.ts) round-trips a
    complete game through both sides — TS encodes, the on-chain program
    decodes, the on-chain program writes account state, TS decodes the
    account state, and the test asserts the decoded card matches the
    dealer's reveal. Any layout drift surfaces immediately as either a
    runtime error or a hand-mismatch.
 3. **A consciously chosen `Path B`** — see
-   [docs/EXECUTION_PLAN.md](../../EXECUTION_PLAN.md) for the decision record.
+   [docs/EXECUTION_PLAN.md](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) for the decision record.
    The plan was originally Shank attributes + Codama generation
    (Path A). That was deferred because the Pinocchio/Shank IDL pipeline
    wasn't stable enough at the time and the layouts are still moving.
@@ -358,9 +358,9 @@ that exactly mirrors the program's binary contract.
 ### <a id="q8"></a>Q8. What does a full 4-player game cost on Solana, and where does the time go?
 
 These are measured numbers, not estimates. They come from
-[scripts/smoke-test.ts](../../../scripts/smoke-test.ts) running against the
+[scripts/smoke-test.ts](https://github.com/Panmoni/pushflip/blob/main/scripts/smoke-test.ts) running against the
 deployed program on devnet, and they're tabulated in
-[README.md](../../../README.md#performance-and-costs). Per-instruction CU
+[README.md](https://github.com/Panmoni/pushflip/blob/main/README.md#performance-and-costs). Per-instruction CU
 consumption:
 
 | Instruction | Compute units |
@@ -438,7 +438,7 @@ The comparison, because it always comes up:
 | Crypto complexity | Low (oracle integration) | High (Circom circuit, trusted setup, alt_bn128 wiring) |
 | Failure mode if compromised | Oracle keypair leak ⇒ predictable randomness | Dealer keypair leak ⇒ stackable deck (but never an *invalid* deck) |
 
-The roadmap fix in [docs/EXECUTION_PLAN.md](../../EXECUTION_PLAN.md) (the
+The roadmap fix in [docs/EXECUTION_PLAN.md](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) (the
 "player-contributed entropy" option) closes pushflip's randomness gap
 without taking on an oracle dependency: each player commits
 `hash(player_seed)` during `join_round`, the dealer's seed is mixed in,
@@ -463,20 +463,20 @@ constrain things:
 - The dealer cannot deal duplicates — same reason.
 - The dealer cannot reveal a card that wasn't in the committed Merkle
   tree at the position it claims — the on-chain
-  [`verify_merkle_proof`](../../../program/src/zk/merkle.rs#L22) recomputes
+  [`verify_merkle_proof`](https://github.com/Panmoni/pushflip/blob/main/program/src/zk/merkle.rs#L22) recomputes
   the root from the leaf and refuses if it doesn't match
   `game_session.merkle_root`.
 - The dealer cannot retroactively change the deck after `commit_deck` —
   `deck_committed` is gated at
-  [program/src/instructions/commit_deck.rs:68-70](../../../program/src/instructions/commit_deck.rs#L68-L70).
+  [program/src/instructions/commit_deck.rs:68-70](https://github.com/Panmoni/pushflip/blob/main/program/src/instructions/commit_deck.rs#L68-L70).
 - The dealer cannot reveal cards out of order or skip ahead — the
   `leaf_index == draw_counter` check at
-  [program/src/instructions/hit.rs:105-107](../../../program/src/instructions/hit.rs#L105-L107)
+  [program/src/instructions/hit.rs:105-107](https://github.com/Panmoni/pushflip/blob/main/program/src/instructions/hit.rs#L105-L107)
   forces strict sequential reveal.
 
 That's a real envelope. It's smaller than "provably fair" sounds in
 marketing copy, and the
-[Fairness Model Analysis](../../EXECUTION_PLAN.md) section of the execution
+[Fairness Model Analysis](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) section of the execution
 plan calls it that explicitly: *"provably valid, not provably random."*
 
 The mitigation roadmap, in order of complexity:
@@ -505,12 +505,12 @@ has visible bite marks.
 The first defence is that the byte offsets are centralized. Every field
 of every account has exactly one source of truth: the `const X: usize`
 list at the top of
-[program/src/state/game_session.rs:10-33](../../../program/src/state/game_session.rs#L10-L33)
+[program/src/state/game_session.rs:10-33](https://github.com/Panmoni/pushflip/blob/main/program/src/state/game_session.rs#L10-L33)
 and
-[program/src/state/player_state.rs:12-28](../../../program/src/state/player_state.rs#L12-L28).
+[program/src/state/player_state.rs:12-28](https://github.com/Panmoni/pushflip/blob/main/program/src/state/player_state.rs#L12-L28).
 Both files have a `from_bytes()` constructor that asserts
 `data.len() >= MIN_DATA_LEN` (e.g.
-[game_session.rs:76-84](../../../program/src/state/game_session.rs#L76-L84)),
+[game_session.rs:76-84](https://github.com/Panmoni/pushflip/blob/main/program/src/state/game_session.rs#L76-L84)),
 so every accessor below that line is bounds-safe by construction. The
 unit tests `test_layout_fits_in_allocation` and
 `test_from_bytes_too_short` pin both invariants.
@@ -521,7 +521,7 @@ file, so if there's a bug in the check, it's a one-line fix.
 
 The third defence is the review process. The project has cleared at
 least four `/heavy-duty-review` checkpoints, all recorded in
-[docs/EXECUTION_PLAN.md](../../EXECUTION_PLAN.md):
+[docs/EXECUTION_PLAN.md](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md):
 
 | Date | Scope | Findings |
 |---|---|---|
@@ -547,7 +547,7 @@ audit; they are what gets you to a code state worth auditing.
 This is a real finding from the second Phase-2 heavy-duty review on
 2026-04-09 (the one with 24 raw → 6 confirmed findings, 1 High / 2
 Medium / 3 Low — see
-[docs/EXECUTION_PLAN.md](../../EXECUTION_PLAN.md) line 1663). The empirical
+[docs/EXECUTION_PLAN.md](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) line 1663). The empirical
 discovery is in
 [docs/PINOCCHIO_RESOURCE_GUIDE.md §6](pinocchio-guide.md):
 calling `account.try_borrow_mut_data()` only checks Rust-side borrow
@@ -563,13 +563,13 @@ The remediation:
 
 1. **Explicit `verify_writable` calls everywhere a mutable borrow is
    taken.** See e.g.
-   [program/src/instructions/hit.rs:71-74](../../../program/src/instructions/hit.rs#L71-L74)
+   [program/src/instructions/hit.rs:71-74](https://github.com/Panmoni/pushflip/blob/main/program/src/instructions/hit.rs#L71-L74)
    for the post-fix pattern. The validation runs *before* any
    `try_borrow_mut` so a missing writable flag short-circuits to
    `PushFlipError::MissingWritable` instead of silently no-op-ing.
 2. **`try_borrow_mut` was downgraded to `try_borrow` where the handler
    only reads.** Commit `d86eb81` and the related entry at
-   [EXECUTION_PLAN.md line 1675](../../EXECUTION_PLAN.md) document the
+   [EXECUTION_PLAN.md line 1675](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) document the
    `burn_second_chance` and `burn_scry` cases — both only read
    `game_session`, so requesting a mutable borrow was a footgun. Both
    now use `try_borrow` and the AccountMeta in the test fixtures was
@@ -609,7 +609,7 @@ The 84,834 CU figure is the *total* measured cost of a `commit_deck`
 transaction including the alt_bn128 syscalls — it is not on top of an
 additional ~200K CU as that question phrasing suggests. The smoke test
 at
-[scripts/smoke-test.ts:99](../../../scripts/smoke-test.ts#L99) sets a
+[scripts/smoke-test.ts:99](https://github.com/Panmoni/pushflip/blob/main/scripts/smoke-test.ts#L99) sets a
 `COMMIT_DECK_COMPUTE_LIMIT` of 400,000 CU, well above the measured
 ceiling, and the same transaction succeeds end-to-end against devnet.
 Per-transaction CU limits on Solana are 1,400,000 — `commit_deck` uses
@@ -619,7 +619,7 @@ and any protocol-card effects added later.
 `hit` is the more interesting case because it runs every turn. After
 the [Q4](#q4) Poseidon migration it consumes 7,771 CU. The smoke test
 sets `HIT_COMPUTE_LIMIT` to 400,000 CU
-([scripts/smoke-test.ts:98](../../../scripts/smoke-test.ts#L98)) so a future
+([scripts/smoke-test.ts:98](https://github.com/Panmoni/pushflip/blob/main/scripts/smoke-test.ts#L98)) so a future
 regression in any single instruction won't silently cross the default
 200K CU implicit limit and start failing in production. Any merge that
 moves either of these numbers materially gets caught by the same smoke
@@ -645,25 +645,25 @@ on-chain verifier rejects every legitimate proof with no useful error.
 The fix:
 
 1. **Explicit byte swap in two places.** In the dealer at
-   [dealer/src/prover.ts:74-90](../../../dealer/src/prover.ts#L74-L90), the
+   [dealer/src/prover.ts:74-90](https://github.com/Panmoni/pushflip/blob/main/dealer/src/prover.ts#L74-L90), the
    `serializeG2()` function swaps each `(c0, c1)` pair when packing
    `proof_b` into the on-chain layout. The `serializeG2` doc comment
    spells out the convention and references snarkjs's
    `exportSolidityCallData` as the canonical example of the same swap
    in another tool. The same swap is also applied in the VK export
    script at
-   [zk-circuits/scripts/export_vk_rust.mjs](../../../zk-circuits/scripts/export_vk_rust.mjs)
+   [zk-circuits/scripts/export_vk_rust.mjs](https://github.com/Panmoni/pushflip/blob/main/zk-circuits/scripts/export_vk_rust.mjs)
    so the constants baked into
-   [program/src/zk/verifying_key.rs](../../../program/src/zk/verifying_key.rs)
+   [program/src/zk/verifying_key.rs](https://github.com/Panmoni/pushflip/blob/main/program/src/zk/verifying_key.rs)
    are pre-swapped.
 2. **A VK fingerprint snapshot test.** The verifying key is hashed into
    a single 64-bit FNV-1a fingerprint by
-   [program/src/zk/verifying_key.rs:140-151](../../../program/src/zk/verifying_key.rs#L140-L151).
+   [program/src/zk/verifying_key.rs:140-151](https://github.com/Panmoni/pushflip/blob/main/program/src/zk/verifying_key.rs#L140-L151).
    The expected value is pinned at
-   [verifying_key.rs:120](../../../program/src/zk/verifying_key.rs#L120) as
+   [verifying_key.rs:120](https://github.com/Panmoni/pushflip/blob/main/program/src/zk/verifying_key.rs#L120) as
    `0x93084a24fed22583`, and the test
    `vk_fingerprint_matches_snapshot` at
-   [verifying_key.rs:168-179](../../../program/src/zk/verifying_key.rs#L168-L179)
+   [verifying_key.rs:168-179](https://github.com/Panmoni/pushflip/blob/main/program/src/zk/verifying_key.rs#L168-L179)
    refuses to compile if the fingerprint changes. The test docstring
    explicitly forbids "update the constant alone" as a remediation —
    any drift requires re-running the dealer fixture, the smoke test,
@@ -691,24 +691,24 @@ template.
 No. The trusted setup is a single-party test ceremony, and the script
 that generates it says so explicitly.
 
-[zk-circuits/scripts/setup.sh:5](../../../zk-circuits/scripts/setup.sh#L5)
+[zk-circuits/scripts/setup.sh:5](https://github.com/Panmoni/pushflip/blob/main/zk-circuits/scripts/setup.sh#L5)
 opens with a comment that reads, verbatim:
 
 > This uses a test-only ceremony. Production requires a real MPC ceremony.
 
 The script runs `snarkjs powersoftau new bn128 19` to create a
 2¹⁹-constraint Powers of Tau (the circuit at
-[shuffle_verify.circom](../../../zk-circuits/circuits/shuffle_verify.circom)
+[shuffle_verify.circom](https://github.com/Panmoni/pushflip/blob/main/zk-circuits/circuits/shuffle_verify.circom)
 sits at ~277K constraints; 2¹⁹ = 524,288 gives headroom), then a
 *single* contribution with the entropy string
 `"random entropy for test"`, then phase-2 setup and a single zkey
 contribution with `"more random entropy"`. The resulting
 `shuffle_verify_final.zkey` and `verification_key.json` are committed
-to [zk-circuits/build/](../../../zk-circuits/build/), and the verifying key
+to [zk-circuits/build/](https://github.com/Panmoni/pushflip/blob/main/zk-circuits/build), and the verifying key
 constants in
-[program/src/zk/verifying_key.rs](../../../program/src/zk/verifying_key.rs)
+[program/src/zk/verifying_key.rs](https://github.com/Panmoni/pushflip/blob/main/program/src/zk/verifying_key.rs)
 are exported from those files via
-[export_vk_rust.mjs](../../../zk-circuits/scripts/export_vk_rust.mjs).
+[export_vk_rust.mjs](https://github.com/Panmoni/pushflip/blob/main/zk-circuits/scripts/export_vk_rust.mjs).
 
 What this means in practice. Whoever holds the toxic waste from the
 single contribution can — in theory — forge a proof for a deck that
@@ -752,7 +752,7 @@ call crashed at 211,142 CU.
 The lesson encoded after Task 2.10 is that the devnet smoke test is
 now a *required* gate, not a nice-to-have, for any change that touches
 the ZK or syscall path. The smoke test at
-[scripts/smoke-test.ts](../../../scripts/smoke-test.ts) is the only test
+[scripts/smoke-test.ts](https://github.com/Panmoni/pushflip/blob/main/scripts/smoke-test.ts) is the only test
 layer that:
 
 - Runs on the real BPF runtime with the real stack frame.
@@ -764,7 +764,7 @@ layer that:
   validates the priority-fee-free baseline.
 
 It even has dedicated red-text error handling at
-[smoke-test.ts:380-398](../../../scripts/smoke-test.ts#L380-L398) that
+[smoke-test.ts:380-398](https://github.com/Panmoni/pushflip/blob/main/scripts/smoke-test.ts#L380-L398) that
 prints a "if this mentions stack overflow, someone re-introduced
 light_poseidon" hint. That's not paranoia; that's the post-incident
 process embedded directly in the only place that can catch the
@@ -805,12 +805,12 @@ A real list, in roughly the order it should be tackled.
    integration tests currently create a per-test mint via a helper.
    Mainnet deployment needs a single canonical $FLIP mint, an
    authority key management plan, and a documented supply schedule.
-6. **Frontend (Phase 3).** The [app/](../../../app/) directory is currently
+6. **Frontend (Phase 3).** The [app/](https://github.com/Panmoni/pushflip/blob/main/app) directory is currently
    a `package.json` stub. Phase 3 in
-   [docs/EXECUTION_PLAN.md](../../EXECUTION_PLAN.md) details the Vite + React
+   [docs/EXECUTION_PLAN.md](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) details the Vite + React
    scaffold that needs to be built on top of the now-stable client.
 7. **House AI agent (Phase 4).** The
-   [house-ai/](../../../house-ai/) package is also a stub. The single-player
+   [house-ai/](https://github.com/Panmoni/pushflip/blob/main/house-ai) package is also a stub. The single-player
    experience needs an opponent.
 8. **Operational runbook.** Devnet deploy is documented in the README;
    mainnet upgrade authority management, key rotation, incident

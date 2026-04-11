@@ -381,7 +381,7 @@ This guidance comes from a real-world test in the PushFlip codebase. In Phase 2,
 
 After fixing both burn instructions to use `try_borrow()`, updating the docstring to `[]`, and changing all 4 integration test sites to `AccountMeta::new_readonly(...)`, **all 4 burn_second_chance integration tests still passed**. This empirically confirms that the runtime allows `READONLY` accounts to be borrowed mut as long as no actual write occurs.
 
-See: [program/src/instructions/burn_second_chance.rs](../../../program/src/instructions/burn_second_chance.rs), [program/src/instructions/burn_scry.rs](../../../program/src/instructions/burn_scry.rs), [tests/src/phase2.rs](../../../tests/src/phase2.rs) test_burn_second_chance_*.
+See: [program/src/instructions/burn_second_chance.rs](https://github.com/Panmoni/pushflip/blob/main/program/src/instructions/burn_second_chance.rs), [program/src/instructions/burn_scry.rs](https://github.com/Panmoni/pushflip/blob/main/program/src/instructions/burn_scry.rs), [tests/src/phase2.rs](https://github.com/Panmoni/pushflip/blob/main/tests/src/phase2.rs) test_burn_second_chance_*.
 
 ### Related: `verify_account_owner()` is also separate
 
@@ -572,7 +572,7 @@ Based on all research, here is the recommended stack for the PushFlip gambling d
 ### On-Chain Program
 | Component | Tool | Why |
 |-----------|------|-----|
-| Framework | **Pinocchio 0.11** | Zero-dep, minimal CU, portfolio differentiator |
+| Framework | **Pinocchio 0.11** | Zero-dep, minimal CU, architectural differentiator |
 | System CPI | **pinocchio-system** | Transfer, CreateAccount helpers |
 | Token CPI | **pinocchio-token** | SPL token operations for game tokens |
 | Logging | **pinocchio-log** | Lightweight on-chain logging |
@@ -710,7 +710,7 @@ or canonical hashes when migrating.**
 ### Reference implementation
 
 PushFlip's wrapper is at
-[`program/src/zk/poseidon_native.rs`](../../../program/src/zk/poseidon_native.rs).
+[`program/src/zk/poseidon_native.rs`](https://github.com/Panmoni/pushflip/blob/main/program/src/zk/poseidon_native.rs).
 It exposes `hash_card_leaf` and `hash_pair` helpers, dispatches to the
 syscall on the SBF target, and falls back to `light_poseidon` on the host so
 unit tests can still cross-validate. The corresponding `Cargo.toml` pattern

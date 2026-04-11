@@ -8,7 +8,7 @@ last_compiled: 2026-04-11
 
 This repo posts a message to a Telegram group every time someone pushes commits to `main`. The goal is collaborator coordination — so anyone working on [pushflip](https://github.com/Panmoni/pushflip) can see at a glance what just landed without manually polling GitHub.
 
-The whole thing is **one self-owned GitHub Actions workflow** ([.github/workflows/telegram-notify.yml](../../../.github/workflows/telegram-notify.yml)) that calls the Telegram Bot API directly. No third-party SaaS, no self-hosted webhook receiver, no polling. Free for public repos.
+The whole thing is **one self-owned GitHub Actions workflow** ([.github/workflows/telegram-notify.yml](https://github.com/Panmoni/pushflip/blob/main/.github/workflows/telegram-notify.yml)) that calls the Telegram Bot API directly. No third-party SaaS, no self-hosted webhook receiver, no polling. Free for public repos.
 
 ---
 
@@ -81,7 +81,7 @@ gh secret set -f .env
 gh secret list   # confirm both are present
 ```
 
-`.env` is already covered by the `.env*` rule in [.gitignore](../../../.gitignore). Do not commit it.
+`.env` is already covered by the `.env*` rule in [.gitignore](https://github.com/Panmoni/pushflip/blob/main/.gitignore). Do not commit it.
 
 ### 3. Add collaborators to the repo
 
@@ -117,7 +117,7 @@ If `.ok` is anything other than `true`, `jq -e` exits non-zero and the Actions r
 
 ## Customization
 
-All the things you'd want to tweak live in [.github/workflows/telegram-notify.yml](../../../.github/workflows/telegram-notify.yml).
+All the things you'd want to tweak live in [.github/workflows/telegram-notify.yml](https://github.com/Panmoni/pushflip/blob/main/.github/workflows/telegram-notify.yml).
 
 | You want to... | Edit... |
 |---|---|
@@ -137,7 +137,7 @@ All the things you'd want to tweak live in [.github/workflows/telegram-notify.ym
 - **Never echo the token** in the workflow (e.g., `echo $TELEGRAM_BOT_TOKEN` would still be redacted, but don't tempt fate).
 - **Bot scope**: a Telegram bot token only grants control of that specific bot. If leaked, an attacker can spam the group, but cannot read DMs, leave the group, or pivot to other chats. Rotate via BotFather (`/revoke`) if leaked.
 - **Workflow auditability**: the entire notification system is one YAML file in the repo. Anyone with read access can see exactly what gets sent. No third party receives commit messages.
-- **`.env` handling**: the local `.env` exists only to make `gh secret set -f` ergonomic. It is gitignored and protected by the [block-dangerous.sh](../../../.claude/hooks/block-dangerous.sh) hook so AI tools cannot accidentally read or write it.
+- **`.env` handling**: the local `.env` exists only to make `gh secret set -f` ergonomic. It is gitignored and protected by the [block-dangerous.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/block-dangerous.sh) hook so AI tools cannot accidentally read or write it.
 
 ---
 
@@ -157,4 +157,4 @@ Self-hosted alternatives (Docker polling bots, Go binaries with cron) were rejec
 ## Related docs
 
 - [CLAUDE_HOOKS.md](claude-hooks.md) — the safety hooks that protect `.env` from accidental reads/writes
-- [EXECUTION_PLAN.md](../../EXECUTION_PLAN.md) — broader project roadmap and phasing
+- [EXECUTION_PLAN.md](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) — broader project roadmap and phasing

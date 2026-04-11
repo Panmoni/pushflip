@@ -10,9 +10,9 @@ related_wiki:
 
 # Dealer Runbook
 
-> **Stub.** This page is a placeholder so the navigation is structurally complete. The dealer service has not yet been deployed to production — it currently runs only as part of the smoke test pipeline ([`scripts/smoke-test.ts`](../../../scripts/smoke-test.ts)) and the unit tests in [`dealer/`](../../../dealer/). A real operational runbook is premature until the service is actually running 24/7 against devnet (and eventually mainnet).
+> **Stub.** This page is a placeholder so the navigation is structurally complete. The dealer service has not yet been deployed to production — it currently runs only as part of the smoke test pipeline ([`scripts/smoke-test.ts`](https://github.com/Panmoni/pushflip/blob/main/scripts/smoke-test.ts)) and the unit tests in [`dealer/`](https://github.com/Panmoni/pushflip/blob/main/dealer). A real operational runbook is premature until the service is actually running 24/7 against devnet (and eventually mainnet).
 >
-> Tracked as a documentation debt follow-up in [`docs/EXECUTION_PLAN.md`](../../EXECUTION_PLAN.md) under "Documentation Debt". Will be written when the dealer first deploys to production infrastructure (Phase 4 or 5).
+> Tracked as a documentation debt follow-up in [`docs/EXECUTION_PLAN.md`](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) under "Documentation Debt". Will be written when the dealer first deploys to production infrastructure (Phase 4 or 5).
 
 ## What this page will eventually cover
 

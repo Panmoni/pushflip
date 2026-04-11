@@ -6,7 +6,7 @@ last_compiled: 2026-04-11
 
 # Hosting and RPC Sizing
 
-Infrastructure sizing and cost analysis for running PushFlip with up to **2 simultaneous games**. Numbers are grounded in the measured performance data in [README.md §Performance and Costs](../../../README.md#performance-and-costs) and the architecture described in [EXECUTION_PLAN.md](../../EXECUTION_PLAN.md).
+Infrastructure sizing and cost analysis for running PushFlip with up to **2 simultaneous games**. Numbers are grounded in the measured performance data in [README.md §Performance and Costs](https://github.com/Panmoni/pushflip/blob/main/README.md#performance-and-costs) and the architecture described in [EXECUTION_PLAN.md](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md).
 
 ---
 
@@ -17,11 +17,11 @@ The Solana program itself runs on validator network — not our problem. What we
 | Component | What it is | Resource profile |
 |---|---|---|
 | **Frontend** | Vite/React SPA behind nginx | Static files, negligible |
-| **ZK Dealer** ([dealer/](../../../dealer/)) | Node.js + snarkjs WASM, generates one Groth16 proof per round | **The only heavy thing.** ~18–30 s single-threaded CPU burst, ~1–1.5 GB RAM (127 MB zkey + witness generation for 362 K constraints) |
-| **House AI** ([house-ai/](../../../house-ai/)) | Node.js bot polling RPC, playing as the in-game opponent | Light: a few hundred MB, mostly idle |
-| **Solana RPC** | Helius (third-party) | Not self-hosted — see [EXECUTION_PLAN.md:2776](../../EXECUTION_PLAN.md#L2776) |
+| **ZK Dealer** ([dealer/](https://github.com/Panmoni/pushflip/blob/main/dealer)) | Node.js + snarkjs WASM, generates one Groth16 proof per round | **The only heavy thing.** ~18–30 s single-threaded CPU burst, ~1–1.5 GB RAM (127 MB zkey + witness generation for 362 K constraints) |
+| **House AI** ([house-ai/](https://github.com/Panmoni/pushflip/blob/main/house-ai)) | Node.js bot polling RPC, playing as the in-game opponent | Light: a few hundred MB, mostly idle |
+| **Solana RPC** | Helius (third-party) | Not self-hosted — see [EXECUTION_PLAN.md:2776](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md#L2776) |
 
-The Podman/Docker + nginx deployment choice is already locked in at [EXECUTION_PLAN.md:206-207](../../EXECUTION_PLAN.md#L206-L207).
+The Podman/Docker + nginx deployment choice is already locked in at [EXECUTION_PLAN.md:206-207](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md#L206-L207).
 
 ---
 
@@ -96,7 +96,7 @@ Back-of-envelope, assuming WebSocket subscriptions for state changes (not pollin
 **Helius Free ($0/mo).** 1 M credits/month is tight but workable *if* WebSocket subscriptions replace polling, and if games run on-demand for demos rather than 24/7. The **10 req/s rate limit** is the real risk, not the credit count.
 
 #### Phase 2 — active demo phase on devnet
-**Helius Developer ($49/mo, $24.50 first month).** The sweet spot: 10 M credits, 50 req/s, chat support, devnet-only (Helius priced this tier specifically for pre-launch devs). For a portfolio-first project staying on devnet, **this is the ceiling.**
+**Helius Developer ($49/mo, $24.50 first month).** The sweet spot: 10 M credits, 50 req/s, chat support, devnet-only (Helius priced this tier specifically for pre-launch devs). For an early-stage project staying on devnet, **this is the ceiling.**
 
 #### Phase 3 — mainnet (only if/when actually launching)
 The Developer plan doesn't cover mainnet, so it jumps straight to **Business at $499/mo**. That's a 10× cliff. Mitigations if/when crossing this bridge:
@@ -106,7 +106,7 @@ The Developer plan doesn't cover mainnet, so it jumps straight to **Business at 
 
 ### Architectural decisions that push the RPC cost down
 
-1. **Prefer WebSockets over polling.** `accountSubscribe` for game state costs almost nothing per update compared to polling `getAccountInfo` every 2 s. This single choice can push us from "needs Developer tier" to "Free tier is fine." Kit Plugins support this directly — see [EXECUTION_PLAN.md:2209](../../EXECUTION_PLAN.md#L2209).
+1. **Prefer WebSockets over polling.** `accountSubscribe` for game state costs almost nothing per update compared to polling `getAccountInfo` every 2 s. This single choice can push us from "needs Developer tier" to "Free tier is fine." Kit Plugins support this directly — see [EXECUTION_PLAN.md:2209](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md#L2209).
 2. **Co-locate House AI with the dealer on the same VPS** so one RPC client, one connection, one auth token serves both. Don't run them as separate Helius subscribers.
 3. **Free tier's 10 req/s is a hard wall, not a soft one.** If the House AI and dealer both spike at round transitions, expect 429s. Add jitter + exponential backoff in the RPC wrapper from day one — cheaper than upgrading the plan.
 
@@ -120,7 +120,7 @@ The Developer plan doesn't cover mainnet, so it jumps straight to **Business at 
 | Devnet active (24/7 demos) | $6.46/mo | $49/mo | **$55.46/mo** |
 | Mainnet (if launched) | $6.46/mo | $499/mo (or $10–50 via QuickNode/Triton) | $506/mo worst case, ~$56 best case |
 
-For a portfolio-first Solana project staying on devnet, the realistic spread is **$6–$55/mo**.
+For an early-stage Solana project staying on devnet, the realistic spread is **$6–$55/mo**.
 
 ---
 
@@ -129,6 +129,6 @@ For a portfolio-first Solana project staying on devnet, the realistic spread is 
 - [Helius Pricing](https://www.helius.dev/pricing)
 - [OVHcloud VPS](https://us.ovhcloud.com/vps/)
 - [OVHcloud VPS Comparison](https://us.ovhcloud.com/vps/compare/)
-- [README.md §Performance and Costs](../../../README.md#performance-and-costs) — measured proof-gen latency and per-tx fees
-- [EXECUTION_PLAN.md:206-207](../../EXECUTION_PLAN.md#L206-L207) — Podman/Docker + nginx deployment decision
-- [EXECUTION_PLAN.md:2776](../../EXECUTION_PLAN.md#L2776) — rate-limit risk note for public devnet RPC
+- [README.md §Performance and Costs](https://github.com/Panmoni/pushflip/blob/main/README.md#performance-and-costs) — measured proof-gen latency and per-tx fees
+- [EXECUTION_PLAN.md:206-207](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md#L206-L207) — Podman/Docker + nginx deployment decision
+- [EXECUTION_PLAN.md:2776](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md#L2776) — rate-limit risk note for public devnet RPC

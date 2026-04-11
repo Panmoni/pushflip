@@ -18,4 +18,4 @@ Runbooks and operational guides for deploying and running PushFlip in production
 ## Related
 
 - [Project History → Execution Plan](../history/index.md) for the deployment phasing and decisions log
-- The repository [README](../../../README.md) "Live Devnet Deployment" section for the current program ID and on-chain inspection commands
+- The repository [README](https://github.com/Panmoni/pushflip/blob/main/README.md) "Live Devnet Deployment" section for the current program ID and on-chain inspection commands

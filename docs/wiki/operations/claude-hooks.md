@@ -12,7 +12,7 @@ This repo uses [Claude Code hooks](https://code.claude.com/docs/en/hooks) as a s
 
 `CLAUDE.md` is a suggestion — Claude follows it ~80% of the time. Hooks are a **best-effort safety net**: they fire on every tool call, return a non-zero exit code to block an action, and report the reason back to Claude so it can adjust.
 
-For this repo specifically, the blast radius of a mistaken tool call is high: overwriting the deployed program keypair forces a redeploy to a new address, deleting a `.zkey` or `.ptau` file destroys trusted-setup output that is painful to regenerate, and editing [notes.md](../../../notes.md) is explicitly off-limits. Hooks make those mistakes much harder to make accidentally.
+For this repo specifically, the blast radius of a mistaken tool call is high: overwriting the deployed program keypair forces a redeploy to a new address, deleting a `.zkey` or `.ptau` file destroys trusted-setup output that is painful to regenerate, and editing [notes.md](https://github.com/Panmoni/pushflip/blob/main/notes.md) is explicitly off-limits. Hooks make those mistakes much harder to make accidentally.
 
 ### What hooks are NOT
 
@@ -22,26 +22,26 @@ Hooks are a safety net, **not** a hard security boundary. They use regex and glo
 - Command forms the regex doesn't cover
 - Prompt injection that deliberately targets a known gap
 
-Treat hooks as defense in depth: they stop the common mistakes and force Claude to pause on the rest, but do not rely on them as the only thing between Claude and your filesystem. Review [protected-paths.sh](../../../.claude/hooks/protected-paths.sh) periodically to confirm the list still matches the repo's sensitive files.
+Treat hooks as defense in depth: they stop the common mistakes and force Claude to pause on the rest, but do not rely on them as the only thing between Claude and your filesystem. Review [protected-paths.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/protected-paths.sh) periodically to confirm the list still matches the repo's sensitive files.
 
 ## Installed hooks
 
-All hooks live in [.claude/hooks/](../../../.claude/hooks/) and are wired via [.claude/settings.json](../../../.claude/settings.json). The two PreToolUse guards (`protect-files.sh` and `block-dangerous.sh`) share a single source of truth for the protected-path list: [.claude/hooks/protected-paths.sh](../../../.claude/hooks/protected-paths.sh). **Add new protected paths there, in both arrays** (`protected_globs` for the Edit/Write matcher and `protected_path_patterns` for the Bash matcher).
+All hooks live in [.claude/hooks/](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks) and are wired via [.claude/settings.json](https://github.com/Panmoni/pushflip/blob/main/.claude/settings.json). The two PreToolUse guards (`protect-files.sh` and `block-dangerous.sh`) share a single source of truth for the protected-path list: [.claude/hooks/protected-paths.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/protected-paths.sh). **Add new protected paths there, in both arrays** (`protected_globs` for the Edit/Write matcher and `protected_path_patterns` for the Bash matcher).
 
 | Hook | Phase | Tool matcher | Purpose |
 |---|---|---|---|
-| [protect-files.sh](../../../.claude/hooks/protect-files.sh) | PreToolUse | `Edit\|Write\|MultiEdit` | Blocks edits to protected paths (exit 2). Resolves symlinks before matching. |
-| [block-dangerous.sh](../../../.claude/hooks/block-dangerous.sh) | PreToolUse | `Bash` | Blocks destructive commands AND Bash-level writes to protected paths (exit 2) |
-| [log-commands.sh](../../../.claude/hooks/log-commands.sh) | PreToolUse | `Bash` | Appends every Bash command to `.claude/command-log.txt` (0600, best-effort redacted) |
-| [pre-pr-gate.sh](../../../.claude/hooks/pre-pr-gate.sh) | PreToolUse | `Bash` | Runs `cargo test -p pushflip` with a 5-minute timeout before `gh pr create` |
-| [format.sh](../../../.claude/hooks/format.sh) | PostToolUse | `Edit\|Write\|MultiEdit` | `rustfmt` / `prettier` on the edited file |
-| [lint.sh](../../../.claude/hooks/lint.sh) | PostToolUse | `Edit\|Write\|MultiEdit` | `cargo check` / `eslint` feedback into Claude's context |
+| [protect-files.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/protect-files.sh) | PreToolUse | `Edit\|Write\|MultiEdit` | Blocks edits to protected paths (exit 2). Resolves symlinks before matching. |
+| [block-dangerous.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/block-dangerous.sh) | PreToolUse | `Bash` | Blocks destructive commands AND Bash-level writes to protected paths (exit 2) |
+| [log-commands.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/log-commands.sh) | PreToolUse | `Bash` | Appends every Bash command to `.claude/command-log.txt` (0600, best-effort redacted) |
+| [pre-pr-gate.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/pre-pr-gate.sh) | PreToolUse | `Bash` | Runs `cargo test -p pushflip` with a 5-minute timeout before `gh pr create` |
+| [format.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/format.sh) | PostToolUse | `Edit\|Write\|MultiEdit` | `rustfmt` / `prettier` on the edited file |
+| [lint.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/lint.sh) | PostToolUse | `Edit\|Write\|MultiEdit` | `cargo check` / `eslint` feedback into Claude's context |
 
 ### Protected files
 
-`protect-files.sh` and `block-dangerous.sh` both read [.claude/hooks/protected-paths.sh](../../../.claude/hooks/protected-paths.sh), which blocks writes to:
+`protect-files.sh` and `block-dangerous.sh` both read [.claude/hooks/protected-paths.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/protected-paths.sh), which blocks writes to:
 
-- [notes.md](../../../notes.md) — personal notes, explicitly off-limits
+- [notes.md](https://github.com/Panmoni/pushflip/blob/main/notes.md) — personal notes, explicitly off-limits
 - `target/deploy/*-keypair.json`, `program/keypair.json` — program keypairs (overwriting = redeploy to new address)
 - `~/.config/solana/id.json` — Solana CLI default wallet
 - `*.zkey`, `*_final.zkey`, `*.ptau` — ZK trusted-setup outputs
@@ -80,11 +80,11 @@ Use this sparingly and only when the command is safe by construction — writing
 ## Deliberately not installed
 
 - **Tests on every edit** — full `cargo test` is too slow for the edit loop. `cargo check` runs instead via `lint.sh`; the full test suite is reserved for the pre-PR gate.
-- **Auto-commit on Stop** — violates [.claude/rules/git-commits.md](../../../.claude/rules/git-commits.md) ("do not create commits unless the user specifically asks"). Skipped.
+- **Auto-commit on Stop** — violates [.claude/rules/git-commits.md](https://github.com/Panmoni/pushflip/blob/main/.claude/rules/git-commits.md) ("do not create commits unless the user specifically asks"). Skipped.
 
 ## Local audit log
 
-Every Bash command Claude runs is appended with a timestamp to `.claude/command-log.txt` (gitignored, created with `0600` perms). [log-commands.sh](../../../.claude/hooks/log-commands.sh) applies **best-effort** redaction to common secret shapes:
+Every Bash command Claude runs is appended with a timestamp to `.claude/command-log.txt` (gitignored, created with `0600` perms). [log-commands.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/log-commands.sh) applies **best-effort** redaction to common secret shapes:
 
 - `Authorization: Bearer …` / `Authorization: Basic …`
 - `--token=…`, `--token …`, `--password=…`, `--password …`
@@ -99,13 +99,13 @@ Redaction is **not exhaustive** — novel secret formats, unusual CLI tools, or 
 If Claude genuinely needs to edit a protected file (rotating a secret, adding a new lockfile entry, migrating keypairs), the hook will block it and explain why. Options:
 
 1. Ask the user to make the edit manually.
-2. Temporarily comment out the relevant entry in [.claude/hooks/protected-paths.sh](../../../.claude/hooks/protected-paths.sh), make the edit, then restore.
+2. Temporarily comment out the relevant entry in [.claude/hooks/protected-paths.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/protected-paths.sh), make the edit, then restore.
 3. For Bash commands only: add `# ALLOW-DANGEROUS` as a comment (see above).
 
 Do **not** bypass `block-dangerous.sh` patterns without strong justification — every entry is there because the action is irreversible.
 
 ## Related
 
-- [.claude/rules/git-commits.md](../../../.claude/rules/git-commits.md) — commit policy (no auto-commit hook by design)
-- [.claude/rules/blockchain-patterns.md](../../../.claude/rules/blockchain-patterns.md) — project coding conventions
+- [.claude/rules/git-commits.md](https://github.com/Panmoni/pushflip/blob/main/.claude/rules/git-commits.md) — commit policy (no auto-commit hook by design)
+- [.claude/rules/blockchain-patterns.md](https://github.com/Panmoni/pushflip/blob/main/.claude/rules/blockchain-patterns.md) — project coding conventions
 - Hook docs: <https://code.claude.com/docs/en/hooks>

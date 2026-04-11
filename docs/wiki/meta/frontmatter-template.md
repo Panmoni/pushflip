@@ -8,7 +8,7 @@ last_compiled: 2026-04-11
 
 Every page in this wiki (except files under `meta/`) must declare a YAML
 frontmatter block at the very top of the file. The health check script at
-[`scripts/wiki-health-check.sh`](../../../scripts/wiki-health-check.sh)
+[`scripts/wiki-health-check.sh`](https://github.com/Panmoni/pushflip/blob/main/scripts/wiki-health-check.sh)
 will fail your build if any required field is missing or malformed.
 
 ## Required fields

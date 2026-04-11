@@ -8,7 +8,7 @@ last_compiled: 2026-04-11
 
 This is a worked example of how to decode a raw `GameSession` account from
 devnet. It is the on-chain layout produced by `program/src/state/game_session.rs`
-and consumed by [clients/js/src/accounts/game-session.ts](../../../clients/js/src/accounts/game-session.ts) — the two MUST stay in sync byte-for-byte.
+and consumed by [clients/js/src/accounts/game-session.ts](https://github.com/Panmoni/pushflip/blob/main/clients/js/src/accounts/game-session.ts) — the two MUST stay in sync byte-for-byte.
 
 If you change the on-chain struct, you must also update the deserializer in
 `clients/js/src/accounts/game-session.ts` and re-walk this table.
@@ -128,7 +128,7 @@ token transfer.
 The remaining 117 bytes (`0x18b` onwards) are zero padding from
 over-allocation. This is the same "oversized program data slot" tracked
 as **Task 5.0.1** in the pre-mainnet checklist
-(see [EXECUTION_PLAN.md](../../EXECUTION_PLAN.md) → `### Pre-Mainnet Checklist`).
+(see [EXECUTION_PLAN.md](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) → `### Pre-Mainnet Checklist`).
 The on-chain account costs slightly more rent than necessary; reclaiming
 the extra 117 bytes saves ~0.0008 SOL per game session.
 
@@ -159,13 +159,13 @@ solana account Hk6RLHBZ8oppV4KtQFFRsHC21z9tCL5HYz3cLELEA64A --url devnet
 
 If the layout has changed since this document was written, decode the
 fields in declaration order using
-[clients/js/src/accounts/game-session.ts](../../../clients/js/src/accounts/game-session.ts)
+[clients/js/src/accounts/game-session.ts](https://github.com/Panmoni/pushflip/blob/main/clients/js/src/accounts/game-session.ts)
 as the source of truth — the order of `r.u8()`, `r.u64()`, `r.pubkey()`,
 etc. inside `decodeGameSession` is the byte layout.
 
 ## Related files
 
-- [program/src/state/game_session.rs](../../../program/src/state/game_session.rs) — on-chain Rust definition
-- [clients/js/src/accounts/game-session.ts](../../../clients/js/src/accounts/game-session.ts) — TypeScript deserializer
-- [clients/js/src/pda.ts](../../../clients/js/src/pda.ts) — PDA derivation (`deriveGamePda`, `deriveVaultPda`)
-- [scripts/init-game.ts](../../../scripts/init-game.ts) — the script that produced the worked example above
+- [program/src/state/game_session.rs](https://github.com/Panmoni/pushflip/blob/main/program/src/state/game_session.rs) — on-chain Rust definition
+- [clients/js/src/accounts/game-session.ts](https://github.com/Panmoni/pushflip/blob/main/clients/js/src/accounts/game-session.ts) — TypeScript deserializer
+- [clients/js/src/pda.ts](https://github.com/Panmoni/pushflip/blob/main/clients/js/src/pda.ts) — PDA derivation (`deriveGamePda`, `deriveVaultPda`)
+- [scripts/init-game.ts](https://github.com/Panmoni/pushflip/blob/main/scripts/init-game.ts) — the script that produced the worked example above

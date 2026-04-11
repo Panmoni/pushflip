@@ -8,7 +8,7 @@ last_compiled: 2026-04-11
 
 A crypto-native push-your-luck card game on Solana. Stake tokens, burn for power, and play against an AI-driven House — all with provably fair shuffling via ZK proofs.
 
-This wiki is the canonical home for PushFlip's documentation. The repository [README](../../README.md) is a short landing page that funnels here.
+This wiki is the canonical home for PushFlip's documentation. The repository [README](https://github.com/Panmoni/pushflip/blob/main/README.md) is a short landing page that funnels here.
 
 ## What you'll find
 

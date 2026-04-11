@@ -6,11 +6,11 @@ last_compiled: 2026-04-11
 
 # Project History
 
-PushFlip is a portfolio project built in phases. The full story — every decision, every lesson learned, every retrospective — lives in a single living document at the repository root.
+PushFlip is built in phases. The full story — every decision, every lesson learned, every retrospective — lives in a single living document at the repository root.
 
 ## The execution plan
 
-**[`docs/EXECUTION_PLAN.md`](../../EXECUTION_PLAN.md)** — 3,200+ lines covering:
+**[`docs/EXECUTION_PLAN.md`](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md)** — 3,200+ lines covering:
 
 - Project overview and scope
 - Technical architecture and data model

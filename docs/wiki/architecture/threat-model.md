@@ -10,9 +10,9 @@ related_wiki:
 
 # Threat Model
 
-> **Stub.** This page is a placeholder so the navigation is structurally complete. The security analysis currently lives scattered across the [README "Known Limitations"](../../../README.md) section, the [FAQ](../reference/faq.md) Q9–Q17 (the "Probing/Critical" tier), and the [Project History → Execution Plan](../history/index.md) Pre-Mainnet Checklist.
+> **Stub.** This page is a placeholder so the navigation is structurally complete. The security analysis currently lives scattered across the [README "Known Limitations"](https://github.com/Panmoni/pushflip/blob/main/README.md) section, the [FAQ](../reference/faq.md) Q9–Q17 (the "Probing/Critical" tier), and the [Project History → Execution Plan](../history/index.md) Pre-Mainnet Checklist.
 >
-> Tracked as a documentation debt follow-up in [`docs/EXECUTION_PLAN.md`](../../EXECUTION_PLAN.md) under "Documentation Debt". Will be consolidated into a single coherent threat model in a follow-up session — most likely after the threshold-randomness rework lands (Pre-Mainnet 5.0.2), since that's when the trust assumptions actually change.
+> Tracked as a documentation debt follow-up in [`docs/EXECUTION_PLAN.md`](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) under "Documentation Debt". Will be consolidated into a single coherent threat model in a follow-up session — most likely after the threshold-randomness rework lands (Pre-Mainnet 5.0.2), since that's when the trust assumptions actually change.
 
 ## What this page will eventually cover
 
@@ -27,7 +27,7 @@ related_wiki:
 
 ## Today, read
 
-- [README "Known Limitations"](../../../README.md) — high-level
+- [README "Known Limitations"](https://github.com/Panmoni/pushflip/blob/main/README.md) — high-level
 - [FAQ Q9–Q17](../reference/faq.md) — the "Probing/Critical" tier covers most security concerns
-- [`docs/EXECUTION_PLAN.md`](../../EXECUTION_PLAN.md) → **Lessons Learned** section, especially #42 (BigInt footgun) and #43 (wallet bridge byte-level verification)
-- [`docs/EXECUTION_PLAN.md`](../../EXECUTION_PLAN.md) → **Pre-Mainnet Checklist** items 5.0.2 (threshold randomness) and 5.0.3 (final security review pass)
+- [`docs/EXECUTION_PLAN.md`](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) → **Lessons Learned** section, especially #42 (BigInt footgun) and #43 (wallet bridge byte-level verification)
+- [`docs/EXECUTION_PLAN.md`](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) → **Pre-Mainnet Checklist** items 5.0.2 (threshold randomness) and 5.0.3 (final security review pass)

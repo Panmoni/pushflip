@@ -7,9 +7,9 @@ status: stub
 
 # Quickstart
 
-> **Stub.** This page is a placeholder so the navigation is structurally complete. The minimum-viable quickstart instructions live in two places today: the [`Contributing`](contributing.md) page wraps the project's [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) (which has the toolchain prereqs and build commands), and the [`README`](../../../README.md) has the deploy-from-source walkthrough.
+> **Stub.** This page is a placeholder so the navigation is structurally complete. The minimum-viable quickstart instructions live in two places today: the [`Contributing`](contributing.md) page wraps the project's [`CONTRIBUTING.md`](https://github.com/Panmoni/pushflip/blob/main/CONTRIBUTING.md) (which has the toolchain prereqs and build commands), and the [`README`](https://github.com/Panmoni/pushflip/blob/main/README.md) has the deploy-from-source walkthrough.
 >
-> Tracked as a documentation debt follow-up in [`docs/EXECUTION_PLAN.md`](../../EXECUTION_PLAN.md) under "Documentation Debt". Will be fleshed out into a single end-to-end zero-to-running tutorial in a follow-up session.
+> Tracked as a documentation debt follow-up in [`docs/EXECUTION_PLAN.md`](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) under "Documentation Debt". Will be fleshed out into a single end-to-end zero-to-running tutorial in a follow-up session.
 
 ## What this page will eventually cover
 
@@ -23,6 +23,6 @@ status: stub
 
 ## Today, do this
 
-1. Read [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) at the repo root
-2. Run the workspace verification gates from the project [README](../../../README.md) "Quickstart" section
+1. Read [`CONTRIBUTING.md`](https://github.com/Panmoni/pushflip/blob/main/CONTRIBUTING.md) at the repo root
+2. Run the workspace verification gates from the project [README](https://github.com/Panmoni/pushflip/blob/main/README.md) "Quickstart" section
 3. If anything is unclear, file an issue against the repo

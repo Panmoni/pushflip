@@ -41,10 +41,10 @@ PushFlip is four moving parts that talk to each other:
 
 | Component | Stack | Lives in | Job |
 |---|---|---|---|
-| **On-chain program** | Pinocchio (native Rust, no Anchor), zero deps | [`program/`](../../../program/) | State machine for the game. 16 instructions covering initialize/join/commit/start/hit/stay/end/close + token economics + bounty system. Runs on Solana devnet at `HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px`. |
-| **Dealer service** | TypeScript + snarkjs (Node) | [`dealer/`](../../../dealer/) | Off-chain. Generates the shuffle, builds the Groth16 proof against the Circom circuit, hands the deck commitment + proof to the program via `commit_deck`, then serves Merkle proofs for each card on `hit`. |
-| **Frontend** | Vite + React 19 + Tailwind v4 + `@solana/kit` v6 | [`app/`](../../../app/) | UI: connect wallet, render game state, send instructions, react to on-chain events via WebSocket subscriptions. |
-| **Wallet adapter ↔ Kit bridge** | Custom adapter | [`app/src/lib/wallet-bridge.ts`](../../../app/src/lib/wallet-bridge.ts) | Translates between web3.js v1 (used internally by every wallet adapter) and Kit (used by our hooks and instruction builders). The seam where `compileTransaction` output is wrapped as a `VersionedTransaction` for the adapter, then converted back via `@solana/compat` after signing. |
+| **On-chain program** | Pinocchio (native Rust, no Anchor), zero deps | [`program/`](https://github.com/Panmoni/pushflip/blob/main/program) | State machine for the game. 16 instructions covering initialize/join/commit/start/hit/stay/end/close + token economics + bounty system. Runs on Solana devnet at `HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px`. |
+| **Dealer service** | TypeScript + snarkjs (Node) | [`dealer/`](https://github.com/Panmoni/pushflip/blob/main/dealer) | Off-chain. Generates the shuffle, builds the Groth16 proof against the Circom circuit, hands the deck commitment + proof to the program via `commit_deck`, then serves Merkle proofs for each card on `hit`. |
+| **Frontend** | Vite + React 19 + Tailwind v4 + `@solana/kit` v6 | [`app/`](https://github.com/Panmoni/pushflip/blob/main/app) | UI: connect wallet, render game state, send instructions, react to on-chain events via WebSocket subscriptions. |
+| **Wallet adapter ↔ Kit bridge** | Custom adapter | [`app/src/lib/wallet-bridge.ts`](https://github.com/Panmoni/pushflip/blob/main/app/src/lib/wallet-bridge.ts) | Translates between web3.js v1 (used internally by every wallet adapter) and Kit (used by our hooks and instruction builders). The seam where `compileTransaction` output is wrapped as a `VersionedTransaction` for the adapter, then converted back via `@solana/compat` after signing. |
 
 ## Data flow: a single round, end to end
 
@@ -87,7 +87,7 @@ Powers of Tau (.ptau) ──────────┤
               (off-chain)            (~85K compute units)
 ```
 
-**Circom circuit** ([`zk-circuits/circuits/shuffle_verify.circom`](../../../zk-circuits/circuits/shuffle_verify.circom)) — Defines the math that must be satisfied: "given this Merkle root (public), I know a permutation (private) that produces a valid 94-card deck." Compiles to ~362K constraints. The circuit enforces three properties:
+**Circom circuit** ([`zk-circuits/circuits/shuffle_verify.circom`](https://github.com/Panmoni/pushflip/blob/main/zk-circuits/circuits/shuffle_verify.circom)) — Defines the math that must be satisfied: "given this Merkle root (public), I know a permutation (private) that produces a valid 94-card deck." Compiles to ~362K constraints. The circuit enforces three properties:
 
 1. **Valid bijection** — Grand product argument proves every card index appears exactly once
 2. **Correct mapping** — Constrained multiplexer proves shuffled cards match the canonical deck at permuted positions
@@ -127,7 +127,7 @@ The magic: the court (on-chain verifier) can confirm the document is valid witho
 
 ## Performance profile
 
-All numbers below are **measured empirically** against the live devnet program (`HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px`) via [`scripts/smoke-test.ts`](../../../scripts/smoke-test.ts) — not estimates.
+All numbers below are **measured empirically** against the live devnet program (`HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px`) via [`scripts/smoke-test.ts`](https://github.com/Panmoni/pushflip/blob/main/scripts/smoke-test.ts) — not estimates.
 
 ### Per-instruction compute units
 
@@ -190,13 +190,13 @@ A full game's wall clock works out to roughly:
 
 ### Why these numbers are this good
 
-The on-chain hot path uses Solana's native [`sol_poseidon` syscall](glossary.md#sol_poseidon-syscall) (~7K CU per `hit`) instead of an in-program `light_poseidon` implementation (~211K CU and a stack overflow). See the [Pinocchio Resource Guide §11](../reference/pinocchio-guide.md) for the wrapper that made this possible — it's the closest thing this repo has to a portfolio-positive open-source contribution. The full incident retrospective is at [Poseidon Stack Warning](../history/poseidon-stack-warning.md).
+The on-chain hot path uses Solana's native [`sol_poseidon` syscall](glossary.md#sol_poseidon-syscall) (~7K CU per `hit`) instead of an in-program `light_poseidon` implementation (~211K CU and a stack overflow). See the [Pinocchio Resource Guide §11](../reference/pinocchio-guide.md) for the wrapper that made this possible — it's the closest thing this repo has to a useful open-source contribution upstream. The full incident retrospective is at [Poseidon Stack Warning](../history/poseidon-stack-warning.md).
 
 ## Trust model summary
 
 PushFlip's trust model is **single trusted dealer** for the MVP. The ZK proof proves the deck is a *valid* permutation but does NOT prove it was shuffled *randomly*. Players must trust the dealer shuffled honestly.
 
-The roadmap to player-contributed entropy and decentralized dealing is documented as Pre-Mainnet Checklist item 5.0.2 in [`docs/EXECUTION_PLAN.md`](../../EXECUTION_PLAN.md). The full security analysis lives in the [Threat Model](threat-model.md).
+The roadmap to player-contributed entropy and decentralized dealing is documented as Pre-Mainnet Checklist item 5.0.2 in [`docs/EXECUTION_PLAN.md`](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md). The full security analysis lives in the [Threat Model](threat-model.md).
 
 ## Where to go next
 
@@ -208,4 +208,4 @@ The roadmap to player-contributed entropy and decentralized dealing is documente
 | Read the Pinocchio reference for on-chain dev | [Pinocchio Guide](../reference/pinocchio-guide.md) |
 | Read the Solana Kit reference for client dev | [Solana Kit Guide](../reference/solana-kit-guide.md) |
 | Understand the trust assumptions | [Threat Model](threat-model.md) |
-| See the full project history | [`docs/EXECUTION_PLAN.md`](../../EXECUTION_PLAN.md) |
+| See the full project history | [`docs/EXECUTION_PLAN.md`](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) |

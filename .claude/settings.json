@@ -82,7 +82,12 @@
       "Bash(awk -F: 'BEGIN{first=0} {n=$2+0; if\\(n>1700 && n<2240\\) print}')",
       "Bash(awk -F: '$2+0 > 1769 && $2+0 < 1800')",
       "Bash(pnpm dlx:*)",
-      "Bash(timeout 6 pnpm dev)"
+      "Bash(timeout 6 pnpm dev)",
+      "Bash(pnpm --filter @pushflip/scripts init-game)",
+      "Bash(pnpm --filter @pushflip/client test)",
+      "Bash(pnpm --filter @pushflip/dealer test)",
+      "Bash(pnpm --filter @pushflip/app typecheck)",
+      "Bash(pnpm --filter @pushflip/app lint)"
     ],
     "deny": [
       "Bash(rm -rf *)",

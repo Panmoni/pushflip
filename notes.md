@@ -2,10 +2,11 @@
 
 ## ToDo
 - colosseum weekly video https://arena.colosseum.org/hackathon
-- update www to say we are currently shipping, no longer soon
-- better logo for frontend and favicon at least, simpler.
+- update www to say we are currently shipping, no longer "soon"
+- better logo for frontend and favicon at least, simpler, single card maybe
 - how to best share deployment privkey with Alex
 - deployment for wiki, host at wiki.pushflip.xyz, link to wiki from www and readmes
+- get server and start deploying the frontend etc there, CI/CD etc
 
 ### Future
 - should have a powers of tau ceremony involving humans at some point

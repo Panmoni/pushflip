@@ -109,6 +109,7 @@ nav:
   - Getting Started:
       - Overview: getting-started/index.md
       - Contributing: getting-started/contributing.md
+      - Frontmatter Template: meta/frontmatter-template.md
   - Architecture:
       - System Design: architecture/index.md
       - GameSession Byte Layout: architecture/game-session-byte-layout.md

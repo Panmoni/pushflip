@@ -1,0 +1,62 @@
+name: Wiki Build
+
+# Validates the wiki on every PR/push that touches wiki content or config,
+# and runs a weekly staleness sweep against the main branch.
+
+on:
+  pull_request:
+    paths:
+      - 'wiki/**'
+      - 'docs/wiki/**'
+      - 'scripts/wiki-health-check.sh'
+      - '.github/workflows/wiki-build.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'wiki/**'
+      - 'docs/wiki/**'
+      - 'scripts/wiki-health-check.sh'
+      - '.github/workflows/wiki-build.yml'
+  schedule:
+    # Mondays 12:00 UTC — staleness sweep against main
+    - cron: '0 12 * * 1'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # hooks.py uses git rev-parse --short HEAD; needs at least one
+          # commit's worth of history. fetch-depth: 0 is generous but cheap.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: wiki/requirements.txt
+
+      - name: Install MkDocs Material
+        run: pip install -r wiki/requirements.txt
+
+      - name: Health check (frontmatter + staleness)
+        run: bash scripts/wiki-health-check.sh --strict
+
+      - name: Strict build
+        run: mkdocs build -f wiki/mkdocs.yml --strict
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Wiki build summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          page_count=$(find docs/wiki -type f -name '*.md' | wc -l)
+          echo "- Pages checked: $page_count" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -d wiki/site ]]; then
+            html_count=$(find wiki/site -type f -name '*.html' | wc -l)
+            echo "- HTML pages built: $html_count" >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -24,18 +24,25 @@ export interface FlipAdvisorProps {
   className?: string;
 }
 
-/** Pick a color class based on bust probability. */
+/**
+ * Pick a color class based on bust probability.
+ *
+ * Theme-aware: the `-400` shades read correctly on the dark-mode
+ * near-black card background but wash out on the light-mode
+ * near-white background. Light-mode uses `-700` shades which hit
+ * AA contrast against the light card fill. Same hue in both modes.
+ */
 function probabilityColor(prob: number): string {
   if (Number.isNaN(prob)) {
     return "text-muted-foreground";
   }
   if (prob < 0.2) {
-    return "text-emerald-400";
+    return "text-emerald-700 dark:text-emerald-400";
   }
   if (prob < 0.4) {
-    return "text-amber-400";
+    return "text-amber-700 dark:text-amber-400";
   }
-  return "text-red-400";
+  return "text-red-700 dark:text-red-400";
 }
 
 /** Render the probability as a percentage string, or "—" if NaN. */
@@ -133,25 +140,43 @@ export function FlipAdvisor({ className }: FlipAdvisorProps) {
           {/* Recommendation. `aria-live="polite"` so screen-reader users
               hear when the advice flips HIT → STAY mid-game without
               relying on the color change (heavy-duty review #10
-              finding #7). */}
+              finding #7).
+
+              Theme-aware palette: the dark-mode `-950/20` backgrounds
+              and `-300` foreground text become invisible in light mode
+              (pale-on-pale). Light mode uses a `-100` fill, `-600`
+              border, and `-900` heading text; reasoning drops to a
+              neutral gray so it stays readable regardless of the
+              colored box underneath. */}
           <div
             aria-live="polite"
             className={cn(
               "rounded-md border-2 p-2",
               recommendation.recommendation === "hit"
-                ? "border-emerald-500/40 bg-emerald-950/20"
-                : "border-amber-500/40 bg-amber-950/20"
+                ? "border-emerald-600/60 bg-emerald-100/80 dark:border-emerald-500/40 dark:bg-emerald-950/20"
+                : "border-amber-600/60 bg-amber-100/80 dark:border-amber-500/40 dark:bg-amber-950/20"
             )}
             role="status"
           >
             <div className="font-bold text-sm uppercase tracking-wider">
               {recommendation.recommendation === "hit" ? (
-                <span className="text-emerald-300">Recommend: HIT</span>
+                <span className="text-emerald-900 dark:text-emerald-300">
+                  Recommend: HIT
+                </span>
               ) : (
-                <span className="text-amber-300">Recommend: STAY</span>
+                <span className="text-amber-900 dark:text-amber-300">
+                  Recommend: STAY
+                </span>
               )}
             </div>
-            <p className="mt-1 text-muted-foreground text-xs">
+            <p
+              className={cn(
+                "mt-1 text-xs",
+                recommendation.recommendation === "hit"
+                  ? "text-emerald-950/80 dark:text-muted-foreground"
+                  : "text-amber-950/80 dark:text-muted-foreground"
+              )}
+            >
               {recommendation.reasoning}
             </p>
           </div>

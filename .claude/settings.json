@@ -104,7 +104,9 @@
       "Bash(pnpm --filter @pushflip/app exec biome check --write src/styles/globals.css)",
       "Bash(pnpm --filter @pushflip/app exec biome check --write src/ index.html)",
       "Bash(pnpm --filter @pushflip/app exec biome check --write src/hooks/use-theme.ts src/lib/flip-format.ts src/components/game/join-game-dialog.tsx)",
-      "Bash(timeout 8 pnpm --filter @pushflip/app exec vite)"
+      "Bash(timeout 8 pnpm --filter @pushflip/app exec vite)",
+      "Bash(pnpm --filter @pushflip/app exec biome check --write src/lib/wallet-bridge.ts src/lib/tx-error.ts src/components/wallet/cluster-hint.tsx src/hooks/use-game-actions.ts src/app.tsx)",
+      "Bash(pnpm --filter @pushflip/app exec biome check --write src/lib/wallet-bridge.ts)"
     ],
     "deny": [
       "Bash(rm -rf *)",

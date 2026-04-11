@@ -1,8 +1,19 @@
-# PushFlip
+<h1 align="center">
+  <a href="https://pushflip.xyz">
+    <img src="docs/wiki/assets/logo.svg" alt="PushFlip" width="240">
+  </a>
+</h1>
 
-A crypto-native push-your-luck card game on Solana. Stake tokens, burn for power, and play against an AI-driven House — all with provably fair shuffling via ZK proofs.
+<p align="center">
+  A crypto-native push-your-luck card game on Solana. Stake tokens, burn for power,<br>
+  and play against an AI-driven House — all with provably fair shuffling via ZK proofs.
+</p>
 
-**[pushflip.xyz](https://pushflip.xyz)** — public website source at [github.com/Panmoni/pushflip-www](https://github.com/Panmoni/pushflip-www)
+<p align="center">
+  <a href="https://pushflip.xyz"><strong>pushflip.xyz</strong></a> ·
+  <a href="https://github.com/Panmoni/pushflip-www">website source</a> ·
+  <a href="docs/wiki/index.md">wiki</a>
+</p>
 
 > 📚 **Full documentation lives in the wiki at [`docs/wiki/`](docs/wiki/index.md)**.
 > Architecture, glossary, FAQ, deployment runbooks, ZK research survey, and the project execution plan all live there. This README is a landing page that funnels you into the relevant section.

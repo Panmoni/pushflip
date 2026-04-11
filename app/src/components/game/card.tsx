@@ -113,17 +113,17 @@ const TYPE_STYLES: Record<
 > = {
   [CardType.Alpha]: {
     border: "border-blue-400/60",
-    bg: "bg-gradient-to-br from-blue-950/90 via-slate-900 to-blue-950/80",
+    bg: "bg-linear-to-br from-blue-950/90 via-slate-900 to-blue-950/80",
     accent: "text-blue-200",
   },
   [CardType.Protocol]: {
     border: "border-red-400/70",
-    bg: "bg-gradient-to-br from-red-950/90 via-slate-900 to-red-950/80",
+    bg: "bg-linear-to-br from-red-950/90 via-slate-900 to-red-950/80",
     accent: "text-red-200",
   },
   [CardType.Multiplier]: {
     border: "border-amber-400/70",
-    bg: "bg-gradient-to-br from-amber-950/90 via-slate-900 to-amber-950/80",
+    bg: "bg-linear-to-br from-amber-950/90 via-slate-900 to-amber-950/80",
     accent: "text-amber-200",
   },
 };
@@ -172,7 +172,7 @@ export function GameCard({
           "relative flex h-32 w-24 select-none items-center justify-center",
           "rounded-lg border-2 border-purple-500/50",
           // Card-back gradient: purple/indigo crosshatch
-          "bg-gradient-to-br from-purple-950 via-indigo-950 to-purple-950",
+          "bg-linear-to-br from-purple-950 via-indigo-950 to-purple-950",
           "shadow-md shadow-purple-950/50",
           // Subtle inner pattern using a repeating linear gradient overlay
           "bg-[image:repeating-linear-gradient(45deg,transparent,transparent_4px,rgba(168,85,247,0.1)_4px,rgba(168,85,247,0.1)_8px)] bg-[length:8px_8px]",
@@ -182,10 +182,7 @@ export function GameCard({
         role="img"
         title={label}
       >
-        <span
-          aria-hidden="true"
-          className="font-bold text-3xl text-purple-300/80"
-        >
+        <span aria-hidden="true" className="font-bold text-4xl text-purple-200">
           ?
         </span>
       </div>
@@ -226,26 +223,34 @@ export function GameCard({
         {corner}
       </div>
 
-      {/* Center: large suit/icon glyph */}
+      {/* Center: large suit/icon glyph. Protocol cards use a smaller
+          size because the emoji glyphs (skull / parachute / bat) are
+          visually heavier than text characters and overflow at text-4xl. */}
       <div
         aria-hidden="true"
         className={cn(
-          "flex flex-1 items-center justify-center font-bold text-4xl leading-none",
+          "flex flex-1 items-center justify-center font-bold leading-none",
+          card.cardType === CardType.Protocol ? "text-3xl" : "text-4xl",
           centerColor
         )}
       >
         {center}
       </div>
 
-      {/* Bottom-right corner: rank/value glyph rotated 180° (mirrors a real card) */}
-      <div
-        className={cn(
-          "rotate-180 self-end font-bold text-sm tabular-nums leading-none",
-          cornerColor
-        )}
-      >
-        {corner}
-      </div>
+      {/* Bottom-right corner: rank glyph rotated 180° to mirror a real
+          playing card. Only meaningful for Alpha cards — for Protocol
+          cards a flipped emoji renders as garbage, and for Multiplier
+          cards "×2" rotated looks like "Z×". */}
+      {card.cardType === CardType.Alpha && (
+        <div
+          className={cn(
+            "rotate-180 self-end font-bold text-sm tabular-nums leading-none",
+            cornerColor
+          )}
+        >
+          {corner}
+        </div>
+      )}
     </div>
   );
 }

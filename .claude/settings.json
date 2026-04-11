@@ -92,7 +92,16 @@
       "Bash(wiki/.venv/bin/pip install:*)",
       "Bash(wiki/.venv/bin/mkdocs build:*)",
       "Bash(wiki/.venv/bin/mkdocs serve:*)",
-      "Bash(bash scripts/wiki-health-check.sh:*)"
+      "Bash(bash scripts/wiki-health-check.sh:*)",
+      "Bash(pnpm --filter @pushflip/app build)",
+      "Bash(pnpm --filter @pushflip/app exec biome check --write src/components/game/card.tsx)",
+      "Bash(pnpm --filter @pushflip/app exec biome check src/components/game/card.tsx)",
+      "Bash(pnpm --filter @pushflip/app exec biome check --write src/components/game/ src/app.tsx)",
+      "Bash(pnpm --filter @pushflip/app exec biome check src/components/game/ src/app.tsx)",
+      "Bash(pnpm --filter @pushflip/app exec biome check --write src/)",
+      "Bash(pnpm --filter @pushflip/app exec biome check src/)",
+      "Bash(pnpm --filter @pushflip/app exec biome check --write src/hooks/use-game-events.ts)",
+      "Bash(pnpm --filter @pushflip/app exec biome check --write src/styles/globals.css)"
     ],
     "deny": [
       "Bash(rm -rf *)",

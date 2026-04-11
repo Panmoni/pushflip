@@ -104,8 +104,25 @@ validation:
 hooks:
   - hooks.py
 
-# Minimal nav for commit 1 (shell). Expanded in commit 2 once migrations
-# land and the section pages exist. Strict build passes against this nav
-# because every referenced file is present.
 nav:
   - Home: index.md
+  - Getting Started:
+      - Overview: getting-started/index.md
+      - Contributing: getting-started/contributing.md
+  - Architecture:
+      - System Design: architecture/index.md
+      - GameSession Byte Layout: architecture/game-session-byte-layout.md
+  - Reference:
+      - Overview: reference/index.md
+      - FAQ: reference/faq.md
+      - Pinocchio Guide: reference/pinocchio-guide.md
+      - Solana Kit Guide: reference/solana-kit-guide.md
+      - ZK Research: reference/zk-research.md
+  - Operations:
+      - Overview: operations/index.md
+      - Hosting & RPC: operations/hosting-and-rpc.md
+      - Telegram Notifications: operations/telegram-notifications.md
+      - Claude Hooks: operations/claude-hooks.md
+  - Project History:
+      - Overview: history/index.md
+      - Poseidon Stack Warning: history/poseidon-stack-warning.md

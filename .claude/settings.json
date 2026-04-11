@@ -87,7 +87,12 @@
       "Bash(pnpm --filter @pushflip/client test)",
       "Bash(pnpm --filter @pushflip/dealer test)",
       "Bash(pnpm --filter @pushflip/app typecheck)",
-      "Bash(pnpm --filter @pushflip/app lint)"
+      "Bash(pnpm --filter @pushflip/app lint)",
+      "Bash(python3 -m venv:*)",
+      "Bash(wiki/.venv/bin/pip install:*)",
+      "Bash(wiki/.venv/bin/mkdocs build:*)",
+      "Bash(wiki/.venv/bin/mkdocs serve:*)",
+      "Bash(bash scripts/wiki-health-check.sh:*)"
     ],
     "deny": [
       "Bash(rm -rf *)",

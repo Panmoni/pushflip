@@ -2,7 +2,7 @@
 
 A crypto-native push-your-luck card game on Solana. Stake tokens, burn for power, and play against an AI-driven House -- all with provably fair shuffling via ZK proofs.
 
-**[pushflip.xyz](https://pushflip.xyz)**
+**[pushflip.xyz](https://pushflip.xyz)** — public website source at [github.com/Panmoni/pushflip-www](https://github.com/Panmoni/pushflip-www)
 
 ## What It Is
 

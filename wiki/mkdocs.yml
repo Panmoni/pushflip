@@ -108,12 +108,14 @@ nav:
   - Home: index.md
   - Getting Started:
       - Overview: getting-started/index.md
+      - Quickstart: getting-started/quickstart.md
       - Contributing: getting-started/contributing.md
       - Frontmatter Template: meta/frontmatter-template.md
   - Architecture:
       - System Design: architecture/index.md
       - Glossary: architecture/glossary.md
       - GameSession Byte Layout: architecture/game-session-byte-layout.md
+      - Threat Model: architecture/threat-model.md
   - Reference:
       - Overview: reference/index.md
       - FAQ: reference/faq.md
@@ -122,6 +124,7 @@ nav:
       - ZK Research: reference/zk-research.md
   - Operations:
       - Overview: operations/index.md
+      - Dealer Runbook: operations/dealer-runbook.md
       - Hosting & RPC: operations/hosting-and-rpc.md
       - Telegram Notifications: operations/telegram-notifications.md
       - Claude Hooks: operations/claude-hooks.md

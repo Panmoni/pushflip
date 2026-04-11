@@ -104,7 +104,7 @@ For a deeper conventions/onboarding doc see [CONTRIBUTING.md](../CONTRIBUTING.md
 | **Env vars in `app/`** | Use `import.meta.env.VITE_FOO?.trim() \|\| "default"` — **never** `??`. Add new vars to [src/vite-env.d.ts](../app/src/vite-env.d.ts). | `??` doesn't catch empty strings; `vite-env.d.ts` augmentation makes typos compile errors. See Lessons #34, #35. |
 | **Module-level long-lived resources** | Modules that open WebSockets, intervals, or OS handles should call `import.meta.hot?.invalidate()` at the top. | Vite HMR re-eval otherwise leaks the resource on every save. See [src/lib/program.ts](../app/src/lib/program.ts) and Lesson #37. |
 | **Heavy-duty reviews** | Run `/heavy-duty-review` after any non-trivial commit chain. Pass 2 (verification) MUST diff agent claims against actual file contents AND session state — Pass 1 agents lie confidently. | See Lessons #20 and #29. **Nine heavy-duty reviews so far**; every one has caught at least one structural bug the unit tests missed (including a Critical cross-game claim exploit, a near-miss authority gating gap, the Task 3.2 double-click double-spend pattern, and the second occurrence of the BigInt-u64 silent-wrap footgun in `init-game.ts` — see Lesson #42 + Pre-Mainnet 5.0.4). |
-| **Pre-mainnet items** | Four items deferred from Phase 3 to Phase 5: reclaim the oversized program data slot (Task 5.0.1), threshold randomness / decentralized dealer (Task 5.0.2), final full-scope review (Task 5.0.3), and the shared `parseU64` helper + `scripts/lib/script-helpers.ts` extraction (Task 5.0.4 — added 2026-04-11 after the BigInt-u64 footgun re-occurred). Listed at [Pre-Mainnet Checklist](#pre-mainnet-checklist-deferred-items-not-blocking-devnet). | None block devnet work. |
+| **Pre-mainnet items** | Five items deferred from Phase 3 to Phase 5: reclaim the oversized program data slot (Task 5.0.1), threshold randomness / decentralized dealer (Task 5.0.2), final full-scope review (Task 5.0.3), the shared `parseU64` helper + `scripts/lib/script-helpers.ts` extraction (Task 5.0.4 — added 2026-04-11 after the BigInt-u64 footgun re-occurred), and the three stubbed wiki pages — Quickstart, Threat Model, Dealer Runbook (Task 5.0.5 — added 2026-04-11 with the wiki migration). Listed at [Pre-Mainnet Checklist](#pre-mainnet-checklist-deferred-items-not-blocking-devnet). | None block devnet work. |
 
 ### Where to find things in this plan
 
@@ -2895,6 +2895,21 @@ These are items we explicitly chose NOT to fix during the devnet build cycle but
 - **Before mainnet** (so the program client surface area is consolidated and fuzz-testable).
 
 **Done when:** `parseU64` lives in `@pushflip/client` with tests; both scripts import from `scripts/lib/script-helpers.ts`; smoke test passes end-to-end against devnet after the migration; (optional) Biome lint rule rejects raw `BigInt(userInput)` patterns.
+
+##### 5.0.5: Documentation debt — flesh out 3 wiki stubs
+**Context:** The MkDocs Material wiki shipped at `docs/wiki/` on 2026-04-11. Three wiki pages were intentionally left as stubs because their canonical content either doesn't exist yet (Dealer Runbook — service not in production) or is scattered enough that consolidating it deserves its own focused session (Quickstart, Threat Model). The stubs are in the navigation so the wiki is structurally complete and contributors can find the topics, but each page redirects readers to where the real content currently lives.
+
+**The three stubs:**
+
+1. **[`docs/wiki/getting-started/quickstart.md`](wiki/getting-started/quickstart.md)** — should become a single end-to-end "zero to first running game on devnet in under 15 minutes" tutorial. Content currently lives split across `CONTRIBUTING.md` (toolchain prereqs + build commands) and the `README` (deploy walkthrough). Trigger: any time someone onboards a contributor and notices the friction.
+
+2. **[`docs/wiki/architecture/threat-model.md`](wiki/architecture/threat-model.md)** — should consolidate the security analysis currently scattered across `README` "Known Limitations", `FAQ.md` Q9–Q17 ("Probing/Critical" tier), and the various Lessons Learned entries (especially #42, #43). Trigger: most likely after the threshold-randomness rework lands (5.0.2), since that's when the trust assumptions actually change.
+
+3. **[`docs/wiki/operations/dealer-runbook.md`](wiki/operations/dealer-runbook.md)** — should be a real operational runbook covering deployment topology, env setup, snarkjs parameters, health checks, error recovery, observability, disaster recovery. Trigger: the dealer's first production deployment (currently it only runs as part of the smoke test). This will likely happen during Phase 4 or early Phase 5.
+
+**Why we're not fixing them now:** All three are time-consuming to write *correctly* (each is the kind of doc that needs to be exhaustive or it's misleading), and the wiki migration session was scoped to "stand up the infrastructure + flesh out the highest-leverage 2 pages" (Architecture + Glossary). Stubbing keeps the navigation honest without inflating the session scope. The stubs themselves explicitly point at where the real content currently lives.
+
+**Done when:** All three pages have been fleshed out into real content, the stub markers are removed, the `status: stub` frontmatter field is dropped, and the health check still passes.
 
 ---
 

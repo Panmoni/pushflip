@@ -1,9 +1,9 @@
 # NOTES
 
 ## ToDo
-- 3.3.1 next
 - colosseum weekly video https://arena.colosseum.org/hackathon
 - update www to say we are currently shipping, no longer soon
+- better logo for frontend and favicon at least, simpler.
 - how to best share deployment privkey with Alex
 - deployment for wiki, host at wiki.pushflip.xyz, link to wiki from www and readmes
 

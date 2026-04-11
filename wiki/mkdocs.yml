@@ -112,6 +112,7 @@ nav:
       - Frontmatter Template: meta/frontmatter-template.md
   - Architecture:
       - System Design: architecture/index.md
+      - Glossary: architecture/glossary.md
       - GameSession Byte Layout: architecture/game-session-byte-layout.md
   - Reference:
       - Overview: reference/index.md

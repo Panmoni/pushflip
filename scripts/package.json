@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "smoke-test": "tsx smoke-test.ts"
+    "smoke-test": "tsx smoke-test.ts",
+    "init-game": "tsx init-game.ts"
   },
   "dependencies": {
     "@pushflip/client": "workspace:*",

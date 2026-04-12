@@ -6,6 +6,7 @@
   "scripts": {
     "smoke-test": "tsx smoke-test.ts",
     "init-game": "tsx init-game.ts",
+    "init-vault": "tsx init-vault.ts",
     "mint-test-flip": "tsx mint-test-flip.ts"
   },
   "dependencies": {

@@ -21,8 +21,28 @@
  */
 
 import { type Card, CardType } from "@pushflip/client";
+import { motion } from "motion/react";
 
 import { cn } from "@/lib/utils";
+
+/**
+ * Motion preset for a freshly-drawn card. Combines a card-flip
+ * (rotateY -90 → 0), a fade, and a slight scale to read as
+ * "the dealer just placed this on the table". Uses `backOut`
+ * easing for a tiny bounce on settle. ~400ms total — long
+ * enough to be perceptible, short enough to stay snappy.
+ *
+ * The animation only fires on FIRST mount of a given GameCard
+ * instance — when the parent (PlayerHand) appends a new card
+ * to a hand, the new entry mounts fresh and animates. Existing
+ * cards re-render in place without re-animating because their
+ * keys are stable.
+ */
+const CARD_DRAW_TRANSITION = {
+  initial: { opacity: 0, scale: 0.6, rotateY: -90 },
+  animate: { opacity: 1, scale: 1, rotateY: 0 },
+  transition: { duration: 0.4, ease: "backOut" as const },
+};
 
 // --- Visual constants ----------------------------------------------------
 
@@ -164,8 +184,10 @@ export function GameCard({
   const label = accessibleLabel(card, faceDown);
 
   if (faceDown) {
+    const FaceDownTag = animate ? motion.div : "div";
+    const motionProps = animate ? CARD_DRAW_TRANSITION : {};
     return (
-      <div
+      <FaceDownTag
         aria-label={label}
         className={cn(
           // Layout: same dimensions as a face-up card
@@ -176,16 +198,16 @@ export function GameCard({
           "shadow-md shadow-purple-950/50",
           // Subtle inner pattern using a repeating linear gradient overlay
           "bg-[image:repeating-linear-gradient(45deg,transparent,transparent_4px,rgba(168,85,247,0.1)_4px,rgba(168,85,247,0.1)_8px)] bg-[length:8px_8px]",
-          animate && "fade-in zoom-in animate-in duration-300",
           className
         )}
         role="img"
         title={label}
+        {...motionProps}
       >
         <span aria-hidden="true" className="font-bold text-4xl text-purple-200">
           ?
         </span>
-      </div>
+      </FaceDownTag>
     );
   }
 
@@ -195,22 +217,30 @@ export function GameCard({
 
   // For alpha cards: hearts (suit 1) and diamonds (suit 2) render red,
   // spades (0) and clubs (3) render in the type accent color (blue here).
+  // Theme-aware: light mode uses `red-700/600` for AA contrast on the
+  // pale card background, dark mode keeps the original `-400/-300` shades.
   const isAlphaRed =
     card.cardType === CardType.Alpha && ALPHA_RED_SUIT(card.suit);
-  const centerColor = isAlphaRed ? "text-red-400" : styles.accent;
-  const cornerColor = isAlphaRed ? "text-red-300" : styles.accent;
+  const centerColor = isAlphaRed
+    ? "text-red-700 dark:text-red-400"
+    : styles.accent;
+  const cornerColor = isAlphaRed
+    ? "text-red-600 dark:text-red-300"
+    : styles.accent;
 
+  const FaceUpTag = animate ? motion.div : "div";
+  const faceUpMotionProps = animate ? CARD_DRAW_TRANSITION : {};
   return (
-    <div
+    <FaceUpTag
       aria-label={label}
       className={cn(
         "relative flex h-32 w-24 select-none flex-col rounded-lg border-2 p-2 shadow-md",
         styles.border,
         styles.bg,
-        animate && "fade-in zoom-in animate-in duration-300",
         className
       )}
       role="img"
+      {...faceUpMotionProps}
       title={label}
     >
       {/* Top-left corner: rank/value glyph */}
@@ -251,6 +281,6 @@ export function GameCard({
           {corner}
         </div>
       )}
-    </div>
+    </FaceUpTag>
   );
 }

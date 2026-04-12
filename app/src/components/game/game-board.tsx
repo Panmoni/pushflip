@@ -49,6 +49,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useGameSession } from "@/hooks/use-game-session";
 import { usePlayerState } from "@/hooks/use-player-state";
 import { useScryResult } from "@/hooks/use-scry-result";
@@ -101,14 +102,35 @@ export function GameBoard() {
 
   // --- Loading + error gating ---
   if (gameQuery.isLoading) {
-    return <BoardShell>Loading game…</BoardShell>;
+    return (
+      <BoardShell>
+        <BoardSkeleton />
+      </BoardShell>
+    );
   }
   if (gameQuery.isError) {
     return (
       <BoardShell>
-        <p className="text-destructive">
-          Failed to load game: {gameQuery.error.message}
-        </p>
+        <div className="space-y-3">
+          <p className="font-semibold text-destructive text-sm">
+            Failed to load game
+          </p>
+          <p className="break-all rounded border border-destructive/40 bg-destructive/10 p-2 text-destructive text-xs">
+            {gameQuery.error.message}
+          </p>
+          {/* `disabled={isFetching}` covers the click-spam case: React
+              Query dedupes concurrent requests internally, but the
+              button should also visually reflect the in-flight state
+              so the user knows the retry is running. */}
+          <Button
+            disabled={gameQuery.isFetching}
+            onClick={() => gameQuery.refetch()}
+            size="sm"
+            variant="secondary"
+          >
+            {gameQuery.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
       </BoardShell>
     );
   }
@@ -261,6 +283,43 @@ function BoardShell({ children }: { children: React.ReactNode }) {
     <section className="rounded-lg border border-border bg-card p-4 text-card-foreground">
       {children}
     </section>
+  );
+}
+
+/**
+ * Skeleton placeholder shown while `useGameSession` is loading the
+ * GameSession account for the first time. Mirrors the rough geometry
+ * of a fully-rendered `<GameBoard>` so the layout doesn't jump when
+ * real data arrives:
+ *
+ *   - Top row: title block + pot card
+ *   - Player hand row: one card-sized strip
+ *   - Action row: four button-sized blocks
+ *   - Footer: thin event-feed strip
+ *
+ * Subsequent refetches do NOT show the skeleton (React Query keeps
+ * the previous data and switches to the loading-with-data state).
+ * Only the first cold load shows skeletons.
+ */
+function BoardSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+        <div className="space-y-2">
+          <Skeleton className="h-6 w-48" />
+          <Skeleton className="h-4 w-32" />
+        </div>
+        <Skeleton className="h-24 w-32" />
+      </div>
+      <Skeleton className="h-40 w-full" />
+      <div className="flex flex-wrap gap-2 border-border/50 border-t pt-4">
+        <Skeleton className="h-9 w-16" />
+        <Skeleton className="h-9 w-16" />
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="h-9 w-24" />
+      </div>
+      <Skeleton className="h-16 w-full" />
+    </div>
   );
 }
 

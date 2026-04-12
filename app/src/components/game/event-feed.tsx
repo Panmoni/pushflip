@@ -17,13 +17,18 @@ import {
 } from "@/hooks/use-game-events";
 import { cn } from "@/lib/utils";
 
+// Theme-aware event-tag palette: light mode uses `-700` text on the
+// pale card background (passes AA), dark mode uses the original
+// `-300` shades. Border opacity unchanged because it works in both
+// modes (border on a near-white card vs near-black card both look
+// fine at /60 alpha).
 const EVENT_KIND_COLOR: Record<GameEventKind, string> = {
-  PlayerJoined: "border-emerald-400/60 text-emerald-300",
-  DeckCommitted: "border-blue-400/60 text-blue-300",
-  RoundStarted: "border-amber-400/60 text-amber-300",
-  TurnAdvanced: "border-cyan-400/60 text-cyan-300",
-  PotChanged: "border-yellow-400/60 text-yellow-300",
-  RoundEnded: "border-purple-400/60 text-purple-300",
+  PlayerJoined: "border-emerald-400/60 text-emerald-700 dark:text-emerald-300",
+  DeckCommitted: "border-blue-400/60 text-blue-700 dark:text-blue-300",
+  RoundStarted: "border-amber-400/60 text-amber-700 dark:text-amber-300",
+  TurnAdvanced: "border-cyan-400/60 text-cyan-700 dark:text-cyan-300",
+  PotChanged: "border-yellow-500/60 text-yellow-700 dark:text-yellow-300",
+  RoundEnded: "border-purple-400/60 text-purple-700 dark:text-purple-300",
 };
 
 export interface EventFeedProps {

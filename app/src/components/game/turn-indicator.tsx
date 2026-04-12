@@ -10,6 +10,7 @@
  */
 
 import type { Address } from "@solana/kit";
+import { motion } from "motion/react";
 
 import { cn } from "@/lib/utils";
 
@@ -49,30 +50,49 @@ export function TurnIndicator({
     );
   }
 
+  // motion.div for the "your turn" pulse: a subtle scale + opacity
+  // loop that draws the eye without being annoying. Replaces the
+  // earlier `animate-pulse` Tailwind built-in (which only opacities)
+  // with a richer effect. The non-isMe state renders a static div,
+  // not motion.div, so we don't pay any animation cost for the
+  // common "waiting for someone else" case.
+  if (isMe) {
+    return (
+      <motion.div
+        animate={{ scale: [1, 1.025, 1], opacity: [0.95, 1, 0.95] }}
+        className={cn(
+          "rounded-md border-2 border-amber-500 bg-amber-100/70 px-3 py-2 text-center text-amber-900 text-sm dark:border-amber-400 dark:bg-amber-500/15 dark:text-amber-200",
+          className
+        )}
+        data-testid="turn-indicator"
+        transition={{
+          duration: 1.6,
+          repeat: Number.POSITIVE_INFINITY,
+          ease: "easeInOut",
+        }}
+      >
+        <span className="font-bold uppercase tracking-wider">Your turn!</span>
+      </motion.div>
+    );
+  }
+
   return (
     <div
       className={cn(
-        "rounded-md border-2 px-3 py-2 text-center text-sm transition-colors",
-        isMe
-          ? "animate-pulse border-amber-400 bg-amber-500/15 text-amber-200"
-          : "border-border bg-muted/30 text-foreground",
+        "rounded-md border-2 border-border bg-muted/30 px-3 py-2 text-center text-foreground text-sm transition-colors",
         className
       )}
       data-testid="turn-indicator"
     >
-      {isMe ? (
-        <span className="font-bold uppercase tracking-wider">Your turn!</span>
-      ) : (
-        <span>
-          Waiting for{" "}
-          {/* `title` carries the full base58 so the user can hover-verify
-              and the truncation can never produce a visual collision
-              attack (heavy-duty review #10 finding #12). */}
-          <span className="font-mono text-xs" title={activePlayer.toString()}>
-            {shortAddress(activePlayer)}
-          </span>
+      <span>
+        Waiting for{" "}
+        {/* `title` carries the full base58 so the user can hover-verify
+            and the truncation can never produce a visual collision
+            attack (heavy-duty review #10 finding #12). */}
+        <span className="font-mono text-xs" title={activePlayer.toString()}>
+          {shortAddress(activePlayer)}
         </span>
-      )}
+      </span>
     </div>
   );
 }

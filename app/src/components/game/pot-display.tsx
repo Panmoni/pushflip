@@ -45,7 +45,12 @@ export function PotDisplay({ amount, className }: PotDisplayProps) {
     <div
       aria-label={`Pot: ${formatted} FLIP`}
       className={cn(
-        "flex flex-col items-center justify-center rounded-lg border-2 border-amber-500/40 bg-linear-to-br from-amber-950/40 via-amber-900/20 to-amber-950/40 p-4 transition-transform duration-300",
+        // Theme-aware amber gradient: light mode uses a pale amber tint
+        // (amber-100/200) over a near-white card; dark mode keeps the
+        // original deep amber-950 wash. Both pass AA contrast against
+        // the foreground tokens below.
+        "flex flex-col items-center justify-center rounded-lg border-2 border-amber-500/60 bg-linear-to-br from-amber-100/80 via-amber-200/60 to-amber-100/80 p-4 transition-transform duration-300",
+        "dark:border-amber-500/40 dark:from-amber-950/40 dark:via-amber-900/20 dark:to-amber-950/40",
         pulseUp && "scale-105",
         className
       )}
@@ -54,20 +59,25 @@ export function PotDisplay({ amount, className }: PotDisplayProps) {
     >
       <span
         aria-hidden="true"
-        className="text-amber-300/80 text-xs uppercase tracking-widest"
+        className="text-amber-800 text-xs uppercase tracking-widest dark:text-amber-300/80"
       >
         Pot
       </span>
       <span
         aria-hidden="true"
         className={cn(
-          "font-bold font-mono text-3xl text-amber-200 tabular-nums",
-          pulseUp && "text-amber-100"
+          // text-2xl on the smallest viewport so the number doesn't
+          // dominate a 375px-wide pot card; expands at sm: and above.
+          "font-bold font-mono text-2xl text-amber-900 tabular-nums sm:text-3xl dark:text-amber-200",
+          pulseUp && "dark:text-amber-100"
         )}
       >
         {formatted}
       </span>
-      <span aria-hidden="true" className="text-amber-300/60 text-xs">
+      <span
+        aria-hidden="true"
+        className="text-amber-800/80 text-xs dark:text-amber-300/60"
+      >
         $FLIP
       </span>
     </div>

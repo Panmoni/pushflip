@@ -9,9 +9,27 @@
  */
 
 import type { Card } from "@pushflip/client";
+import { motion } from "motion/react";
 
 import { GameCard } from "@/components/game/card";
 import { cn } from "@/lib/utils";
+
+// Hoisted at module scope so each render of `<PlayerHand>` passes the
+// SAME object reference to Framer Motion's `animate` prop instead of a
+// fresh object literal. Framer's prop diffing is usually smart enough
+// to catch identical-shape objects, but a stable reference is cheaper
+// and removes any edge case where the animation engine could spuriously
+// re-fire the shake keyframes on a non-bust render. See 13th heavy-duty
+// review finding L2.
+//
+// Note: NOT `as const`. Framer's `TargetAndTransition` type expects a
+// mutable keyframe array, and `as const` produces `readonly [...]`
+// which is incompatible. Stability comes from the module-scope hoist
+// alone — the objects are frozen by convention (never mutated), not
+// by the type system.
+const BUST_SHAKE_ANIMATE = { x: [0, -6, 6, -6, 6, -3, 3, 0] };
+const REST_ANIMATE = { x: 0 };
+const BUST_SHAKE_TRANSITION = { duration: 0.5, ease: "easeOut" as const };
 
 export interface PlayerHandProps {
   /** The player's display name (truncated wallet address or "House"). */
@@ -59,15 +77,24 @@ export function PlayerHand({
   const scoreNumber = typeof score === "bigint" ? Number(score) : score;
 
   return (
-    <div
+    // motion.div: shake left-right when `bust` flips false → true.
+    // The animation is keyed on `bust` (via the `animate` prop) so
+    // each transition into bust state triggers a fresh keyframe run.
+    // Players who never bust never see the animation; players who
+    // bust once see it once. Cleanup is automatic when the component
+    // unmounts.
+    <motion.div
+      animate={bust ? BUST_SHAKE_ANIMATE : REST_ANIMATE}
       className={cn(
         "rounded-lg border-2 p-3 transition-colors",
         isCurrentTurn
-          ? "border-amber-400/70 bg-amber-950/20"
+          ? "border-amber-500/70 bg-amber-100/60 dark:border-amber-400/70 dark:bg-amber-950/20"
           : "border-border/50 bg-card/50",
-        bust && "border-red-500/60 bg-red-950/20",
+        bust &&
+          "border-red-600/60 bg-red-100/60 dark:border-red-500/60 dark:bg-red-950/20",
         className
       )}
+      transition={BUST_SHAKE_TRANSITION}
     >
       <div className="mb-2 flex items-baseline justify-between gap-3">
         <span className="font-semibold text-sm" title={labelTitle}>
@@ -75,12 +102,12 @@ export function PlayerHand({
         </span>
         <div className="flex items-center gap-2">
           {bust && (
-            <span className="rounded bg-red-500/20 px-2 py-0.5 font-bold text-red-300 text-xs uppercase tracking-wider">
+            <span className="rounded bg-red-600/20 px-2 py-0.5 font-bold text-red-800 text-xs uppercase tracking-wider dark:bg-red-500/20 dark:text-red-300">
               Bust
             </span>
           )}
           {isCurrentTurn && !bust && (
-            <span className="rounded bg-amber-500/20 px-2 py-0.5 font-bold text-amber-300 text-xs uppercase tracking-wider">
+            <span className="rounded bg-amber-500/30 px-2 py-0.5 font-bold text-amber-900 text-xs uppercase tracking-wider dark:bg-amber-500/20 dark:text-amber-300">
               Turn
             </span>
           )}
@@ -112,6 +139,6 @@ export function PlayerHand({
           })}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

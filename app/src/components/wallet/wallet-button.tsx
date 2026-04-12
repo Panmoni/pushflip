@@ -21,6 +21,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useTokenBalance } from "@/hooks/use-token-balance";
 import { formatFlip } from "@/lib/flip-format";
 import { cn } from "@/lib/utils";
@@ -79,9 +80,13 @@ export function WalletButton({ className }: WalletButtonProps) {
         <span className="font-mono text-foreground text-sm" title={base58}>
           {shortAddress(base58)}
         </span>
-        <span className="font-mono text-amber-300 text-xs tabular-nums">
-          {balanceLabel(balanceQuery.isLoading, balance)}
-        </span>
+        {balanceQuery.isLoading ? (
+          <Skeleton className="h-3 w-16" />
+        ) : (
+          <span className="font-mono text-amber-700 text-xs tabular-nums dark:text-amber-300">
+            {balanceLabel(false, balance)}
+          </span>
+        )}
       </div>
       <Button
         aria-label="Disconnect wallet"

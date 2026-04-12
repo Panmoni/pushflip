@@ -34,6 +34,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useGameActions } from "@/hooks/use-game-actions";
 import { useTokenBalance } from "@/hooks/use-token-balance";
 import { FLIP_SCALE, formatFlip } from "@/lib/flip-format";
@@ -148,11 +149,18 @@ export function JoinGameDialog({ trigger, className }: JoinGameDialogProps) {
   // literal placeholder, and the Join button is stuck disabled with no
   // way forward — "reconnect your wallet" isn't discoverable from inside
   // the dialog. Fires in the same tick as the publicKey→null transition.
+  //
+  // Dep is `publicKeyBase58` (stable primitive), NOT `publicKey` (wallet
+  // adapter `PublicKey` object whose identity stability is undocumented
+  // and adapter-specific). See Lesson #40 — this footgun has been caught
+  // in the 8th, 10th, and 13th heavy-duty reviews now. The comparison
+  // checks the base58 string for null-or-empty because a disconnected
+  // wallet produces `publicKey?.toBase58() ?? null` → null.
   useEffect(() => {
-    if (open && publicKey === null) {
+    if (open && publicKeyBase58 === null) {
       setOpen(false);
     }
-  }, [open, publicKey]);
+  }, [open, publicKeyBase58]);
 
   // Three layered errors, checked in order so the user sees the most
   // actionable one first:
@@ -232,9 +240,13 @@ export function JoinGameDialog({ trigger, className }: JoinGameDialogProps) {
         <div className="space-y-3 py-2">
           <div className="flex items-baseline justify-between text-sm">
             <span className="text-muted-foreground">Wallet balance</span>
-            <span className="font-mono text-amber-300 tabular-nums">
-              {dialogBalanceLabel(balanceQuery.isLoading, balance)}
-            </span>
+            {balanceQuery.isLoading ? (
+              <Skeleton className="h-4 w-24" />
+            ) : (
+              <span className="font-mono text-amber-700 tabular-nums dark:text-amber-300">
+                {dialogBalanceLabel(false, balance)}
+              </span>
+            )}
           </div>
 
           <label className="block">
@@ -275,7 +287,12 @@ export function JoinGameDialog({ trigger, className }: JoinGameDialogProps) {
               <p className="text-amber-900/90 dark:text-amber-50/90">
                 Test $FLIP is mintable on devnet by the test mint authority.
                 Send your wallet address{" "}
-                <code className="rounded bg-amber-950/80 px-1 py-0.5 font-mono text-amber-50 text-xs dark:bg-black/40">
+                {/* `break-all` prevents the 44-char base58 address from
+                    overflowing horizontally on a 375px viewport — without
+                    it, the inline code block extends past the dialog's
+                    right edge and forces a horizontal scrollbar on the
+                    whole modal. */}
+                <code className="break-all rounded bg-amber-950/80 px-1 py-0.5 font-mono text-amber-50 text-xs dark:bg-black/40">
                   {publicKeyBase58}
                 </code>{" "}
                 to the maintainer and ask them to run:

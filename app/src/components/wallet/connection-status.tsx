@@ -25,10 +25,13 @@ const STATUS_DOT = {
   disconnected: "bg-red-500",
 } as const;
 
+// Theme-aware status text: light mode uses `-700` shades for AA
+// contrast on the near-white header background, dark mode keeps the
+// brighter `-400` shades.
 const STATUS_TEXT = {
   connecting: "text-muted-foreground",
-  connected: "text-emerald-400",
-  disconnected: "text-red-400",
+  connected: "text-emerald-700 dark:text-emerald-400",
+  disconnected: "text-red-700 dark:text-red-400",
 } as const;
 
 export interface ConnectionStatusProps {

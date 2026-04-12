@@ -17,14 +17,12 @@
  */
 
 import type { WalletError } from "@solana/wallet-adapter-base";
-import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
 import {
   WalletProvider as BaseWalletProvider,
   ConnectionProvider,
 } from "@solana/wallet-adapter-react";
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
-import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
 import { type ReactNode, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 
@@ -35,14 +33,30 @@ interface WalletProviderProps {
 }
 
 export function WalletProvider({ children }: WalletProviderProps) {
-  // Memoized so the wallet adapter doesn't re-instantiate on every render.
-  // Wallets supporting the Wallet Standard (most modern Solana wallets,
-  // including Phantom 2024+ and Solflare 2024+) will be auto-detected via
-  // window.navigator; the explicit adapters below are legacy fallbacks.
-  const wallets = useMemo(
-    () => [new PhantomWalletAdapter(), new SolflareWalletAdapter()],
-    []
-  );
+  // Empty wallets array — every modern Solana wallet (Phantom 2024+,
+  // Solflare 2024+, Backpack, Glow, ...) registers itself via the
+  // Wallet Standard protocol on `window.navigator.wallets`, and
+  // `@solana/wallet-adapter-react@0.15.30+` discovers them
+  // automatically without needing explicit adapter constructors.
+  //
+  // Earlier versions of this provider passed
+  // `[new PhantomWalletAdapter(), new SolflareWalletAdapter()]` here,
+  // which produced two console warnings on every page load:
+  //
+  //   "Phantom was registered as a Standard Wallet. The Wallet
+  //    Adapter for Phantom can be removed from your app."
+  //   "Solflare was registered as a Standard Wallet. The Wallet
+  //    Adapter for Solflare can be removed from your app."
+  //
+  // Removing the explicit adapters drops both warnings, slims the
+  // bundle (the `@solana/wallet-adapter-phantom` and
+  // `@solana/wallet-adapter-solflare` packages can also be removed
+  // from package.json in a follow-up — they're now unused).
+  //
+  // The memoized empty array still gets a stable reference so
+  // `BaseWalletProvider` doesn't tear down its internal state on
+  // every render.
+  const wallets = useMemo(() => [], []);
 
   const onError = useCallback((error: WalletError) => {
     // Surface adapter errors as toasts so the user sees them. The wallet

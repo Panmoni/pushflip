@@ -106,7 +106,10 @@
       "Bash(pnpm --filter @pushflip/app exec biome check --write src/hooks/use-theme.ts src/lib/flip-format.ts src/components/game/join-game-dialog.tsx)",
       "Bash(timeout 8 pnpm --filter @pushflip/app exec vite)",
       "Bash(pnpm --filter @pushflip/app exec biome check --write src/lib/wallet-bridge.ts src/lib/tx-error.ts src/components/wallet/cluster-hint.tsx src/hooks/use-game-actions.ts src/app.tsx)",
-      "Bash(pnpm --filter @pushflip/app exec biome check --write src/lib/wallet-bridge.ts)"
+      "Bash(pnpm --filter @pushflip/app exec biome check --write src/lib/wallet-bridge.ts)",
+      "Bash(pnpm --filter @pushflip/app exec biome check --write src/components/game/event-feed.tsx)",
+      "Bash(pnpm --filter @pushflip/app add motion)",
+      "Bash(pnpm --filter @pushflip/app exec biome check --write src/components/game/turn-indicator.tsx src/components/game/player-hand.tsx src/components/game/card.tsx)"
     ],
     "deny": [
       "Bash(rm -rf *)",
@@ -134,6 +137,10 @@
           {
             "type": "command",
             "command": ".claude/hooks/log-commands.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/protect-commit.sh"
           },
           {
             "type": "command",

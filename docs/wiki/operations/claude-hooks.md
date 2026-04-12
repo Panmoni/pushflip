@@ -1,7 +1,7 @@
 ---
 title: Claude Code Hooks
 diataxis_type: reference
-last_compiled: 2026-04-11
+last_compiled: 2026-04-12
 ---
 
 # Claude Code Hooks
@@ -33,6 +33,7 @@ All hooks live in [.claude/hooks/](https://github.com/Panmoni/pushflip/blob/main
 | [protect-files.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/protect-files.sh) | PreToolUse | `Edit\|Write\|MultiEdit` | Blocks edits to protected paths (exit 2). Resolves symlinks before matching. |
 | [block-dangerous.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/block-dangerous.sh) | PreToolUse | `Bash` | Blocks destructive commands AND Bash-level writes to protected paths (exit 2) |
 | [log-commands.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/log-commands.sh) | PreToolUse | `Bash` | Appends every Bash command to `.claude/command-log.txt` (0600, best-effort redacted) |
+| [protect-commit.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/protect-commit.sh) | PreToolUse | `Bash` | Runs on `git commit` commands only. Inspects `git diff --cached --name-only` and blocks (exit 2) if any protected path is in the index. Closes the "IDE auto-staged notes.md and `git add X && git commit` swept it up" failure mode. |
 | [pre-pr-gate.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/pre-pr-gate.sh) | PreToolUse | `Bash` | Runs `cargo test -p pushflip` with a 5-minute timeout before `gh pr create` |
 | [format.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/format.sh) | PostToolUse | `Edit\|Write\|MultiEdit` | `rustfmt` / `prettier` on the edited file |
 | [lint.sh](https://github.com/Panmoni/pushflip/blob/main/.claude/hooks/lint.sh) | PostToolUse | `Edit\|Write\|MultiEdit` | `cargo check` / `eslint` feedback into Claude's context |

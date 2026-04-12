@@ -1,102 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="PushFlip logo">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PushFlip icon">
   <title>PushFlip</title>
-  <desc>A hand of four playing cards fanned across a dark square tile, with the pushflip wordmark below.</desc>
+  <desc>Minimal single-card icon for favicons and navigation.</desc>
   <defs>
-    <linearGradient id="pfBrand" x1="0%" y1="50%" x2="100%" y2="50%">
+    <linearGradient id="cardFace" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f0f0f4"/>
+    </linearGradient>
+    <linearGradient id="spadeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#9945ff"/>
       <stop offset="100%" stop-color="#14f195"/>
     </linearGradient>
-    <linearGradient id="pfCardFace" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#1a1a2e"/>
-      <stop offset="100%" stop-color="#12121a"/>
-    </linearGradient>
-    <radialGradient id="pfGlow" cx="50%" cy="30%" r="75%">
-      <stop offset="0%" stop-color="#9945ff" stop-opacity="0.22"/>
-      <stop offset="100%" stop-color="#9945ff" stop-opacity="0"/>
-    </radialGradient>
   </defs>
 
-  <!-- Full-bleed dark square: no border, no rounding, no transparent edges -->
-  <rect width="512" height="512" fill="#0a0a0f"/>
+  <!-- Single card, centered, no tilt — reads cleanly at 16×16 -->
+  <rect x="106" y="46" width="300" height="420" rx="28"
+        fill="url(#cardFace)" stroke="#d0d0d8" stroke-width="3"/>
 
-  <!-- Subtle grid (matches the site) -->
-  <g stroke="#9945ff" stroke-opacity="0.06" stroke-width="1">
-    <line x1="0" y1="64"  x2="512" y2="64"/>
-    <line x1="0" y1="128" x2="512" y2="128"/>
-    <line x1="0" y1="192" x2="512" y2="192"/>
-    <line x1="0" y1="256" x2="512" y2="256"/>
-    <line x1="0" y1="320" x2="512" y2="320"/>
-    <line x1="0" y1="384" x2="512" y2="384"/>
-    <line x1="0" y1="448" x2="512" y2="448"/>
-    <line x1="64"  y1="0" x2="64"  y2="512"/>
-    <line x1="128" y1="0" x2="128" y2="512"/>
-    <line x1="192" y1="0" x2="192" y2="512"/>
-    <line x1="256" y1="0" x2="256" y2="512"/>
-    <line x1="320" y1="0" x2="320" y2="512"/>
-    <line x1="384" y1="0" x2="384" y2="512"/>
-    <line x1="448" y1="0" x2="448" y2="512"/>
-  </g>
-
-  <!-- Purple radial glow -->
-  <rect width="512" height="512" fill="url(#pfGlow)"/>
-
-  <!-- ================================================================
-       Hand of cards — four cards fanned from a pivot below the canvas.
-       Drawn back-to-front (leftmost → rightmost) so the rightmost card
-       sits on top, like a right-handed poker fan. Each card shows its
-       suit at the top-left corner so the back three aren't hidden.
-       ================================================================ -->
-
-  <!-- Card 1 — ♠ spade, leftmost, rotated -14° -->
-  <g transform="rotate(-14 256 650)">
-    <rect x="186" y="130" width="140" height="200" rx="14"
-          fill="url(#pfCardFace)" stroke="#33334a" stroke-width="2"/>
-    <text x="204" y="168"
-          font-family="Georgia, 'Times New Roman', serif"
-          font-size="38" fill="#e0e0e8"
-          text-anchor="middle" dominant-baseline="central">&#9824;</text>
-  </g>
-
-  <!-- Card 2 — ♥ heart, -5° -->
-  <g transform="rotate(-5 256 650)">
-    <rect x="186" y="130" width="140" height="200" rx="14"
-          fill="url(#pfCardFace)" stroke="#33334a" stroke-width="2"/>
-    <text x="204" y="168"
-          font-family="Georgia, 'Times New Roman', serif"
-          font-size="38" fill="#e0e0e8"
-          text-anchor="middle" dominant-baseline="central">&#9829;</text>
-  </g>
-
-  <!-- Card 3 — ♦ diamond, +5° -->
-  <g transform="rotate(5 256 650)">
-    <rect x="186" y="130" width="140" height="200" rx="14"
-          fill="url(#pfCardFace)" stroke="#33334a" stroke-width="2"/>
-    <text x="204" y="168"
-          font-family="Georgia, 'Times New Roman', serif"
-          font-size="38" fill="#e0e0e8"
-          text-anchor="middle" dominant-baseline="central">&#9830;</text>
-  </g>
-
-  <!-- Card 4 — ♣ club, rightmost, +14° (fully visible, on top of the fan) -->
-  <g transform="rotate(14 256 650)">
-    <rect x="186" y="130" width="140" height="200" rx="14"
-          fill="url(#pfCardFace)" stroke="#33334a" stroke-width="2"/>
-    <text x="204" y="168"
-          font-family="Georgia, 'Times New Roman', serif"
-          font-size="38" fill="#e0e0e8"
-          text-anchor="middle" dominant-baseline="central">&#9827;</text>
-    <!-- Center pip on the top card for visual weight -->
-    <text x="256" y="250"
-          font-family="Georgia, 'Times New Roman', serif"
-          font-size="72" fill="#e0e0e8" fill-opacity="0.9"
-          text-anchor="middle" dominant-baseline="central">&#9827;</text>
-  </g>
-
-  <!-- Wordmark -->
-  <text x="256" y="450"
-        font-family="'Space Grotesk', 'Helvetica Neue', Arial, sans-serif"
-        font-size="58" font-weight="700"
-        fill="url(#pfBrand)"
-        text-anchor="middle"
-        letter-spacing="-2">pushflip</text>
+  <!-- Spade as an SVG path (no font dependency) in brand purple -->
+  <path d="M256 124 C207 180 146 229 146 284 C146 319 171 344 206 344 C226 344 242 335 251 319 C248 347 242 372 226 388 L286 388 C270 372 264 347 261 319 C270 335 286 344 306 344 C341 344 366 319 366 284 C366 229 305 180 256 124Z"
+        fill="url(#spadeGrad)"/>
 </svg>

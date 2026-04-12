@@ -51,11 +51,7 @@ theme:
     - toc.follow
   icon:
     repo: fontawesome/brands/github
-  # No theme.logo: the brand logo is detailed (4 cards + wordmark) and
-  # Material renders the header logo slot at ~24px, where the detail
-  # disappears entirely. The header just shows "PushFlip Wiki" text.
-  # The favicon still uses the logo since a colored square in the
-  # browser tab is recognizable enough.
+  logo: assets/logo.svg
   favicon: assets/logo.svg
 
 extra_css:

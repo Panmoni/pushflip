@@ -20,7 +20,10 @@ function App() {
       <WalletProvider>
         <div className="flex min-h-screen flex-col bg-background text-foreground">
           <header className="flex flex-wrap items-center justify-between gap-y-2 border-border border-b px-6 py-4">
-            <h1 className="font-bold text-xl">pushflip</h1>
+            <h1 className="flex items-center gap-2 font-bold text-xl">
+              <img src="/favicon.svg" alt="PushFlip" className="h-7 w-7" />
+              pushflip
+            </h1>
             {/* Right-side action cluster. `flex-wrap` lets the group
                 drop to a second line on narrow screens where
                 <ConnectionStatus> + <ThemeToggle> + <WalletButton>

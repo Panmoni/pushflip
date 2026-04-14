@@ -32,6 +32,7 @@ import { toast } from "sonner";
 
 import { useGameSession } from "@/hooks/use-game-session";
 import { GAME_ID } from "@/lib/constants";
+import { formatFlip } from "@/lib/flip-format";
 
 export type GameEventKind =
   | "PlayerJoined"
@@ -123,8 +124,20 @@ function diffGameSessions(
 
   if (prev.potAmount !== current.potAmount && current.potAmount > 0n) {
     const direction = current.potAmount > prev.potAmount ? "↑" : "↓";
+    // Show the DELTA in human-readable $FLIP, not the raw pot base units.
+    // Before: "Pot ↑ 100000000000" (10^9 base units scaling buried in the
+    // digits, no $FLIP unit label, hard to parse at a glance).
+    // After:  "Pot ↑ 100 $FLIP (total: 100)" — `formatFlip` handles the
+    //         FLIP_SCALE division + thousands separators.
+    const delta =
+      current.potAmount > prev.potAmount
+        ? current.potAmount - prev.potAmount
+        : prev.potAmount - current.potAmount;
     out.push(
-      make("PotChanged", `Pot ${direction} ${current.potAmount.toString()}`)
+      make(
+        "PotChanged",
+        `Pot ${direction} ${formatFlip(delta)} $FLIP (total: ${formatFlip(current.potAmount)})`
+      )
     );
   }
 

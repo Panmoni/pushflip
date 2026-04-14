@@ -58,5 +58,14 @@ export const TOKEN_MINT =
 /**
  * Default game id the UI binds to. Phase 3.1 ships with a single hardcoded
  * game; multi-game discovery is a Task 3.7 polish item.
+ *
+ * - `1n` — original test-mode game, `vault_ready=false`. PDA
+ *   `Hk6RLHBZ8oppV4KtQFFRsHC21z9tCL5HYz3cLELEA64A`. Preserved for
+ *   the historical first-wallet-signed-joinRound record.
+ * - `2n` — real-stake-mode game, `vault_ready=true` (flipped
+ *   2026-04-12 via `scripts/init-vault.ts`). PDA
+ *   `6CJNFykqYCD7UWVQdijLzUvco78nJB6TDqdJcaSP1rCr`. Every joinRound
+ *   triggers an actual SPL Token transfer from the player's ATA to
+ *   the vault.
  */
-export const GAME_ID = 1n;
+export const GAME_ID = 2n;

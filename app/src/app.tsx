@@ -21,7 +21,13 @@ function App() {
         <div className="flex min-h-screen flex-col bg-background text-foreground">
           <header className="flex flex-wrap items-center justify-between gap-y-2 border-border border-b px-6 py-4">
             <h1 className="flex items-center gap-2 font-bold text-xl">
-              <img src="/favicon.svg" alt="PushFlip" className="h-7 w-7" />
+              <img
+                alt="PushFlip"
+                className="h-7 w-7"
+                height={28}
+                src="/favicon.svg"
+                width={28}
+              />
               pushflip
             </h1>
             {/* Right-side action cluster. `flex-wrap` lets the group

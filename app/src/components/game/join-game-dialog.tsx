@@ -35,6 +35,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useFaucet } from "@/hooks/use-faucet";
 import { useGameActions } from "@/hooks/use-game-actions";
 import { useTokenBalance } from "@/hooks/use-token-balance";
 import { FLIP_SCALE, formatFlip } from "@/lib/flip-format";
@@ -57,6 +58,87 @@ function dialogBalanceLabel(
     return "0 (no ATA)";
   }
   return `${formatFlip(balance)} $FLIP`;
+}
+
+/**
+ * Faucet-button label. Flat if/else avoids the `noNestedTernary` lint.
+ */
+function faucetButtonLabel(
+  isPending: boolean,
+  kind: "ok" | "rate_limited" | "error" | undefined
+): string {
+  if (isPending) {
+    return "Minting…";
+  }
+  if (kind === "ok") {
+    return "Sent ✓";
+  }
+  return "Get test $FLIP";
+}
+
+/**
+ * "Get test $FLIP" panel rendered in the no-ATA branch of the dialog.
+ * Extracted so `JoinGameDialog` stays under the cognitive-complexity
+ * threshold. Theme-aware amber palette: dark foreground on light-mode
+ * amber bg, light foreground on dark-mode amber bg (both pass AA).
+ */
+function NoAtaFaucetPanel({ recipient }: { recipient: string }) {
+  const faucet = useFaucet();
+  // Pull the result into a local `const` so TS narrowing through
+  // `result.kind === "..."` sticks inside the JSX. Property reads
+  // (`faucet.result.kind`) don't preserve narrowing across statements.
+  const result = faucet.result;
+  return (
+    <div
+      aria-live="polite"
+      className="space-y-2 rounded border border-amber-500/60 bg-amber-100/70 p-3 text-sm dark:border-amber-400/50 dark:bg-amber-500/10"
+    >
+      <p className="font-semibold text-amber-900 dark:text-amber-100">
+        You don't have a $FLIP token account yet.
+      </p>
+      {result?.kind === "ok" ? (
+        <p className="text-amber-900/90 dark:text-amber-50/90">
+          Sent {result.amountWholeFlip} test $FLIP to your wallet.{" "}
+          <a
+            className="underline"
+            href={result.explorerUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            View tx
+          </a>
+          . It should appear in a moment — if not, close and reopen this dialog.
+        </p>
+      ) : (
+        <p className="text-amber-900/90 dark:text-amber-50/90">
+          Click below to mint yourself some test $FLIP on devnet. The faucet
+          pays all fees, so you don't need any SOL.
+        </p>
+      )}
+      {result?.kind === "rate_limited" && (
+        <p className="text-amber-900/90 dark:text-amber-50/90">
+          {result.message}
+        </p>
+      )}
+      {result?.kind === "error" && (
+        <p className="text-destructive">Faucet error: {result.message}</p>
+      )}
+      <Button
+        className="w-full"
+        disabled={faucet.isPending || result?.kind === "ok"}
+        onClick={() => {
+          faucet.request(recipient).catch(() => {
+            // The mutation's `result` union already carries every terminal
+            // state (error/rate_limited/ok). Throwing on top would
+            // double-report.
+          });
+        }}
+        variant="default"
+      >
+        {faucetButtonLabel(faucet.isPending, result?.kind)}
+      </Button>
+    </div>
+  );
 }
 
 export interface JoinGameDialogProps {
@@ -271,40 +353,7 @@ export function JoinGameDialog({ trigger, className }: JoinGameDialogProps) {
           </label>
 
           {formError === "no-ata" && publicKeyBase58 !== null ? (
-            // Theme-aware palette: in light mode the text sits on a very
-            // pale amber background so the foreground must be DARK amber
-            // (900/800) to pass contrast. In dark mode the same box lives
-            // on a near-black background, so the text flips to LIGHT amber
-            // (100/50). The `<code>` + `<pre>` blocks keep their dark
-            // backgrounds in both modes so they read like terminal output.
-            <div
-              aria-live="polite"
-              className="space-y-2 rounded border border-amber-500/60 bg-amber-100/70 p-3 text-sm dark:border-amber-400/50 dark:bg-amber-500/10"
-            >
-              <p className="font-semibold text-amber-900 dark:text-amber-100">
-                You don't have a $FLIP token account yet.
-              </p>
-              <p className="text-amber-900/90 dark:text-amber-50/90">
-                Test $FLIP is mintable on devnet by the test mint authority.
-                Send your wallet address{" "}
-                {/* `break-all` prevents the 44-char base58 address from
-                    overflowing horizontally on a 375px viewport — without
-                    it, the inline code block extends past the dialog's
-                    right edge and forces a horizontal scrollbar on the
-                    whole modal. */}
-                <code className="break-all rounded bg-amber-950/80 px-1 py-0.5 font-mono text-amber-50 text-xs dark:bg-black/40">
-                  {publicKeyBase58}
-                </code>{" "}
-                to the maintainer and ask them to run:
-              </p>
-              <pre className="overflow-x-auto rounded bg-amber-950/90 p-2 font-mono text-amber-50 text-xs dark:bg-black/50">
-                {`pnpm --filter @pushflip/scripts mint-test-flip \\\n  --to ${publicKeyBase58}`}
-              </pre>
-              <p className="text-amber-900/80 text-xs dark:text-amber-100/70">
-                A self-service in-app faucet is tracked as a Phase 4 task — see
-                EXECUTION_PLAN.md.
-              </p>
-            </div>
+            <NoAtaFaucetPanel recipient={publicKeyBase58} />
           ) : (
             formError &&
             formError !== "no-ata" && (

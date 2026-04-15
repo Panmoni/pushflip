@@ -7,7 +7,6 @@
  * game id the UI binds to, network selection, etc.
  */
 
-import type { Address } from "@solana/kit";
 
 /**
  * Devnet RPC HTTP endpoint. Used by both the wallet adapter's
@@ -48,12 +47,12 @@ export const RPC_WS_ENDPOINT: string =
   deriveWsEndpoint(RPC_ENDPOINT);
 
 /**
- * Test $FLIP mint on devnet. Mirrors `TEST_FLIP_MINT` in
- * scripts/devnet-config.ts. Decimals: 9. Mint authority: local CLI wallet.
- * Anyone can spin up a fresh mint with `spl-token create-token --decimals 9`.
+ * Test `$FLIP` mint on devnet. Re-exported from `@pushflip/client` so
+ * there is exactly one source of truth; no hardcoding here.
+ * (16th heavy-duty review M1 — previously triplicated across the app,
+ * the faucet, and `scripts/devnet-config.ts`.)
  */
-export const TOKEN_MINT =
-  "2KqqB7SRVaD98ZbVaiRWirxbaJv5ryNzkDRGweBZVryF" as Address;
+export { TEST_FLIP_MINT as TOKEN_MINT } from "@pushflip/client";
 
 /**
  * Default game id the UI binds to. Phase 3.1 ships with a single hardcoded

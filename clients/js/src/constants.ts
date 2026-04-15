@@ -9,6 +9,21 @@ import type { Address } from "@solana/kit";
 export const PUSHFLIP_PROGRAM_ID =
   "HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px" as Address;
 
+/**
+ * Test `$FLIP` mint on devnet. Single source of truth — mirrored by
+ * `scripts/devnet-config.ts::TEST_FLIP_MINT` and `app/src/lib/constants.ts::TOKEN_MINT`
+ * (both of which re-export this constant; do not hardcode separately).
+ *
+ * - Decimals: 9
+ * - Mint authority: local CLI wallet (3XXMLDEf2DDdmgR978U8T5GhFLnxDNDUcJ2ETDw2bUWp)
+ * - Created: 2026-04-10 (Task 3.A.2 setup)
+ *
+ * Promotion to a permanent mint with metadata + multisig authority is
+ * tracked as Pre-Mainnet 5.0.6 in docs/EXECUTION_PLAN.md.
+ */
+export const TEST_FLIP_MINT =
+  "2KqqB7SRVaD98ZbVaiRWirxbaJv5ryNzkDRGweBZVryF" as Address;
+
 /** SPL Token program */
 export const TOKEN_PROGRAM_ID =
   "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;

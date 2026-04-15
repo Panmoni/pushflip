@@ -1,0 +1,36 @@
+{
+  "name": "@pushflip/faucet",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Self-service test-$FLIP faucet for pushflip devnet. POST /faucet mints test tokens to a recipient wallet; the service pays fees so brand-new wallets with 0 SOL still work (Pre-Mainnet 5.0.7).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src/",
+    "lint:fix": "biome check --fix src/"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.0",
+    "@pushflip/client": "workspace:*",
+    "@solana-program/token": "^0.13.0",
+    "@solana/kit": "^6.8.0",
+    "dotenv": "^17.0.0",
+    "hono": "^4.10.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.11",
+    "@types/node": "^24.12.2",
+    "tsx": "^4.19.0",
+    "typescript": "~6.0.2",
+    "ultracite": "^7.4.4"
+  }
+}

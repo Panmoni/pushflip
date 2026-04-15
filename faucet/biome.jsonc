@@ -1,0 +1,8 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.11/schema.json",
+  "extends": ["ultracite/biome/core"],
+  "vcs": { "enabled": false, "clientKind": "git", "useIgnoreFile": false },
+  "files": {
+    "includes": ["!dist", "!node_modules"]
+  }
+}

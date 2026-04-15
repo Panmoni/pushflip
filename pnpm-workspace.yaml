@@ -5,3 +5,4 @@ packages:
   - clients/js
   - zk-circuits
   - scripts
+  - faucet

@@ -175,21 +175,25 @@ interface UseGameActionsResult {
  */
 export function useGameActions(gameId: bigint = GAME_ID): UseGameActionsResult {
   const { publicKey, signTransaction } = useWallet();
+  // `publicKey` is an object reference whose identity changes every
+  // render of the wallet-adapter context. Memoize once into a stable
+  // base58 string for use in dep arrays — Lesson #40 / Pre-Mainnet 5.0.8.
+  const publicKeyBase58 = publicKey?.toBase58() ?? null;
   const queryClient = useQueryClient();
 
   const invalidateGameAndPlayer = useCallback(() => {
-    const playerBase58 = publicKey?.toBase58() ?? null;
     queryClient.invalidateQueries({ queryKey: gameSessionQueryKey(gameId) });
     queryClient.invalidateQueries({
-      queryKey: playerStateQueryKey(gameId, playerBase58),
+      queryKey: playerStateQueryKey(gameId, publicKeyBase58),
     });
-  }, [gameId, publicKey, queryClient]);
+  }, [gameId, publicKeyBase58, queryClient]);
 
   /**
    * Run a single-instruction action: build the message, sign + send via
    * the wallet bridge, toast the result on either success or failure,
    * invalidate caches on success.
    */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: depend on `publicKeyBase58` (stable string) instead of `publicKey` (object identity changes every render of the wallet adapter context). Lesson #40 / Pre-Mainnet 5.0.8 — the local plugin `biome-plugins/no-publickey-in-hook-deps.grit` is the authoritative rule here.
   const runAction = useCallback(
     async (
       label: string,
@@ -254,7 +258,12 @@ export function useGameActions(gameId: bigint = GAME_ID): UseGameActionsResult {
         closeGroup();
       }
     },
-    [publicKey, signTransaction, invalidateGameAndPlayer]
+    // Track the wallet by its base58 identity (stable string) — the
+    // `publicKey` object reference changes every render of the wallet
+    // adapter context, which would invalidate this callback every render
+    // and re-create every downstream useCallback that depends on it.
+    // Lesson #40 / Pre-Mainnet 5.0.8.
+    [publicKeyBase58, signTransaction, invalidateGameAndPlayer]
   );
 
   // --- Mutations (one per action so React Query exposes individual loading state) ---

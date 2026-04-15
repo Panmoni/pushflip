@@ -69,16 +69,19 @@ export interface ClusterHintProps {
 
 export function ClusterHint({ className }: ClusterHintProps) {
   const { publicKey } = useWallet();
+  const publicKeyBase58 = publicKey?.toBase58() ?? null;
   const [dismissed, setDismissed] = useState<boolean>(readDismissed);
   const [showDetails, setShowDetails] = useState(false);
 
   // When a wallet connects, re-read the dismiss state in case it was
-  // written in another tab or an earlier mount cycle.
+  // written in another tab or an earlier mount cycle. We depend on the
+  // base58 string (stable identity) instead of the publicKey object
+  // (new identity every render) — Lesson #40 / Pre-Mainnet 5.0.8.
   useEffect(() => {
-    if (publicKey !== null) {
+    if (publicKeyBase58 !== null) {
       setDismissed(readDismissed());
     }
-  }, [publicKey]);
+  }, [publicKeyBase58]);
 
   const handleDismiss = useCallback(() => {
     setDismissed(true);

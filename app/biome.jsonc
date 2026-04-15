@@ -8,5 +8,6 @@
       "!src/components/ui",
       "!src/lib/utils.ts"
     ]
-  }
+  },
+  "plugins": ["./biome-plugins/no-publickey-in-hook-deps.grit"]
 }

@@ -1,0 +1,36 @@
+// Pre-Mainnet 5.0.8 — flag the wallet `publicKey` object-identity footgun.
+//
+// `useWallet().publicKey` is an OBJECT reference. Its identity changes on
+// every render of the wallet-adapter context provider, so listing it in a
+// React hook dependency array (`useEffect`, `useMemo`, `useCallback`,
+// `useQuery`) silently re-fires the hook on every render — the exact
+// failure mode behind Lesson #40 in EXECUTION_PLAN.md, which has now
+// surfaced THREE times across reviews #6, #10, and #13.
+//
+// The fix is to derive a stable string and depend on that:
+//
+//   const publicKeyBase58 = publicKey?.toBase58() ?? null;
+//   useEffect(() => { ... }, [publicKeyBase58]);
+//
+// This rule flags any hook call whose dependency array contains the
+// bare identifier `publicKey`. False positives (a local variable
+// happens to be named `publicKey` AND it's a string AND it's stable)
+// are vanishingly rare; the fix in those cases is a one-line rename.
+//
+// KNOWN BLINDSPOT: `[publicKey.toBase58()]` is also a Lesson #40
+// footgun — the method call creates a new string every render, so
+// the hook still re-fires. GritQL's identifier matching doesn't
+// catch the member-expression form with this pattern, and expanding
+// the pattern risks false positives. Guard against future
+// reintroduction via a grep check in the pre-pr gate:
+//   grep -rn '\[publicKey\.toBase58()' app/src && exit 1
+
+`$hook($_callback, $deps)` where {
+    $hook <: or { `useEffect`, `useMemo`, `useCallback`, `useQuery` },
+    $deps <: contains `publicKey`,
+    register_diagnostic(
+        span = $deps,
+        message = "Wallet `publicKey` is an object reference; use `publicKeyBase58` (or another stable string) in hook deps. See Pre-Mainnet 5.0.8 / Lesson #40.",
+        severity = "error"
+    )
+}

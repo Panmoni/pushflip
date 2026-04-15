@@ -1,7 +1,7 @@
 ---
 title: Glossary
 diataxis_type: reference
-last_compiled: 2026-04-11
+last_compiled: 2026-04-15
 related_wiki:
   - architecture/index.md
   - architecture/game-session-byte-layout.md
@@ -115,3 +115,11 @@ A constant in [`@pushflip/client`](https://github.com/Panmoni/pushflip/blob/main
 ### `turn_order`
 
 A 4-element array of pubkeys inside the [`GameSession`](#gamesession) account. Defines the seat order for the game. Filled progressively as players call `join_round` (the first joiner takes seat 0, etc.). Empty seats are zero-padded. The `currentTurnIndex` field points at the active player; on `stay`, the index advances modulo `playerCount` to the next still-active player.
+
+### `round_active`
+
+A boolean flag in [`GameSession`](#gamesession). `true` between `start_round` and `end_round`; `false` otherwise. Gates most gameplay instructions (`hit`, `stay`, the two burn instructions) — they reject with `RoundNotActive` unless it's true. Also gates `claim_bounty` — bounties can only be claimed while `round_active == false` (heavy-duty review #5 fix M1, prevents a first-mover from sniping a SURVIVOR bounty before other players act).
+
+### `STAYED` / `BUST`
+
+Values of `PlayerState.inactive_reason`. When a player's turn ends, `is_active` flips to false and `inactive_reason` records how: `STAYED` (they called `stay`) or `BUST` (they busted on a `hit`). `end_round` considers only `STAYED` players for the win — a busted player's score is never read. A player can also become inactive via `leave_game` (which closes their `PlayerState` account entirely) or `burn_second_chance` (which re-sets `is_active=true` and clears the BUST marker).

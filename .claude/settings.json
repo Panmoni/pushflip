@@ -109,7 +109,9 @@
       "Bash(pnpm --filter @pushflip/app exec biome check --write src/lib/wallet-bridge.ts)",
       "Bash(pnpm --filter @pushflip/app exec biome check --write src/components/game/event-feed.tsx)",
       "Bash(pnpm --filter @pushflip/app add motion)",
-      "Bash(pnpm --filter @pushflip/app exec biome check --write src/components/game/turn-indicator.tsx src/components/game/player-hand.tsx src/components/game/card.tsx)"
+      "Bash(pnpm --filter @pushflip/app exec biome check --write src/components/game/turn-indicator.tsx src/components/game/player-hand.tsx src/components/game/card.tsx)",
+      "Bash(pnpm --filter @pushflip/scripts smoke-test)",
+      "Bash(pnpm --filter @pushflip/scripts smoke-test-tokens)"
     ],
     "deny": [
       "Bash(rm -rf *)",

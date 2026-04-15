@@ -30,26 +30,9 @@
 import {
   type Address,
   type KeyPairSigner,
-  type Rpc,
-  type RpcSubscriptions,
-  type SolanaRpcApi,
-  type SolanaRpcSubscriptionsApi,
   appendTransactionMessageInstruction,
-  appendTransactionMessageInstructions,
-  assertIsTransactionWithBlockhashLifetime,
-  createKeyPairSignerFromBytes,
-  createSolanaRpc,
-  createSolanaRpcSubscriptions,
-  createTransactionMessage,
-  devnet,
   generateKeyPairSigner,
-  getSignatureFromTransaction,
   lamports,
-  pipe,
-  sendAndConfirmTransactionFactory,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
-  signTransactionMessageWithSigners,
 } from "@solana/kit";
 import { getSetComputeUnitLimitInstruction } from "@solana-program/compute-budget";
 import { getTransferSolInstruction } from "@solana-program/system";
@@ -74,14 +57,25 @@ import {
 } from "@pushflip/client";
 import { Dealer } from "@pushflip/dealer";
 
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { resolve } from "node:path";
+
+import {
+  type RpcContext,
+  assertCuBudget,
+  c,
+  fail,
+  info,
+  loadCliKeypair,
+  makeDevnetContext,
+  ok,
+  randomGameId,
+  retry,
+  sendTx,
+  step,
+} from "./lib/script-helpers";
 
 // --- Config ---
 
-const DEVNET_RPC_URL = "https://api.devnet.solana.com";
-const DEVNET_WS_URL = "wss://api.devnet.solana.com";
 const REPO_ROOT = resolve(import.meta.dirname, "..");
 const ZK_BUILD_DIR = resolve(REPO_ROOT, "zk-circuits/build");
 const DEALER_CONFIG = {
@@ -105,108 +99,19 @@ const PLAYER_FUNDING_LAMPORTS = 5_000_000n; // 0.005 SOL per player
 const HIT_COMPUTE_LIMIT = 400_000;
 const COMMIT_DECK_COMPUTE_LIMIT = 400_000;
 
-// --- Helpers ---
-
-const c = {
-  reset: "\x1b[0m",
-  bold: "\x1b[1m",
-  dim: "\x1b[2m",
-  green: "\x1b[32m",
-  red: "\x1b[31m",
-  yellow: "\x1b[33m",
-  blue: "\x1b[34m",
-  cyan: "\x1b[36m",
-};
-
-function step(n: number, label: string): void {
-  console.log(`\n${c.bold}${c.cyan}[${n}]${c.reset} ${c.bold}${label}${c.reset}`);
-}
-
-function ok(msg: string): void {
-  console.log(`  ${c.green}✓${c.reset} ${msg}`);
-}
-
-function info(msg: string): void {
-  console.log(`  ${c.dim}${msg}${c.reset}`);
-}
-
-function fail(msg: string): never {
-  console.log(`  ${c.red}✗${c.reset} ${msg}`);
-  process.exit(1);
-}
-
-/**
- * Retry a flaky async operation up to `attempts` times with a small
- * exponential backoff. Devnet RPC occasionally drops connections mid-stream
- * with `SocketError: other side closed` and retries clear it instantly.
- */
-async function retry<T>(
-  label: string,
-  fn: () => Promise<T>,
-  attempts: number = 4,
-): Promise<T> {
-  let lastErr: unknown;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      const msg = err instanceof Error ? err.message : String(err);
-      console.log(`  ${c.dim}retry ${i + 1}/${attempts} for ${label}: ${msg}${c.reset}`);
-      // 250ms, 500ms, 1000ms — total < 2s budget
-      await new Promise((r) => setTimeout(r, 250 * 2 ** i));
-    }
-  }
-  throw lastErr;
-}
-
-/** Random u64 game_id derived from current time + random bytes. */
-function randomGameId(): bigint {
-  const bytes = new Uint8Array(8);
-  crypto.getRandomValues(bytes);
-  let val = 0n;
-  for (const b of bytes) val = (val << 8n) | BigInt(b);
-  return val;
-}
-
-/** Load the Solana CLI default keypair as a signer. */
-async function loadCliKeypair(): Promise<KeyPairSigner> {
-  const path = resolve(homedir(), ".config/solana/id.json");
-  const bytes = new Uint8Array(JSON.parse(readFileSync(path, "utf-8")));
-  return createKeyPairSignerFromBytes(bytes);
-}
-
-interface RpcContext {
-  rpc: Rpc<SolanaRpcApi>;
-  rpcSubs: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
-  sendAndConfirm: ReturnType<typeof sendAndConfirmTransactionFactory>;
-}
-
-/** Build, sign, send, and confirm a transaction. Returns the signature. */
-async function sendTx(
-  ctx: RpcContext,
-  feePayer: KeyPairSigner,
-  instructions: Parameters<typeof appendTransactionMessageInstructions>[0],
-  // Extra signers are listed for documentation, but Kit's
-  // `signTransactionMessageWithSigners` walks the message's accounts list
-  // and resolves each `KeyPairSigner` automatically — there's no separate
-  // signers argument to pass through.
-  _signers: KeyPairSigner[] = [],
-): Promise<string> {
-  const { value: blockhash } = await ctx.rpc.getLatestBlockhash().send();
-
-  const message = pipe(
-    createTransactionMessage({ version: 0 }),
-    (m) => setTransactionMessageFeePayerSigner(feePayer, m),
-    (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
-    (m) => appendTransactionMessageInstructions(instructions, m),
-  );
-
-  const signed = await signTransactionMessageWithSigners(message);
-  assertIsTransactionWithBlockhashLifetime(signed);
-  await ctx.sendAndConfirm(signed, { commitment: "confirmed" });
-  return getSignatureFromTransaction(signed);
-}
+// CU regression budgets (Pre-Mainnet 5.0.9 PR 1 step 4). Empirically on
+// devnet post-PR 1 log emission:
+//   - commit_deck ~86K CU  (Groth16 verification dominates, variable)
+//   - hit         ~9.5K CU (Poseidon Merkle verify, stable — Lesson 2.10)
+// Budgets give ~25% headroom on hit (tight — Poseidon is stable, so
+// regressions are almost always a real problem) and ~55% on commit_deck
+// (loose — Groth16 wallclock cost varies with proof structure, and the
+// 200K fits comfortably inside the 400K tx compute limit either way). A
+// failure past these means someone re-introduced light_poseidon, broke
+// the Groth16 path, or pushed log emission past budget. Tighten as the
+// baseline stabilizes.
+const COMMIT_DECK_CU_BUDGET = 200_000;
+const HIT_CU_BUDGET = 12_000;
 
 // --- Main ---
 
@@ -217,10 +122,8 @@ async function main(): Promise<void> {
   console.log(`${c.dim}Program: ${PUSHFLIP_PROGRAM_ID}${c.reset}`);
   console.log(`${c.dim}Cluster: devnet${c.reset}`);
 
-  const rpc = createSolanaRpc(devnet(DEVNET_RPC_URL));
-  const rpcSubs = createSolanaRpcSubscriptions(devnet(DEVNET_WS_URL));
-  const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions: rpcSubs });
-  const ctx: RpcContext = { rpc, rpcSubs, sendAndConfirm };
+  const ctx: RpcContext = makeDevnetContext();
+  const { rpc } = ctx;
 
   // --- Setup: load wallet, generate ephemeral keys ---
   step(0, "Load wallet and generate ephemeral keypairs");
@@ -356,6 +259,7 @@ async function main(): Promise<void> {
   // Bump compute budget — Groth16 verification uses ~200K CU plus overhead
   const commitCuIx = getSetComputeUnitLimitInstruction({ units: COMMIT_DECK_COMPUTE_LIMIT });
   const commitSig = await sendTx(ctx, dealerSigner, [commitCuIx, commitIx], [dealerSigner]);
+  await assertCuBudget(rpc, commitSig, "commit_deck", COMMIT_DECK_CU_BUDGET);
   ok("Deck committed (Groth16 proof verified on-chain)");
   info(`tx: ${commitSig}`);
 
@@ -409,6 +313,7 @@ async function main(): Promise<void> {
   let hitSig: string;
   try {
     hitSig = await sendTx(ctx, playerA, [hitCuIx, hitIx], [playerA]);
+    await assertCuBudget(rpc, hitSig, "hit (player A)", HIT_CU_BUDGET);
   } catch (e) {
     console.log(`\n  ${c.red}${c.bold}✗ HIT FAILED${c.reset}`);
     const err = e as Error & { context?: { logs?: string[] }; cause?: Error & { context?: { code?: number } } };

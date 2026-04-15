@@ -38,25 +38,9 @@
 
 import {
   type Address,
-  type KeyPairSigner,
   type Rpc,
-  type RpcSubscriptions,
   type SolanaRpcApi,
-  type SolanaRpcSubscriptionsApi,
-  appendTransactionMessageInstructions,
-  assertIsTransactionWithBlockhashLifetime,
-  createKeyPairSignerFromBytes,
-  createSolanaRpc,
-  createSolanaRpcSubscriptions,
-  createTransactionMessage,
-  devnet,
   generateKeyPairSigner,
-  getSignatureFromTransaction,
-  pipe,
-  sendAndConfirmTransactionFactory,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
-  signTransactionMessageWithSigners,
 } from "@solana/kit";
 import { getSetComputeUnitLimitInstruction } from "@solana-program/compute-budget";
 import { getTransferSolInstruction } from "@solana-program/system";
@@ -86,16 +70,26 @@ import {
 } from "@pushflip/client";
 import { Dealer } from "@pushflip/dealer";
 
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 import { TEST_FLIP_MINT } from "./devnet-config.js";
 
+import {
+  type RpcContext,
+  c,
+  fail,
+  info,
+  loadCliKeypair,
+  makeDevnetContext,
+  ok,
+  randomGameId,
+  retry,
+  sendTx,
+  step,
+} from "./lib/script-helpers";
+
 // --- Config ---
 
-const DEVNET_RPC_URL = "https://api.devnet.solana.com";
-const DEVNET_WS_URL = "wss://api.devnet.solana.com";
 const REPO_ROOT = resolve(import.meta.dirname, "..");
 const ZK_BUILD_DIR = resolve(REPO_ROOT, "zk-circuits/build");
 const DEALER_CONFIG = {
@@ -119,93 +113,6 @@ const COMMIT_DECK_COMPUTE_LIMIT = 400_000;
 const HIT_COMPUTE_LIMIT = 400_000;
 
 // --- Helpers ---
-
-const c = {
-  reset: "\x1b[0m",
-  bold: "\x1b[1m",
-  dim: "\x1b[2m",
-  green: "\x1b[32m",
-  red: "\x1b[31m",
-  yellow: "\x1b[33m",
-  blue: "\x1b[34m",
-  cyan: "\x1b[36m",
-};
-
-function step(n: number, label: string): void {
-  console.log(`\n${c.bold}${c.cyan}[${n}]${c.reset} ${c.bold}${label}${c.reset}`);
-}
-
-function ok(msg: string): void {
-  console.log(`  ${c.green}✓${c.reset} ${msg}`);
-}
-
-function info(msg: string): void {
-  console.log(`  ${c.dim}${msg}${c.reset}`);
-}
-
-function fail(msg: string): never {
-  console.log(`  ${c.red}✗${c.reset} ${msg}`);
-  process.exit(1);
-}
-
-async function retry<T>(
-  label: string,
-  fn: () => Promise<T>,
-  attempts: number = 4,
-): Promise<T> {
-  let lastErr: unknown;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      const msg = err instanceof Error ? err.message : String(err);
-      console.log(`  ${c.dim}retry ${i + 1}/${attempts} for ${label}: ${msg}${c.reset}`);
-      await new Promise((r) => setTimeout(r, 250 * 2 ** i));
-    }
-  }
-  throw lastErr;
-}
-
-function randomGameId(): bigint {
-  const bytes = new Uint8Array(8);
-  crypto.getRandomValues(bytes);
-  let val = 0n;
-  for (const b of bytes) val = (val << 8n) | BigInt(b);
-  return val;
-}
-
-async function loadCliKeypair(): Promise<KeyPairSigner> {
-  const path = resolve(homedir(), ".config/solana/id.json");
-  const bytes = new Uint8Array(JSON.parse(readFileSync(path, "utf-8")));
-  return createKeyPairSignerFromBytes(bytes);
-}
-
-interface RpcContext {
-  rpc: Rpc<SolanaRpcApi>;
-  rpcSubs: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
-  sendAndConfirm: ReturnType<typeof sendAndConfirmTransactionFactory>;
-}
-
-async function sendTx(
-  ctx: RpcContext,
-  feePayer: KeyPairSigner,
-  instructions: Parameters<typeof appendTransactionMessageInstructions>[0],
-  // Extra signers — Kit walks the message accounts to resolve them.
-  _signers: KeyPairSigner[] = [],
-): Promise<string> {
-  const { value: blockhash } = await ctx.rpc.getLatestBlockhash().send();
-  const message = pipe(
-    createTransactionMessage({ version: 0 }),
-    (m) => setTransactionMessageFeePayerSigner(feePayer, m),
-    (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
-    (m) => appendTransactionMessageInstructions(instructions, m),
-  );
-  const signed = await signTransactionMessageWithSigners(message);
-  assertIsTransactionWithBlockhashLifetime(signed);
-  await ctx.sendAndConfirm(signed, { commitment: "confirmed" });
-  return getSignatureFromTransaction(signed);
-}
 
 /** Get the SPL token amount in a token account. Returns 0 if account doesn't exist. */
 async function tokenBalance(
@@ -232,10 +139,8 @@ async function main(): Promise<void> {
   console.log(`${c.dim}Mint:    ${TEST_FLIP_MINT}${c.reset}`);
   console.log(`${c.dim}Cluster: devnet${c.reset}`);
 
-  const rpc = createSolanaRpc(devnet(DEVNET_RPC_URL));
-  const rpcSubs = createSolanaRpcSubscriptions(devnet(DEVNET_WS_URL));
-  const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions: rpcSubs });
-  const ctx: RpcContext = { rpc, rpcSubs, sendAndConfirm };
+  const ctx: RpcContext = makeDevnetContext();
+  const { rpc } = ctx;
 
   // --- Step 0: Setup ---
   step(0, "Load wallet and generate ephemeral keypairs");

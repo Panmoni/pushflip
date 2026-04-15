@@ -40,27 +40,6 @@
  */
 
 import {
-  type Rpc,
-  type RpcSubscriptions,
-  type SolanaRpcApi,
-  type SolanaRpcSubscriptionsApi,
-  appendTransactionMessageInstructions,
-  assertIsTransactionWithBlockhashLifetime,
-  createKeyPairSignerFromBytes,
-  createSolanaRpc,
-  createSolanaRpcSubscriptions,
-  createTransactionMessage,
-  devnet,
-  getSignatureFromTransaction,
-  pipe,
-  sendAndConfirmTransactionFactory,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
-  signTransactionMessageWithSigners,
-  type KeyPairSigner,
-} from "@solana/kit";
-
-import {
   decodeGameSession,
   deriveGamePda,
   deriveVaultPda,
@@ -69,16 +48,22 @@ import {
   PUSHFLIP_PROGRAM_ID,
 } from "@pushflip/client";
 
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { resolve } from "node:path";
-
 import { TEST_FLIP_MINT } from "./devnet-config.js";
 
-// --- Config ---
+import {
+  type RpcContext,
+  c,
+  fail,
+  info,
+  loadCliKeypair,
+  makeDevnetContext,
+  ok,
+  printRpcError,
+  sendTx,
+  step,
+} from "./lib/script-helpers";
 
-const DEVNET_RPC_URL = "https://api.devnet.solana.com";
-const DEVNET_WS_URL = "wss://api.devnet.solana.com";
+// --- Config ---
 
 // `game_id` is u64. Default 1n to match `app/src/lib/constants.ts:62`.
 // Override via env var for non-default ids: `GAME_ID=42 pnpm ...`.
@@ -89,93 +74,6 @@ const GAME_ID: bigint = (() => {
 })();
 
 const TREASURY_FEE_BPS = 200; // 2%
-
-// --- Tiny logging helpers (mirror smoke-test.ts style) ---
-
-const c = {
-  reset: "\x1b[0m",
-  bold: "\x1b[1m",
-  dim: "\x1b[2m",
-  green: "\x1b[32m",
-  yellow: "\x1b[33m",
-  blue: "\x1b[34m",
-  red: "\x1b[31m",
-  cyan: "\x1b[36m",
-};
-
-function ok(msg: string): void {
-  console.log(`  ${c.green}✓${c.reset} ${msg}`);
-}
-function info(msg: string): void {
-  console.log(`  ${c.dim}${msg}${c.reset}`);
-}
-function step(n: number, label: string): void {
-  console.log(`\n${c.bold}${c.cyan}[${n}]${c.reset} ${c.bold}${label}${c.reset}`);
-}
-function fail(msg: string): never {
-  console.log(`  ${c.red}✗${c.reset} ${msg}`);
-  process.exit(1);
-}
-
-/**
- * Print rich context for an RPC / transaction error: the program's
- * custom error code (if any) and the program logs (if any). Mirrors
- * the pattern in `scripts/smoke-test.ts:413-424`. Without this, on-chain
- * failures show up as cryptic error blobs and the program logs (which
- * are the only signal you actually need to debug them) are buried.
- */
-function printRpcError(label: string, e: unknown): void {
-  console.log(`\n  ${c.red}${c.bold}✗ ${label}${c.reset}`);
-  const err = e as Error & {
-    context?: { logs?: string[] };
-    cause?: Error & { context?: { code?: number } };
-  };
-  console.log(`  ${c.red}Error: ${err.message ?? String(e)}${c.reset}`);
-  if (err.cause?.context?.code !== undefined) {
-    const code = err.cause.context.code;
-    console.log(
-      `  ${c.red}Custom program error code: ${code} (0x${code.toString(16)})${c.reset}`,
-    );
-  }
-  if (err.context?.logs && err.context.logs.length > 0) {
-    console.log(`  ${c.red}Program logs:${c.reset}`);
-    for (const line of err.context.logs) {
-      console.log(`    ${c.dim}${line}${c.reset}`);
-    }
-  }
-}
-
-// --- Wallet loading ---
-
-async function loadCliKeypair(): Promise<KeyPairSigner> {
-  const path = resolve(homedir(), ".config/solana/id.json");
-  const bytes = new Uint8Array(JSON.parse(readFileSync(path, "utf-8")));
-  return createKeyPairSignerFromBytes(bytes);
-}
-
-interface RpcContext {
-  rpc: Rpc<SolanaRpcApi>;
-  rpcSubs: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
-  sendAndConfirm: ReturnType<typeof sendAndConfirmTransactionFactory>;
-}
-
-async function sendTx(
-  ctx: RpcContext,
-  feePayer: KeyPairSigner,
-  instructions: Parameters<typeof appendTransactionMessageInstructions>[0],
-): Promise<string> {
-  const { value: blockhash } = await ctx.rpc.getLatestBlockhash().send();
-  const message = pipe(
-    createTransactionMessage({ version: 0 }),
-    (m) => setTransactionMessageFeePayerSigner(feePayer, m),
-    (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
-    (m) => appendTransactionMessageInstructions(instructions, m),
-  );
-  const signed = await signTransactionMessageWithSigners(message);
-  assertIsTransactionWithBlockhashLifetime(signed);
-  await ctx.sendAndConfirm(signed, { commitment: "confirmed" });
-  return getSignatureFromTransaction(signed);
-}
 
 // --- Main ---
 
@@ -195,10 +93,8 @@ async function main(): Promise<void> {
   console.log(`${c.dim}Cluster: devnet${c.reset}`);
   console.log(`${c.dim}Token mint: ${TEST_FLIP_MINT} (vault_ready will be false)${c.reset}`);
 
-  const rpc = createSolanaRpc(devnet(DEVNET_RPC_URL));
-  const rpcSubs = createSolanaRpcSubscriptions(devnet(DEVNET_WS_URL));
-  const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions: rpcSubs });
-  const ctx: RpcContext = { rpc, rpcSubs, sendAndConfirm };
+  const ctx: RpcContext = makeDevnetContext();
+  const { rpc } = ctx;
 
   // --- Load wallet ---
   step(0, "Load CLI wallet");

@@ -111,7 +111,9 @@
       "Bash(pnpm --filter @pushflip/app add motion)",
       "Bash(pnpm --filter @pushflip/app exec biome check --write src/components/game/turn-indicator.tsx src/components/game/player-hand.tsx src/components/game/card.tsx)",
       "Bash(pnpm --filter @pushflip/scripts smoke-test)",
-      "Bash(pnpm --filter @pushflip/scripts smoke-test-tokens)"
+      "Bash(pnpm --filter @pushflip/scripts smoke-test-tokens)",
+      "Bash(pnpm --filter @pushflip/scripts exec tsc --noEmit)",
+      "Bash(pnpm --filter @pushflip/app exec biome check app/.biome-plugins/no-publickey-in-hook-deps.grit)"
     ],
     "deny": [
       "Bash(rm -rf *)",

@@ -113,7 +113,8 @@
       "Bash(pnpm --filter @pushflip/scripts smoke-test)",
       "Bash(pnpm --filter @pushflip/scripts smoke-test-tokens)",
       "Bash(pnpm --filter @pushflip/scripts exec tsc --noEmit)",
-      "Bash(pnpm --filter @pushflip/app exec biome check app/.biome-plugins/no-publickey-in-hook-deps.grit)"
+      "Bash(pnpm --filter @pushflip/app exec biome check app/.biome-plugins/no-publickey-in-hook-deps.grit)",
+      "Bash(awk '/^### Lessons Learned/{flag=1; next} flag && /^### /{flag=0} flag' docs/EXECUTION_PLAN.md)"
     ],
     "deny": [
       "Bash(rm -rf *)",

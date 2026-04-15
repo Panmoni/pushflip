@@ -160,7 +160,7 @@ For a deeper conventions/onboarding doc see [CONTRIBUTING.md](../CONTRIBUTING.md
 | **Env vars in `app/`** | Use `import.meta.env.VITE_FOO?.trim() \|\| "default"` — **never** `??`. Add new vars to [src/vite-env.d.ts](../app/src/vite-env.d.ts). | `??` doesn't catch empty strings; `vite-env.d.ts` augmentation makes typos compile errors. See Lessons #34, #35. |
 | **Module-level long-lived resources** | Modules that open WebSockets, intervals, or OS handles should call `import.meta.hot?.invalidate()` at the top. | Vite HMR re-eval otherwise leaks the resource on every save. See [src/lib/program.ts](../app/src/lib/program.ts) and Lesson #37. |
 | **Heavy-duty reviews** | Run `/heavy-duty-review` after any non-trivial commit chain. Pass 2 (verification) MUST diff agent claims against actual file contents AND session state — Pass 1 agents lie confidently. | See Lessons #20 and #29. **Thirteen heavy-duty reviews so far**; every one has caught at least one structural bug the unit tests missed (including a Critical cross-game claim exploit, a near-miss authority gating gap, the Task 3.2 double-click double-spend pattern, the BigInt-u64 silent-wrap footgun caught FOUR times — see Lesson #42, now consolidated into `@pushflip/client::parseU64` — the 12th review's `runAction` cache-invalidation-on-failure gap now fixed via `finally`-block invalidation (Lesson #48), and the 13th review's third occurrence of the wallet `publicKey` object-identity footgun that now needs a lint rule — Lesson #49, tracked as Pre-Mainnet 5.0.8). |
-| **Pre-mainnet items** | Eight items deferred from Phase 3 to Phase 5: reclaim the oversized program data slot (Task 5.0.1), threshold randomness / decentralized dealer (Task 5.0.2), final full-scope review (Task 5.0.3), the shared `parseU64` helper + `scripts/lib/script-helpers.ts` extraction (Task 5.0.4 — added 2026-04-11 after the BigInt-u64 footgun re-occurred), the three stubbed wiki pages — Quickstart, Threat Model, Dealer Runbook (Task 5.0.5 — added 2026-04-11 with the wiki migration), promote `$FLIP` from a manual test mint to a permanent token with metadata + multisig authority (Task 5.0.6 — added 2026-04-11), a self-service test-FLIP faucet (Task 5.0.7 — added 2026-04-11), and a Biome lint rule for `useWallet().publicKey` in React hook dependency arrays (Task 5.0.8 — added 2026-04-12 after Lesson #40 surfaced its third occurrence in the 13th review). Listed at [Pre-Mainnet Checklist](#pre-mainnet-checklist-deferred-items-not-blocking-devnet). | None block devnet work. |
+| **Pre-mainnet items** | Nine items deferred from Phase 3 to Phase 5: reclaim the oversized program data slot (Task 5.0.1), threshold randomness / decentralized dealer (Task 5.0.2), final full-scope review (Task 5.0.3), the shared `parseU64` helper + `scripts/lib/script-helpers.ts` extraction (Task 5.0.4 — added 2026-04-11 after the BigInt-u64 footgun re-occurred), the three stubbed wiki pages — Quickstart, Threat Model, Dealer Runbook (Task 5.0.5 — added 2026-04-11 with the wiki migration), promote `$FLIP` from a manual test mint to a permanent token with metadata + multisig authority (Task 5.0.6 — added 2026-04-11), a self-service test-FLIP faucet (Task 5.0.7 — added 2026-04-11), a Biome lint rule for `useWallet().publicKey` in React hook dependency arrays (Task 5.0.8 — added 2026-04-12 after Lesson #40 surfaced its third occurrence in the 13th review), and replacing the state-diff event feed with on-chain `pinocchio_log` events (Task 5.0.9 — added 2026-04-12 after user directive "fuck the localstorage I want a permanent solution"; implementation in progress). Listed at [Pre-Mainnet Checklist](#pre-mainnet-checklist-deferred-items-not-blocking-devnet). | None block devnet work. |
 
 ### Where to find things in this plan
 
@@ -3052,6 +3052,62 @@ This is the same failure-mode as Lesson #42 (BigInt-u64 silent-wrap): a rule wri
 - Or (simplest): a pre-commit script that greps for the pattern. Not as precise but catches the common case.
 
 **Done when:** The rule exists, fails CI on the offending pattern, and is triggered by a sample file that would have caught the 13th review's M1 finding.
+
+##### 5.0.9: Replace state-diff event feed with on-chain `pinocchio_log` events
+
+**Context:** The current event feed at [app/src/hooks/use-game-events.ts](../app/src/hooks/use-game-events.ts) reconstructs events by diffing consecutive GameSession account snapshots observed by a single browser session. Three problems:
+
+1. **Not authoritative.** Client-authored from diffs *this browser* happened to witness. Open the app on a second device → different log. A visitor who lands mid-game sees an empty feed.
+2. **Dies on refresh.** Held in React state (`useState`); every page reload clears it. The docstring acknowledges this as a stopgap.
+3. **Can't recover "what just happened before I opened this tab?"** No way to answer "who joined" / "what was the last pot change" without someone having been running the app continuously.
+
+User directive 2026-04-12: "I want a permanent solution."
+
+**Approach:** emit structured `pinocchio_log` events at the tail of every state-changing instruction in the program, then rewrite `use-game-events.ts` to consume those events from two sources — historical backfill via `getSignaturesForAddress` + `getTransaction`, and live via `logsNotifications`. Events become time-anchored, shared, cross-device, cross-tab, refresh-surviving source of truth. Full implementation plan lives at `/home/george9874/.claude/plans/reflective-honking-riddle.md`.
+
+**Event format:** string-based, human-readable on Solana Explorer.
+```
+pushflip:<kind>:<k1>=<v1>|<k2>=<v2>|...
+```
+
+**17 event kinds** (1:1 with the 16 state-changing instructions + a second `commit_deck_root` line because the 64-char merkle-root hex plus field-name overhead exceeds `pinocchio-log`'s ~180-byte per-line budget):
+
+`initialize`, `init_vault`, `join_round`, `commit_deck`, `commit_deck_root`, `start_round`, `hit`, `stay`, `end_round`, `burn_second_chance`, `burn_scry`, `leave_game`, `close_game`, `init_bounty_board`, `add_bounty`, `claim_bounty`, `close_bounty_board`.
+
+Each line stays under 180 bytes. Values: `u8`/`u16`/`u64` as decimal strings, `Pubkey` as base58 (`pinocchio-log`'s `Argument` impl formats it off-chain at zero CU), `bool` as `true`/`false`, bytes as lowercase hex.
+
+**Phased rollout:**
+
+**PR 1 — Program side (deploy first, bake ≥24h):**
+1. New `program/src/utils/events.rs` with an `event!` macro wrapping `pinocchio_log::log!`.
+2. One `event!` call added at the successful tail of each of 16 instruction handlers (after the last state mutation, before `Ok(())` — guarantees the log only appears when the instruction succeeded).
+3. `commit_deck` splits into header + merkle-root lines.
+4. CU-regression assertion in `smoke-test.ts` (fail if any instruction drifts >10% from its pre-log baseline).
+5. Deploy via `solana program deploy` to devnet — same Program ID (`HQLeAQc84WLz8buHM5JAJGBjNJjwc6Fpxts8jSMaW3px`, BPFLoaderUpgradeable authority = CLI wallet).
+6. Run all 4 smoke tests against the new deploy, grep logs for `pushflip:*` kinds.
+
+Files: 16 instruction handlers in `program/src/instructions/` + `program/src/utils/{events.rs,mod.rs}` + `scripts/smoke-test.ts` CU assertion.
+
+**PR 2 — Frontend side (after PR 1 bakes ≥24h):**
+1. New `clients/js/src/events.ts` — pure, framework-agnostic `parseEventLog()` + `parseTransactionEvents()` helpers. Exports a new `GameEvent` interface with `id: string` (`${signature}:${logIndex}`), `kind`, `fields: Record<string, string>`, `signature`, `slot: bigint`, `logIndex`, `blockTime`. Golden-fixture tests in `clients/js/src/events.test.ts` covering all 17 kinds + negatives (non-pushflip logs, malformed fields, truncated lines, SPL-token-CPI interleaved case).
+2. New `app/src/lib/event-render.ts` — `renderEventMessage(GameEvent)` returns human-readable feed text (uses `formatFlip` + `shortAddress`).
+3. Rewritten `app/src/hooks/use-game-events.ts` — drops `diffGameSessions` entirely. Data sources: historical backfill via `rpc.getSignaturesForAddress({limit: 50})` + `rpc.getTransaction` in batches of 10, then live subscription via `rpcSubscriptions.logsNotifications({mentions: [gamePda]}, {commitment: "confirmed"})`. **CRITICAL ORDERING**: subscription opens FIRST (buffering into a Map keyed by event id), backfill runs SECOND with `until=oldestBufferedSig`, merge + dedupe at render. Opening in reverse would leave a silent gap.
+4. Minor update to `app/src/components/game/event-feed.tsx` — Explorer link per event row, skeleton rows while backfilling. `key={event.id}` still works (string instead of number).
+5. Delete old state-diff code + the chatty toast-every-event behavior. New behavior: toast only new LIVE events (not backfill).
+
+Files: `clients/js/src/events.ts` + `.test.ts` + `app/src/lib/event-render.ts` + rewritten `app/src/hooks/use-game-events.ts` + minor `app/src/components/game/event-feed.tsx`.
+
+**Sort key:** `(slot DESC, logIndex DESC)`. NOT `Date.now()` — clock skew between client mount and historical backfill would otherwise scramble order.
+
+**Highest risks:**
+- `pinocchio-log` silent line truncation at ~200 bytes → keep each line <180 bytes; `commit_deck` splits into two log calls.
+- `commit_deck` CU budget (currently ~200K) → the 2 log calls add <500 CU; tx-level compute budget already set to 300K in smoke tests.
+- Backfill → live race → subscribe-first, backfill-second with `until=oldestBufferedSig`.
+- RPC `{mentions: [pda]}` filter support varies → verify against devnet before starting PR 2; fall back to `'all'` + client-side filter if rejected.
+
+**Done when:** (a) program redeploy emits `pushflip:*` logs on every state change, verified via `solana logs` + all 4 smoke tests; (b) frontend feed reconstructs full game history across refresh, cross-tab, and fresh-device loads; (c) delta test: open app on two devices, perform a join in one, see the same event appear in both feeds within ~1s.
+
+**Full plan:** `/home/george9874/.claude/plans/reflective-honking-riddle.md` (written 2026-04-12, approved for implementation the same session).
 
 ---
 

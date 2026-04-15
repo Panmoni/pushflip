@@ -114,7 +114,19 @@
       "Bash(pnpm --filter @pushflip/scripts smoke-test-tokens)",
       "Bash(pnpm --filter @pushflip/scripts exec tsc --noEmit)",
       "Bash(pnpm --filter @pushflip/app exec biome check app/.biome-plugins/no-publickey-in-hook-deps.grit)",
-      "Bash(awk '/^### Lessons Learned/{flag=1; next} flag && /^### /{flag=0} flag' docs/EXECUTION_PLAN.md)"
+      "Bash(awk '/^### Lessons Learned/{flag=1; next} flag && /^### /{flag=0} flag' docs/EXECUTION_PLAN.md)",
+      "Bash(pnpm --filter @pushflip/faucet exec tsc --noEmit)",
+      "Bash(RPC_ENDPOINT=https://api.devnet.solana.com WS_ENDPOINT=wss://api.devnet.solana.com FAUCET_KEYPAIR_PATH=/home/george9874/.config/solana/id.json PORT=3001 timeout 8 pnpm --filter @pushflip/faucet start)",
+      "Bash(pnpm --filter @pushflip/app exec biome check src/hooks/use-faucet.ts src/components/game/join-game-dialog.tsx)",
+      "Bash(pnpm --filter @pushflip/app exec biome check --write src/hooks/use-faucet.ts src/components/game/join-game-dialog.tsx)",
+      "Bash(pnpm --filter @pushflip/app exec biome check src/components/game/join-game-dialog.tsx)",
+      "Bash(pnpm --filter @pushflip/app exec biome check --write src/components/game/join-game-dialog.tsx src/hooks/use-faucet.ts)",
+      "Bash(pnpm --filter @pushflip/app exec biome check src/components/game/join-game-dialog.tsx src/hooks/use-faucet.ts)",
+      "Bash(pnpm --filter @pushflip/app exec biome check faucet/src/)",
+      "Bash(pnpm --filter @pushflip/faucet exec typecheck)",
+      "Bash(pnpm --filter @pushflip/faucet lint)",
+      "Bash(pnpm --filter @pushflip/faucet lint:fix)",
+      "Bash(pkill -9 -f tsx)"
     ],
     "deny": [
       "Bash(rm -rf *)",
@@ -127,7 +139,8 @@
       "/home/george9874/repos/pushflip",
       "/home/george9874/repos/pushflip/clients/js/src",
       "/tmp",
-      "/home/george9874/repos/pushflip/app"
+      "/home/george9874/repos/pushflip/app",
+      "/home/george9874/repos/pushflip/faucet"
     ]
   },
   "hooks": {

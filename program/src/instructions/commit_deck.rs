@@ -3,7 +3,10 @@ use pinocchio::{error::ProgramError, AccountView, ProgramResult};
 use crate::{
     errors::PushFlipError,
     state::game_session::{GameSession, GameSessionMut, GAME_SESSION_DISCRIMINATOR},
-    utils::accounts::{verify_account_owner, verify_signer, verify_writable},
+    utils::{
+        accounts::{verify_account_owner, verify_signer, verify_writable},
+        events::HexPubkey,
+    },
     zk::{
         groth16::verify_shuffle_proof,
         verifying_key::{CANONICAL_DECK_HASH, VERIFYING_KEY_BYTES},
@@ -107,6 +110,16 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     gs.set_merkle_root(&merkle_root);
     gs.set_deck_committed(true);
     gs.set_draw_counter(0);
+
+    let logged_game_id = gs.as_ref().game_id();
+    let logged_round = gs.as_ref().round_number();
+    drop(gs_data);
+    pinocchio_log::log!(
+        "pushflip:commit_deck:game_id={}|round={}|merkle_root={}",
+        logged_game_id,
+        logged_round,
+        HexPubkey(&merkle_root)
+    );
 
     Ok(())
 }

@@ -8,6 +8,7 @@ use crate::{
     utils::{
         accounts::{verify_signer, verify_writable},
         constants::{DEFAULT_TREASURY_FEE_BPS, VAULT_SEED},
+        events::HexPubkey,
     },
     ID,
 };
@@ -137,6 +138,13 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     gs.set_treasury_fee_bps(treasury_fee_bps);
     gs.set_rollover_count(0);
     gs.set_last_action_slot(0);
+
+    pinocchio_log::log!(
+        "pushflip:initialize:authority={}|game_id={}|fee_bps={}",
+        HexPubkey(authority.address().as_array()),
+        game_id,
+        treasury_fee_bps
+    );
 
     Ok(())
 }

@@ -17,7 +17,10 @@ use crate::{
         bounty::{BountyBoardMut, BOUNTY_BOARD_DISCRIMINATOR, BOUNTY_BOARD_SIZE, BOUNTY_SEED},
         game_session::{GameSession, GAME_SESSION_DISCRIMINATOR},
     },
-    utils::accounts::{verify_account_owner, verify_signer, verify_writable},
+    utils::{
+        accounts::{verify_account_owner, verify_signer, verify_writable},
+        events::HexPubkey,
+    },
     ID,
 };
 
@@ -47,6 +50,7 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     }
 
     // --- Verify the payer is the authority of this game ---
+    let logged_game_id;
     {
         let gs_data = game_session.try_borrow()?;
         let gs = GameSession::from_bytes(&gs_data);
@@ -56,6 +60,7 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
         if gs.authority() != payer.address().as_array() {
             return Err(ProgramError::MissingRequiredSignature);
         }
+        logged_game_id = gs.game_id();
     }
 
     // --- Verify the bounty board PDA derivation ---
@@ -95,6 +100,13 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     bb.set_bump(bump);
     bb.set_game_session(&game_session_key);
     bb.set_bounty_count(0);
+    drop(bb_data);
+
+    pinocchio_log::log!(
+        "pushflip:init_bounty_board:game_id={}|board={}",
+        logged_game_id,
+        HexPubkey(bounty_board.address().as_array())
+    );
 
     Ok(())
 }

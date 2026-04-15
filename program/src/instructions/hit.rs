@@ -10,6 +10,7 @@ use crate::{
     utils::deck::DECK_SIZE,
     utils::{
         accounts::{verify_account_owner, verify_signer, verify_writable},
+        events::HexPubkey,
         scoring::check_bust,
     },
     zk::merkle::{verify_merkle_proof, MERKLE_DEPTH},
@@ -167,6 +168,8 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     }
 
     // --- Update game state ---
+    let logged_game_id;
+    let logged_round;
     {
         let mut gs_data = game_session.try_borrow_mut()?;
         let mut gs = GameSessionMut::from_bytes(&mut gs_data);
@@ -176,7 +179,21 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
         if is_bust {
             advance_turn(&mut gs, player_count);
         }
+
+        logged_game_id = gs.as_ref().game_id();
+        logged_round = gs.as_ref().round_number();
     }
+
+    pinocchio_log::log!(
+        "pushflip:hit:player={}|game_id={}|round={}|card_type={}|value={}|suit={}|bust={}",
+        HexPubkey(&player_address),
+        logged_game_id,
+        logged_round,
+        card_type,
+        card_value,
+        card_suit,
+        is_bust
+    );
 
     Ok(())
 }

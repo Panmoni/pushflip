@@ -96,6 +96,9 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
     }
 
     // --- Update GameSession ---
+    let logged_game_id;
+    let logged_round;
+    let logged_player_count;
     {
         let mut gs_data = game_session.try_borrow_mut()?;
         let mut gs = GameSessionMut::from_bytes(&mut gs_data);
@@ -104,7 +107,18 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         gs.set_current_turn_index(0);
         let round = gs.as_ref().round_number();
         gs.set_round_number(round.saturating_add(1));
+
+        logged_game_id = gs.as_ref().game_id();
+        logged_round = gs.as_ref().round_number();
+        logged_player_count = gs.as_ref().player_count();
     }
+
+    pinocchio_log::log!(
+        "pushflip:start_round:game_id={}|round={}|player_count={}",
+        logged_game_id,
+        logged_round,
+        logged_player_count
+    );
 
     Ok(())
 }

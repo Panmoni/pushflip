@@ -49,6 +49,7 @@ use crate::{
     utils::{
         accounts::{verify_account_owner, verify_signer, verify_writable},
         constants::VAULT_SEED,
+        events::HexPubkey,
     },
     ID,
 };
@@ -83,6 +84,7 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
     let stored_mint;
     let vault_bump;
     let stored_authority;
+    let stored_game_id;
     {
         let gs_data = game_session.try_borrow()?;
         let gs = GameSession::from_bytes(&gs_data);
@@ -95,6 +97,7 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         stored_mint = *gs.token_mint();
         vault_bump = gs.vault_bump();
         stored_authority = *gs.authority();
+        stored_game_id = gs.game_id();
     }
 
     // Heavy-duty review #5 fix H1: only the game authority may initialize
@@ -161,6 +164,12 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         owner: &vault_owner,
     }
     .invoke()?;
+
+    pinocchio_log::log!(
+        "pushflip:init_vault:game_id={}|vault={}",
+        stored_game_id,
+        HexPubkey(&stored_vault)
+    );
 
     Ok(())
 }

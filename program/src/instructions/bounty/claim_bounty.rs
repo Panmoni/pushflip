@@ -26,7 +26,10 @@ use crate::{
         game_session::{GameSession, GAME_SESSION_DISCRIMINATOR, MAX_PLAYERS},
         player_state::{PlayerState, PLAYER_STATE_DISCRIMINATOR, STAYED},
     },
-    utils::accounts::{verify_account_owner, verify_signer, verify_writable},
+    utils::{
+        accounts::{verify_account_owner, verify_signer, verify_writable},
+        events::HexPubkey,
+    },
     ID,
 };
 
@@ -173,6 +176,16 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     let mut bb = BountyBoardMut::from_bytes(&mut bb_data);
     bb.set_bounty_is_active(bounty_index, false);
     bb.set_bounty_claimed_by(bounty_index, player.address().as_array());
+    drop(bb_data);
+
+    pinocchio_log::log!(
+        "pushflip:claim_bounty:claimer={}|game_id={}|index={}|bounty_type={}|amount={}",
+        HexPubkey(player.address().as_array()),
+        gs_game_id,
+        bounty_index,
+        bounty_type,
+        bounty_reward
+    );
 
     Ok(())
 }

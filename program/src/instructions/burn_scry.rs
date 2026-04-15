@@ -10,6 +10,7 @@ use crate::{
     utils::{
         accounts::{verify_account_owner, verify_signer, verify_writable},
         constants::SCRY_COST,
+        events::HexPubkey,
     },
     ID,
 };
@@ -52,6 +53,8 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
     }
 
     // Verify game is active and it's this player's turn
+    let logged_game_id;
+    let logged_round;
     {
         let gs_data = game_session.try_borrow()?;
         let gs = GameSession::from_bytes(&gs_data);
@@ -70,6 +73,9 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         if gs.turn_order_slot(current_idx) != player.address().as_array() {
             return Err(PushFlipError::NotYourTurn.into());
         }
+
+        logged_game_id = gs.game_id();
+        logged_round = gs.round_number();
     }
 
     // Validate player state
@@ -103,8 +109,14 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         ps.set_has_used_scry(true);
     }
 
-    // Event emission would go here (off-chain dealer watches for this)
-    // The dealer responds with the next card data without committing
+    // On-chain event — the off-chain dealer watches for `pushflip:burn_scry`
+    // lines and responds with the next card data without committing it.
+    pinocchio_log::log!(
+        "pushflip:burn_scry:player={}|game_id={}|round={}",
+        HexPubkey(player.address().as_array()),
+        logged_game_id,
+        logged_round
+    );
 
     Ok(())
 }

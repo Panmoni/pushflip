@@ -67,6 +67,7 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     verify_account_owner(bounty_board, &owner)?;
 
     // --- Verify authority owns the game session ---
+    let logged_game_id;
     {
         let gs_data = game_session.try_borrow()?;
         let gs = GameSession::from_bytes(&gs_data);
@@ -76,6 +77,7 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
         if gs.authority() != authority.address().as_array() {
             return Err(ProgramError::MissingRequiredSignature);
         }
+        logged_game_id = gs.game_id();
     }
 
     // --- Verify bounty_board references this game_session ---
@@ -106,6 +108,15 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
     bb.set_bounty_is_active(count, true);
     bb.set_bounty_claimed_by(count, &[0u8; 32]);
     bb.set_bounty_count((count + 1) as u8);
+    drop(bb_data);
+
+    pinocchio_log::log!(
+        "pushflip:add_bounty:game_id={}|index={}|bounty_type={}|amount={}",
+        logged_game_id,
+        count,
+        bounty_type,
+        reward_amount
+    );
 
     Ok(())
 }

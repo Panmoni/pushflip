@@ -12,6 +12,7 @@ use crate::{
     utils::{
         accounts::{verify_account_owner, verify_signer, verify_writable},
         constants::MIN_STAKE,
+        events::HexPubkey,
     },
     ID,
 };
@@ -191,6 +192,19 @@ pub fn process(accounts: &[AccountView], data: &[u8]) -> ProgramResult {
             );
         }
     }
+
+    // Log the *actual* staked amount: 0 when the program took the
+    // vault_ready=false branch (legacy test-mode games where the
+    // SPL token account at the vault PDA doesn't exist yet), else
+    // the full stake the caller requested.
+    let actual_stake = if vault_ready { stake_amount } else { 0 };
+    pinocchio_log::log!(
+        "pushflip:join_round:player={}|game_id={}|stake={}|player_count={}",
+        HexPubkey(player.address().as_array()),
+        game_id,
+        actual_stake,
+        player_count + 1
+    );
 
     Ok(())
 }

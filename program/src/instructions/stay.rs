@@ -9,6 +9,7 @@ use crate::{
     },
     utils::{
         accounts::{verify_account_owner, verify_signer, verify_writable},
+        events::HexPubkey,
         scoring::calculate_hand_score,
     },
     ID,
@@ -64,6 +65,7 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
     }
 
     // --- Calculate score and update PlayerState ---
+    let logged_score;
     {
         let mut ps_data = player_state.try_borrow_mut()?;
         if ps_data[0] != PLAYER_STATE_DISCRIMINATOR {
@@ -90,9 +92,13 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         ps.set_score(score);
         ps.set_is_active(false);
         ps.set_inactive_reason(STAYED);
+
+        logged_score = score;
     }
 
     // --- Advance turn ---
+    let logged_game_id;
+    let logged_round;
     {
         let mut gs_data = game_session.try_borrow_mut()?;
         let mut gs = GameSessionMut::from_bytes(&mut gs_data);
@@ -101,7 +107,18 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         let current = gs.as_ref().current_turn_index() as usize;
         let next = (current + 1) % player_count;
         gs.set_current_turn_index(next as u8);
+
+        logged_game_id = gs.as_ref().game_id();
+        logged_round = gs.as_ref().round_number();
     }
+
+    pinocchio_log::log!(
+        "pushflip:stay:player={}|game_id={}|round={}|score={}",
+        HexPubkey(player.address().as_array()),
+        logged_game_id,
+        logged_round,
+        logged_score
+    );
 
     Ok(())
 }

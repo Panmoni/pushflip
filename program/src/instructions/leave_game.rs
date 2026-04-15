@@ -6,7 +6,10 @@ use crate::{
         game_session::{GameSession, GameSessionMut, GAME_SESSION_DISCRIMINATOR},
         player_state::{PlayerStateMut, BUST, PLAYER_STATE_DISCRIMINATOR},
     },
-    utils::accounts::{verify_account_owner, verify_signer, verify_writable},
+    utils::{
+        accounts::{verify_account_owner, verify_signer, verify_writable},
+        events::HexPubkey,
+    },
     ID,
 };
 
@@ -52,6 +55,7 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
 
     let round_active;
     let player_count;
+    let logged_game_id;
     {
         let gs_data = game_session.try_borrow_mut()?;
         let gs = GameSession::from_bytes(&gs_data);
@@ -62,6 +66,7 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
 
         round_active = gs.round_active();
         player_count = gs.player_count() as usize;
+        logged_game_id = gs.game_id();
 
         // Verify player is in the turn order
         let mut found = false;
@@ -118,6 +123,13 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         recipient.set_lamports(recipient_lamports.saturating_add(ps_lamports));
         player_state.close()?;
     }
+
+    pinocchio_log::log!(
+        "pushflip:leave_game:player={}|game_id={}|mid_round={}",
+        HexPubkey(player.address().as_array()),
+        logged_game_id,
+        round_active
+    );
 
     Ok(())
 }

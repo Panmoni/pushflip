@@ -10,6 +10,7 @@ use crate::{
     utils::{
         accounts::{verify_account_owner, verify_signer, verify_writable},
         constants::SECOND_CHANCE_COST,
+        events::HexPubkey,
     },
     ID,
 };
@@ -51,6 +52,7 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
     }
 
     // Verify game is in an active round
+    let logged_game_id;
     {
         let gs_data = game_session.try_borrow()?;
         let gs = GameSession::from_bytes(&gs_data);
@@ -60,6 +62,7 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         if !gs.round_active() {
             return Err(PushFlipError::RoundNotActive.into());
         }
+        logged_game_id = gs.game_id();
     }
 
     // --- Validate player state ---
@@ -97,6 +100,12 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         ps.set_bust_card_value(0);
         ps.set_has_used_second_chance(true);
     }
+
+    pinocchio_log::log!(
+        "pushflip:burn_second_chance:player={}|game_id={}",
+        HexPubkey(player.address().as_array()),
+        logged_game_id
+    );
 
     Ok(())
 }

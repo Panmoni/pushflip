@@ -10,6 +10,7 @@ use crate::{
     utils::{
         accounts::{verify_account_owner, verify_signer, verify_writable},
         constants::VAULT_SEED,
+        events::HexPubkey,
     },
     ID,
 };
@@ -54,6 +55,8 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
     let pot_amount;
     let treasury_fee_bps;
     let vault_bump;
+    let logged_game_id;
+    let logged_round;
     {
         let gs_data = game_session.try_borrow_mut()?;
         let gs = GameSession::from_bytes(&gs_data);
@@ -64,6 +67,9 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         if !gs.round_active() {
             return Err(PushFlipError::RoundNotActive.into());
         }
+
+        logged_game_id = gs.game_id();
+        logged_round = gs.round_number();
 
         player_count = gs.player_count() as usize;
         if player_accounts.len() < player_count {
@@ -104,7 +110,7 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
 
     // --- Check all players are inactive, find winner ---
     let mut highest_score: u64 = 0;
-    let mut _winner_index: Option<usize> = None;
+    let mut winner_index: Option<usize> = None;
     let mut all_busted = true;
 
     for i in 0..player_count {
@@ -126,10 +132,24 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
             let score = ps.score();
             if score > highest_score {
                 highest_score = score;
-                _winner_index = Some(i);
+                winner_index = Some(i);
             }
         }
     }
+
+    // Capture the winner's pubkey before transfers + state updates so we
+    // can log it at the tail. `[0u8; 32]` means "all busted, pot rolled
+    // over (or swept after 10 rollovers)" — winners.is_some() ⇔
+    // winner_payout > 0 below.
+    let winner_pubkey: [u8; 32] = match winner_index {
+        Some(i) => {
+            let ps_data = player_accounts[i].try_borrow()?;
+            let mut out = [0u8; 32];
+            out.copy_from_slice(&ps_data[2..34]);
+            out
+        }
+        None => [0u8; 32],
+    };
 
     // --- Build vault PDA signer (used by both distribution and rollover-sweep paths) ---
     let game_session_key = *game_session.address().as_array();
@@ -212,6 +232,15 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         gs.set_deck_committed(false);
         gs.set_draw_counter(0);
     }
+
+    pinocchio_log::log!(
+        "pushflip:end_round:game_id={}|round={}|winner={}|pot={}|all_busted={}",
+        logged_game_id,
+        logged_round,
+        HexPubkey(&winner_pubkey),
+        pot_amount,
+        all_busted
+    );
 
     Ok(())
 }

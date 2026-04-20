@@ -140,7 +140,8 @@
       "/home/george9874/repos/pushflip/clients/js/src",
       "/tmp",
       "/home/george9874/repos/pushflip/app",
-      "/home/george9874/repos/pushflip/faucet"
+      "/home/george9874/repos/pushflip/faucet",
+      "/home/george9874/repos/pushflip/docs"
     ]
   },
   "hooks": {

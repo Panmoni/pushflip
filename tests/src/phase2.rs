@@ -935,3 +935,196 @@ fn test_full_game_lifecycle_with_all_mechanics() {
     let treasury_balance = token_balance(&svm, &game.treasury_ata);
     assert!(treasury_balance > 0, "Treasury should have received rake");
 }
+
+// --- Token-account-redirect regression tests (PR #2 fix) ---
+//
+// Pre-fix, any caller authorized to invoke `end_round` (any player in
+// `turn_order`) could pass an arbitrary same-mint ATA as
+// `winner_token_account` or `treasury_token_account` and have the pot or rake
+// transferred there — SPL Token's Transfer CPI verifies `from.mint == to.mint`
+// but not `to.owner`. The fix added `verify_token_account` and wired it into
+// all three Transfer sites in `end_round` (rake → treasury, payout → winner,
+// rollover sweep → treasury). The two tests below exercise the rake and
+// winner wires independently — each could regress separately if a future
+// refactor drops one of the verify calls. The rollover-sweep wire (line 223)
+// shares the same helper and call-site pattern as the rake wire and is
+// covered by extension.
+
+/// Discriminant of `PushFlipError::InvalidTokenAccount` (position in the enum
+/// at `program/src/errors.rs`). Coupled by position: if a variant is added
+/// before `InvalidTokenAccount`, this constant must be updated. Centralized
+/// here so the magic number lives in one place rather than scattered across
+/// rejection tests.
+const INVALID_TOKEN_ACCOUNT_CODE: u32 = 33;
+
+/// Build a finished round (two players staked, both stayed) ready for an
+/// end_round call. Returns `(game, ps1, ps2)`. The legitimate winner ATA is
+/// available as the second tuple element of the first `join_game` result if a
+/// happy-path comparison is needed; the rejection tests don't need it.
+fn setup_finished_round(
+    svm: &mut LiteSVM,
+    authority: &Keypair,
+    game_id: u64,
+) -> (TestGame, Address, Address) {
+    let dealer = Keypair::new();
+    svm.airdrop(&dealer.pubkey(), 5_000_000_000).unwrap();
+    let game = init_game_with_tokens(svm, authority, game_id, &dealer.pubkey());
+
+    let player1 = Keypair::new();
+    let player2 = Keypair::new();
+    let (ps1, _p1_ata, _) = join_game(svm, authority, &game, &player1, MIN_STAKE);
+    let (ps2, _p2_ata, _) = join_game(svm, authority, &game, &player2, MIN_STAKE);
+
+    commit_deck(svm, &game, &dealer);
+    start_round(svm, authority, &game, &[ps1, ps2]);
+
+    for (player, ps) in [(&player1, &ps1), (&player2, &ps2)] {
+        let ix = Instruction {
+            program_id: program_id(),
+            accounts: vec![
+                AccountMeta::new(game.game_pda, false),
+                AccountMeta::new(*ps, false),
+                AccountMeta::new_readonly(player.pubkey(), true),
+            ],
+            data: vec![IX_STAY],
+        };
+        send_tx(svm, ix, &[player]).unwrap();
+    }
+
+    (game, ps1, ps2)
+}
+
+/// Locks down `verify_token_account` at the winner-payout site
+/// (`end_round.rs:200`). Pre-fix, a malicious caller could pass any same-mint
+/// ATA as `winner_token_account` and have the pot routed there.
+#[test]
+fn test_end_round_rejects_wrong_owner_winner_ata() {
+    let (mut svm, authority) = setup();
+    let (game, ps1, ps2) = setup_finished_round(&mut svm, &authority, 199);
+
+    // Attacker-owned ATA on the same mint — same shape as a legitimate winner
+    // ATA, but the owner field is the attacker's pubkey instead of player1's.
+    // This is the exact account a malicious caller would pass to redirect.
+    let attacker = Keypair::new();
+    let attacker_ata = create_token_account(&mut svm, &authority, &game.mint, &attacker.pubkey());
+
+    let vault_ata = game.vault_pda;
+    let ix = Instruction {
+        program_id: program_id(),
+        accounts: vec![
+            AccountMeta::new(game.game_pda, false),
+            AccountMeta::new_readonly(authority.pubkey(), true),
+            AccountMeta::new(vault_ata, false),
+            AccountMeta::new(attacker_ata, false), // wrong owner — should be rejected
+            AccountMeta::new(game.treasury_ata, false),
+            AccountMeta::new_readonly(TOKEN_PROGRAM, false),
+            AccountMeta::new_readonly(ps1, false),
+            AccountMeta::new_readonly(ps2, false),
+        ],
+        data: vec![IX_END_ROUND],
+    };
+
+    let err = send_tx(&mut svm, ix, &[&authority]).expect_err(
+        "end_round must reject a winner_token_account whose owner field doesn't match the computed winner",
+    );
+    let expected_marker = format!("Custom({INVALID_TOKEN_ACCOUNT_CODE})");
+    assert!(
+        err.contains(&expected_marker),
+        "expected InvalidTokenAccount ({expected_marker}), got: {err}"
+    );
+
+    // The rake transfer (vault → treasury) fires as a CPI before the
+    // winner-side check rejects, so atomic rollback is what keeps state
+    // clean. Assert vault, attacker ATA, and treasury all returned to their
+    // pre-tx state — locks down the rollback behavior end-to-end.
+    assert_eq!(
+        token_balance(&svm, &vault_ata),
+        MIN_STAKE * 2,
+        "vault should be untouched after rejected end_round (rake CPI must roll back)"
+    );
+    assert_eq!(
+        token_balance(&svm, &attacker_ata),
+        0,
+        "attacker ATA must not have received funds"
+    );
+    assert_eq!(
+        token_balance(&svm, &game.treasury_ata),
+        0,
+        "treasury must be untouched — the rake CPI fired but the tx rolled back"
+    );
+}
+
+/// Locks down `verify_token_account` at the rake site (`end_round.rs:187`).
+/// Independent of the winner-site test: the program checks treasury *before*
+/// the rake Transfer CPI fires, so a wrong-owner treasury rejects without
+/// any CPI executing — different mechanism, different rollback story.
+#[test]
+fn test_end_round_rejects_wrong_owner_treasury_ata() {
+    let (mut svm, authority) = setup();
+    let (game, ps1, ps2) = setup_finished_round(&mut svm, &authority, 198);
+
+    // We need a legitimate winner ATA so the test isolates the *treasury*
+    // wire — re-derive player1's ATA from the helper-known seed pattern. The
+    // happy path uses p1_ata as winner_token_account.
+    let p1_ata = spl_associated_token_account_interface::address::get_associated_token_address(
+        &derive_player1_pubkey_from_ps(&svm, &ps1),
+        &game.mint,
+    );
+
+    let attacker = Keypair::new();
+    let bad_treasury_ata =
+        create_token_account(&mut svm, &authority, &game.mint, &attacker.pubkey());
+
+    let vault_ata = game.vault_pda;
+    let ix = Instruction {
+        program_id: program_id(),
+        accounts: vec![
+            AccountMeta::new(game.game_pda, false),
+            AccountMeta::new_readonly(authority.pubkey(), true),
+            AccountMeta::new(vault_ata, false),
+            AccountMeta::new(p1_ata, false),
+            AccountMeta::new(bad_treasury_ata, false), // wrong owner — should be rejected
+            AccountMeta::new_readonly(TOKEN_PROGRAM, false),
+            AccountMeta::new_readonly(ps1, false),
+            AccountMeta::new_readonly(ps2, false),
+        ],
+        data: vec![IX_END_ROUND],
+    };
+
+    let err = send_tx(&mut svm, ix, &[&authority]).expect_err(
+        "end_round must reject a treasury_token_account whose owner field doesn't match the configured treasury",
+    );
+    let expected_marker = format!("Custom({INVALID_TOKEN_ACCOUNT_CODE})");
+    assert!(
+        err.contains(&expected_marker),
+        "expected InvalidTokenAccount ({expected_marker}), got: {err}"
+    );
+
+    assert_eq!(
+        token_balance(&svm, &vault_ata),
+        MIN_STAKE * 2,
+        "vault should be untouched"
+    );
+    assert_eq!(
+        token_balance(&svm, &bad_treasury_ata),
+        0,
+        "attacker treasury ATA must not have received rake"
+    );
+    assert_eq!(
+        token_balance(&svm, &p1_ata),
+        MIN_STAKE * 5 - MIN_STAKE,
+        "winner ATA must not have received payout"
+    );
+}
+
+/// Read player1's pubkey out of the PlayerState account (offset 2..34, set
+/// by `join_round` at the time the PDA is initialized). Needed by the
+/// treasury-rejection test, which doesn't get `p1_ata` back from the setup
+/// helper. Tightly coupled to the PlayerState byte layout — if the layout
+/// changes, this reader must be updated alongside it.
+fn derive_player1_pubkey_from_ps(svm: &LiteSVM, ps_pda: &Address) -> Address {
+    let data = svm.get_account(ps_pda).unwrap().data;
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&data[2..34]);
+    Address::from(bytes)
+}

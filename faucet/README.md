@@ -19,7 +19,7 @@ Liveness + balance check. Never returns non-200 so external monitoring can disti
 ```json
 {
   "status": "ok",
-  "authority": "3XXMLDEf2DDdmgR978U8T5GhFLnxDNDUcJ2ETDw2bUWp",
+  "authority": "5vzyxxJ1NwoN5PgX1p2zCavbxc7mugLMdF7At5syGfA6",
   "mint": "2KqqB7SRVaD98ZbVaiRWirxbaJv5ryNzkDRGweBZVryF",
   "balance_lamports": "28908072844",
   "faucet_amount_whole_flip": "1000",
@@ -78,7 +78,7 @@ All via env vars (loaded from `.env` in the workspace root by default):
 |---|---|---|---|
 | `PORT` | no | `3001` | HTTP port. Vite dev server runs on 5173, so 3001 stays out of the way. |
 | `ALLOWED_ORIGINS` | no | `http://localhost:5173` | Comma-separated CORS allow-list. Replace with production frontend URL(s) for deploy. |
-| `FAUCET_KEYPAIR_PATH` | **yes** | — | Path to the keypair that is the mint authority on `TEST_FLIP_MINT`. For local dev: `~/.config/solana/id.json` (the CLI wallet that created the mint on 2026-04-10). For production, use a dedicated keypair with only enough SOL for faucet operations. |
+| `FAUCET_KEYPAIR_PATH` | **yes** | — | Path to the dedicated faucet keypair (mint authority on `TEST_FLIP_MINT` — pubkey `5vzyxxJ1NwoN5PgX1p2zCavbxc7mugLMdF7At5syGfA6`). The local CLI wallet `~/.config/solana/id.json` is NO LONGER the mint authority (transferred 2026-04-15 via tx `5GR6KHASrRtRPqbqCwgXbk3nH3vBKZaLRXpMRTegXKuF9guHmv6My5bKifqCGNvnzP7z56TcNBPRfTfkT8pHN1f1`). For local dev, point this at `~/.config/solana/pushflip-faucet.json` (the new keypair, mode 0600); for production, the same file ships to tucker via `scp`. |
 | `RPC_ENDPOINT` | **yes** | — | Solana RPC HTTP endpoint (e.g. `https://api.devnet.solana.com`). |
 | `WS_ENDPOINT` | **yes** | — | Solana RPC WS endpoint for confirmation tracking (e.g. `wss://api.devnet.solana.com`). |
 | `FAUCET_AMOUNT_WHOLE_FLIP` | no | `1000` | How many whole `$FLIP` to mint per request. Scaled by `10^9` internally. |
@@ -122,7 +122,7 @@ The app's `<JoinGameDialog>` `<NoAtaFaucetPanel>` calls the faucet via [`app/src
 
 ## Security
 
-- The faucet keypair holds real mint authority. If leaked, an attacker can mint unlimited test-`$FLIP`. For **devnet** this is annoying but inert — the test mint has no monetary value. For **any future mainnet-equivalent faucet** the mint authority MUST be a dedicated keypair with minimal SOL, stored out-of-band, and rotated on any compromise.
+- The faucet keypair holds real mint authority for the `$FLIP` test mint (current authority pubkey: `5vzyxxJ1NwoN5PgX1p2zCavbxc7mugLMdF7At5syGfA6`, transferred from the operator's CLI wallet 2026-04-15). If leaked, an attacker can mint unlimited test-`$FLIP`. For **devnet** this is annoying but inert — the test mint has no monetary value. For **any future mainnet-equivalent faucet** the mint authority MUST be a dedicated keypair with minimal SOL, stored out-of-band, and rotated on any compromise. The keypair file MUST be backed up to a password manager **before** transferring authority — once `spl-token authorize` runs, the new authority is the only path to mint, and losing the file before backup strands the mint forever.
 - CORS is locked to `ALLOWED_ORIGINS`. A misconfigured origin list is the silent way the faucet gets drained from a third-party site; review it before deploying.
 - No rate-limit layer above per-wallet. For mainnet-adjacent usage add IP-based limits, reCAPTCHA, or behind-a-gateway rate-limiting. Tracked as "out of scope for devnet" above.
 

@@ -2,7 +2,7 @@
 
 ## Context
 
-**Goal.** Get a public HTTPS URL (`https://pushflip.xyz`) serving the frontend + a working one-click test-`$FLIP` faucet, backed by the on-chain devnet program that's already deployed. This is the first public-facing deploy of this project. Mainnet is far away; this is a devnet demo that stays up for months.
+**Goal.** Get a public HTTPS URL (`https://play.pushflip.xyz`) serving the frontend + a working one-click test-`$FLIP` faucet, backed by the on-chain devnet program that's already deployed. This is the first public-facing deploy of this project. Mainnet is far away; this is a devnet demo that stays up for months.
 
 **Why today.** The JoinGameDialog "Get test $FLIP" button needs a running faucet service to work. Localhost is useless for strangers + for a portfolio link. 5 of 9 pre-mainnet items are shipped; the stack is feature-complete for a demo. Waiting for "perfect" is wrong.
 
@@ -10,7 +10,7 @@
 
 **Target host: tucker (Panmoni production VPS).** Discovered state:
 
-- Ubuntu 25.10, 4 vCPU, 7.6 GB RAM (6 GB free), 72 GB SSD (24 GB free — **67% full, tight**)
+- Ubuntu 25.10, 4 vCPU, 7.6 GB RAM (6 GB free), 72 GB SSD (49 GB free — 33% used, comfortable headroom)
 - Already runs: postgres 18.1, listmonk v5.1.0, redis 8.4.0, yapbay-vite, yapbay-api, yapbay-pricing
 - **Container runtime: podman 5.4.2** via systemd quadlets (not docker-compose)
 - **nginx 1.29.4 in a rootful podman container** binds 80/443, config at `/home/george9874/repos/server-config/nginx/conf.d/` (bind-mounted into the container read-only; reload via `nginx -s reload`)
@@ -22,7 +22,7 @@
 **Decision: tucker, not a new OVH VPS.**
 
 - Everything we need (podman, nginx, certbot, SSL automation, fail2ban) is already installed and working.
-- 6 GB free RAM + 24 GB free disk is enough for pushflip's footprint (faucet ~256 MB, frontend static ~50 MB). We'll revisit if the dealer lands.
+- 6 GB free RAM + 49 GB free disk is plenty for pushflip's footprint (faucet ~256 MB, frontend static ~50 MB).
 - The existing quadlet pattern gives us high-quality redeploy ergonomics for free — the deploy script is `git pull && podman build && systemctl restart`. This is ~20× less ops work than setting up a fresh OVH box from scratch.
 - The one cost: disk pressure. At 67% full we have headroom, but a runaway log file or a misbuild could OOM the disk. Plan addresses via explicit `LogDriver=journald` (bounded) + a monthly `docker system prune` / `podman image prune` in the deploy script.
 - **If/when a new OVH VPS makes sense** (mainnet deploy, dedicated pushflip infra): migration is a `quadlet → VPS` copy + DNS switch. Staying on tucker today doesn't lock us in.
@@ -31,10 +31,10 @@
 
 **Decision: dedicated faucet keypair.** Mint authority for `$FLIP` is currently the user's CLI wallet at `~/.config/solana/id.json` (3XXMLDEf…). Copying that keypair to tucker expands its blast radius — if tucker is ever compromised, the attacker gets the user's entire personal devnet wallet. Instead: generate a new keypair, transfer the `$FLIP` mint authority to it via `spl-token authorize`, ship the new keypair to tucker. The user's CLI wallet no longer mints; the faucet keypair on tucker does. If tucker is compromised, the attacker gets "can mint unlimited test `$FLIP`" which has zero monetary value. Clean blast-radius separation.
 
-**Decision: same-origin path routing, not subdomain.** `pushflip.xyz/` serves the SPA; `pushflip.xyz/api/faucet` proxies to the faucet service. No CORS config, no second DNS record, no second cert (only `pushflip.xyz` + `www.pushflip.xyz`). Cleaner production ergonomics.
+**Decision: same-origin path routing under `play.` subdomain.** The apex `pushflip.xyz` is already serving an existing static marketing site at the static-host of record (Cloudflare Pages or similar) and must NOT be touched. Cloudflare-side `www.pushflip.xyz` already 301-redirects to `pushflip.xyz`. The deployed game lives at `play.pushflip.xyz`: `play.pushflip.xyz/` serves the SPA; `play.pushflip.xyz/api/faucet` proxies to the faucet service. No CORS config, no second DNS record, single cert for `play.pushflip.xyz`. Cleaner production ergonomics + zero risk to the existing apex content.
 
 **Out of scope for this deploy.**
-- **The dealer.** Currently runs only during smoke tests; productionizing it is Phase 4 / Pre-Mainnet 5.2+. After this deploy, visitors to pushflip.xyz can: connect wallet, read game state, get test `$FLIP` via faucet, join the round. They cannot play a round because `commit_deck` + card reveals require the dealer. Demo is "you can see the game and touch the first on-chain write surface"; full gameplay needs follow-up dealer deploy.
+- **The dealer.** Currently runs only during smoke tests; productionizing it is Phase 4 / Pre-Mainnet 5.2+. After this deploy, visitors to play.pushflip.xyz can: connect wallet, read game state, get test `$FLIP` via faucet, join the round. They cannot play a round because `commit_deck` + card reveals require the dealer. Demo is "you can see the game and touch the first on-chain write surface"; full gameplay needs follow-up dealer deploy.
 - **Monitoring / alerting / metrics endpoints.** Journal logs are searchable via `journalctl -u pushflip-*` on tucker. Prometheus + Grafana is Phase 5+ work.
 - **Backups of the faucet keypair.** Generated once, fine to regenerate if lost (transfer authority again). For mainnet this would be a multisig.
 
@@ -67,10 +67,11 @@ Five phases. Each leaves the system in a working state (or pre-state if phase 0)
 - [scripts/devnet-config.ts](../../repos/pushflip/scripts/devnet-config.ts) — re-exports the constant, but the file's own comment references "local CLI wallet". Verify the comment doesn't assert an old authority pubkey.
 - [faucet/README.md](../../repos/pushflip/faucet/README.md) — document the transfer happened and record the new authority pubkey.
 
-**0.4 Cloudflare DNS configuration.**
-- A record: `pushflip.xyz` → tucker IP
-- A record: `www.pushflip.xyz` → tucker IP
-- Proxy status: **Orange cloud DISABLED** (grey cloud / DNS-only) during initial cert issuance — certbot's HTTP-01 challenge needs direct origin access. Can re-enable orange cloud after first successful cert.
+**0.4 Cloudflare DNS configuration — DONE 2026-04-15.**
+- **Apex `pushflip.xyz`**: UNTOUCHED — already serves an existing static marketing site at the static-host of record. The deploy uses a subdomain instead so we can never accidentally take down the apex.
+- **`www.pushflip.xyz`**: existing Cloudflare 301 → `pushflip.xyz` page rule. No A record needed.
+- **`play.pushflip.xyz` → `192.99.247.151`** (tucker's public IP). Single A record, this is the deploy target.
+- Proxy status: **Orange cloud DISABLED** (grey cloud / DNS-only) for `play.` during initial cert issuance — certbot's HTTP-01 challenge needs direct origin access. Re-enable orange cloud in Phase 5.5 after the first successful cert.
 - TTL: 300 (5 min) during initial rollout, raise to auto after it's stable.
 
 **0.5 Smoke check: verify the faucet service still works locally with the new keypair.**
@@ -110,7 +111,7 @@ All subsequent Dockerfile + `.dockerignore` + `deploy-tucker.sh` work (Phase 1.4
 `/home/george9874/repos/pushflip/faucet/.env.production`:
 ```
 PORT=3001
-ALLOWED_ORIGINS=https://pushflip.xyz,https://www.pushflip.xyz
+ALLOWED_ORIGINS=https://play.pushflip.xyz,https://www.pushflip.xyz
 FAUCET_KEYPAIR_PATH=/home/george9874/.config/solana/pushflip-faucet.json
 RPC_ENDPOINT=https://devnet.helius-rpc.com/?api-key=<YOUR_HELIUS_KEY>
 WS_ENDPOINT=wss://devnet.helius-rpc.com/?api-key=<YOUR_HELIUS_KEY>
@@ -293,17 +294,17 @@ WantedBy=default.target
 
 **1.6 Create nginx site config on tucker.**
 
-`/home/george9874/repos/server-config/nginx/conf.d/pushflip.xyz.conf`:
+`/home/george9874/repos/server-config/nginx/conf.d/play.pushflip.xyz.conf`:
 ```nginx
-# /home/george9874/repos/server-config/nginx/conf.d/pushflip.xyz.conf
+# /home/george9874/repos/server-config/nginx/conf.d/play.pushflip.xyz.conf
 #
-# pushflip.xyz: SPA at /, faucet service at /api/faucet (same-origin).
+# play.pushflip.xyz: SPA at /, faucet service at /api/faucet (same-origin).
 # Companion service routing: NONE yet — dealer is not productionized.
 
 # HTTP → HTTPS redirect + ACME challenge
 server {
     listen 80;
-    server_name pushflip.xyz www.pushflip.xyz;
+    server_name  play.pushflip.xyz www.pushflip.xyz;
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -318,10 +319,10 @@ server {
 server {
     listen 443 ssl;
     http2 on;
-    server_name pushflip.xyz www.pushflip.xyz;
+    server_name  play.pushflip.xyz www.pushflip.xyz;
 
-    ssl_certificate /etc/letsencrypt/live/pushflip.xyz/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/pushflip.xyz/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/play.pushflip.xyz/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/play.pushflip.xyz/privkey.pem;
 
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_session_timeout 1d;
@@ -393,25 +394,25 @@ limit_req_zone $http_cf_connecting_ip zone=faucet_req:10m rate=5r/s;
 
 **1.6b Reload nginx to pick up the new site config — BEFORE certbot runs.**
 
-Certbot's HTTP-01 challenge depends on nginx serving the `/.well-known/acme-challenge/` location from `/var/www/certbot`. That location is in the new `pushflip.xyz.conf` — which nginx hasn't loaded yet. Without this step, certbot fails with 403/404 on the challenge.
+Certbot's HTTP-01 challenge depends on nginx serving the `/.well-known/acme-challenge/` location from `/var/www/certbot`. That location is in the new `play.pushflip.xyz.conf` — which nginx hasn't loaded yet. Without this step, certbot fails with 403/404 on the challenge.
 
 - `sudo podman exec nginx nginx -t` (syntax check — MUST pass)
 - `sudo podman exec nginx nginx -s reload`
-- Verify: `curl -I http://pushflip.xyz/.well-known/acme-challenge/test` → 404 (NOT 403 — 404 means nginx served the location from /var/www/certbot and the test file just doesn't exist, which is exactly what certbot expects).
+- Verify: `curl -I http://play.pushflip.xyz/.well-known/acme-challenge/test` → 404 (NOT 403 — 404 means nginx served the location from /var/www/certbot and the test file just doesn't exist, which is exactly what certbot expects).
 
 **1.7 Issue the SSL cert via certbot.**
 
 - On tucker, with DNS pointing at the IP (Phase 0.4) and nginx config in place for port 80's ACME challenge:
   ```bash
   sudo certbot certonly --webroot -w /var/www/certbot \
-    -d pushflip.xyz -d www.pushflip.xyz \
+    -d  play.pushflip.xyz -d www.pushflip.xyz \
     --agree-tos -n -m me@georgedonnelly.com
   ```
-- Verify: `sudo ls /etc/letsencrypt/live/pushflip.xyz/` → should show `fullchain.pem` + `privkey.pem`.
+- Verify: `sudo ls /etc/letsencrypt/live/play.pushflip.xyz/` → should show `fullchain.pem` + `privkey.pem`.
 
 **1.7b Verify SSL auto-renewal is active.**
 
-If certbot's systemd timer isn't running, the cert expires in 90 days and every HTTPS request to pushflip.xyz breaks. Trivial to verify:
+If certbot's systemd timer isn't running, the cert expires in 90 days and every HTTPS request to  play.pushflip.xyz breaks. Trivial to verify:
 
 - `sudo systemctl list-timers certbot.timer` → should show "active", next trigger within the next ~day
 - `sudo systemctl status certbot.timer` → `Active: active (waiting)`
@@ -441,15 +442,15 @@ If certbot's systemd timer isn't running, the cert expires in 90 days and every 
 **2.3 Reload nginx.**
 - `podman exec nginx nginx -t` (config syntax check)
 - `podman exec nginx nginx -s reload`
-- Verify: `curl -I https://pushflip.xyz/` → 200 OK, HTML content-type.
+- Verify: `curl -I https://play.pushflip.xyz/` → 200 OK, HTML content-type.
 
 **2.4 Browser verification.**
-- Open `https://pushflip.xyz/` from a fresh browser profile (no wallet state).
+- Open `https://play.pushflip.xyz/` from a fresh browser profile (no wallet state).
 - Connect Phantom or Solflare on devnet.
 - Verify the ClusterHint banner works; game state at game_id=2 loads; the Join button surfaces "You don't have a $FLIP token account yet."
 - The faucet button will fail (backend not deployed yet) — expected until Phase 3.
 
-**Done when:** `https://pushflip.xyz/` loads the SPA, wallet connects, game state reads correctly, the pre-faucet no-ATA branch renders (but "Get test $FLIP" click fails gracefully because the backend isn't up yet).
+**Done when:** `https://play.pushflip.xyz/` loads the SPA, wallet connects, game state reads correctly, the pre-faucet no-ATA branch renders (but "Get test $FLIP" click fails gracefully because the backend isn't up yet).
 
 ---
 
@@ -466,18 +467,18 @@ If certbot's systemd timer isn't running, the cert expires in 90 days and every 
 - **Verify loopback binding** (not world-accessible): `ss -tlnp | grep 3001` → output should start with `LISTEN 0 … 127.0.0.1:3001` OR `[::1]:3001`. If you see `0.0.0.0:3001`, the faucet is reachable directly from the internet, bypassing nginx rate limiting — fix before proceeding (the pod should be `Network=host` but bound via Hono's default localhost-only behavior; verify `app.listen({ host: "127.0.0.1", … })` if binding is wrong).
 
 **3.3 End-to-end faucet test via the public URL.**
-- `curl -X POST https://pushflip.xyz/api/faucet -H "Content-Type: application/json" -d '{"recipient":"<fresh-generated-pubkey>"}'`
+- `curl -X POST https://play.pushflip.xyz/api/faucet -H "Content-Type: application/json" -d '{"recipient":"<fresh-generated-pubkey>"}'`
 - Expect 200 + signature + explorer URL.
 - Second identical request: 429 rate-limited.
 - `solana balance <recipient> --url devnet` → 0 (no SOL needed!); `spl-token balance 2KqqB7SR… --owner <recipient> --url devnet` → 1000.
 
 **3.4 Browser end-to-end test.**
-- Reload `https://pushflip.xyz/` with a fresh wallet (0 SOL, no ATAs).
+- Reload `https://play.pushflip.xyz/` with a fresh wallet (0 SOL, no ATAs).
 - Connect wallet, open Join dialog → "Get test $FLIP" button visible.
 - Click it. Wallet does NOT prompt to sign (backend-paid). Confirmation toast appears with Explorer link.
 - Balance updates in-dialog; user can now type a stake and click Join.
 
-**Done when:** the end-to-end "stranger lands on pushflip.xyz with 0 SOL, clicks one button, gets `$FLIP`, joins the round" flow works.
+**Done when:** the end-to-end "stranger lands on  play.pushflip.xyz with 0 SOL, clicks one button, gets `$FLIP`, joins the round" flow works.
 
 ---
 
@@ -554,10 +555,10 @@ done
 
 # --- End-to-end smoke ---
 echo "[deploy] smoke check…"
-curl -fsS https://pushflip.xyz/ -o /dev/null && echo "  frontend OK" || { echo "  [FAIL] frontend"; exit 1; }
-curl -fsS https://pushflip.xyz/api/health -o /dev/null && echo "  faucet /health OK" || { echo "  [FAIL] faucet /health"; exit 1; }
+curl -fsS https://play.pushflip.xyz/ -o /dev/null && echo "  frontend OK" || { echo "  [FAIL] frontend"; exit 1; }
+curl -fsS https://play.pushflip.xyz/api/health -o /dev/null && echo "  faucet /health OK" || { echo "  [FAIL] faucet /health"; exit 1; }
 
-echo "[deploy] ✓ done — live at https://pushflip.xyz/"
+echo "[deploy] ✓ done — live at https://play.pushflip.xyz/"
 echo "[deploy] rollback if needed:"
 echo "  ssh $REMOTE_HOST \"podman tag localhost/pushflip-vite:prev localhost/pushflip-vite:latest && podman tag localhost/pushflip-faucet:prev localhost/pushflip-faucet:latest && systemctl --user restart pushflip-vite.service pushflip-faucet.service\""
 ```
@@ -568,7 +569,7 @@ echo "  ssh $REMOTE_HOST \"podman tag localhost/pushflip-vite:prev localhost/pus
 - Make a trivial change (e.g., a comment in `app/src/app.tsx`)
 - Commit + push to main
 - Run `bash scripts/deploy-tucker.sh` from the dev machine
-- Verify the change is live at `https://pushflip.xyz/` within ~3 minutes
+- Verify the change is live at `https://play.pushflip.xyz/` within ~3 minutes
 - **This IS the test that "redeploy is easy."** Don't skip it.
 
 **4.4 Disk hygiene.**
@@ -593,7 +594,7 @@ The deploy script prints this command on success for convenience. Test it once d
 
 **4.6 Dealer-not-deployed UX message.**
 
-A first-time visitor to pushflip.xyz can connect, get `$FLIP`, and join — then the UI sits waiting for a round that never starts, because the dealer service isn't productionized yet. Add a dismissible banner (matching the existing `<ClusterHint>` component pattern) OR a prominent footer note:
+A first-time visitor to  play.pushflip.xyz can connect, get `$FLIP`, and join — then the UI sits waiting for a round that never starts, because the dealer service isn't productionized yet. Add a dismissible banner (matching the existing `<ClusterHint>` component pattern) OR a prominent footer note:
 
 > **Demo stage.** You can connect, mint test `$FLIP`, and join a round. Full gameplay (card reveals, scoring, payout) requires the dealer service, which isn't deployed yet — tracked as Phase 4 in [EXECUTION_PLAN.md](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md).
 
@@ -614,7 +615,7 @@ Scope this to ~15 min — a full component + mount + styling. Can also be deferr
 
 **5.3 Update [docs/EXECUTION_PLAN.md](../../repos/pushflip/docs/EXECUTION_PLAN.md)** — add a Phase 5.1 DONE entry (if we want to count this as "the first public deploy"), or a new "Deployment" section that tracks:
 - Current target: tucker
-- Current URL: https://pushflip.xyz
+- Current URL: https://play.pushflip.xyz
 - Deploy script: `scripts/deploy-tucker.sh`
 - Future: migration plan to a dedicated OVH VPS at mainnet time
 
@@ -638,7 +639,7 @@ Scope this to ~15 min — a full component + mount + styling. Can also be deferr
 - `/home/george9874/repos/pushflip/app/Dockerfile`
 - `/home/george9874/repos/pushflip/faucet/Dockerfile`
 - `/home/george9874/repos/pushflip/scripts/deploy-tucker.sh`
-- `/home/george9874/repos/pushflip/app/src/components/misc/demo-stage-banner.tsx` (Phase 4.6, optional; reusable across pushflip.xyz's demo stage)
+- `/home/george9874/repos/pushflip/app/src/components/misc/demo-stage-banner.tsx` (Phase 4.6, optional; reusable across play.pushflip.xyz's demo stage)
 - `/home/george9874/repos/pushflip/docs/wiki/operations/deploy-tucker.md`
 
 **Modified in the pushflip repo:**
@@ -656,7 +657,7 @@ Scope this to ~15 min — a full component + mount + styling. Can also be deferr
 - `/home/george9874/.config/solana/pushflip-faucet.json` (0600, the faucet mint authority keypair)
 
 **New in the server-config repo (committed to its own repo):**
-- `/home/george9874/repos/server-config/nginx/conf.d/pushflip.xyz.conf`
+- `/home/george9874/repos/server-config/nginx/conf.d/play.pushflip.xyz.conf`
 
 ---
 
@@ -664,7 +665,7 @@ Scope this to ~15 min — a full component + mount + styling. Can also be deferr
 
 - **Quadlet systemd-generated services** — `/etc/containers/systemd/nginx.container` + all `~/.config/containers/systemd/*.container` on tucker. Same pattern for pushflip.
 - **nginx config reload flow** — bind-mount of `/home/george9874/repos/server-config/nginx/conf.d/` into the container; edit in place + `nginx -s reload`.
-- **[snippets/cloudflare-real-ip.conf](../../../repos/server-config/nginx/snippets/cloudflare-real-ip.conf) + [snippets/security-headers.conf](../../../repos/server-config/nginx/snippets/security-headers.conf)** — shared snippets; include in pushflip.xyz.conf verbatim.
+- **[snippets/cloudflare-real-ip.conf](../../../repos/server-config/nginx/snippets/cloudflare-real-ip.conf) + [snippets/security-headers.conf](../../../repos/server-config/nginx/snippets/security-headers.conf)** — shared snippets; include in play.pushflip.xyz.conf verbatim.
 - **certbot --webroot pattern** — same as issued for api.yapbay.com + app.yapbay.com.
 - **Pod=pushflip.pod + Network=host** — matches the yapbay.pod + nginx.pod precedent; nginx in its pod reaches our services at 127.0.0.1:<port> on the host.
 - **`serve -s dist` for Vite SPA** — used by yapbay-vite, proven pattern.
@@ -677,9 +678,9 @@ Scope this to ~15 min — a full component + mount + styling. Can also be deferr
 
 **End-to-end smoke checklist after Phase 3 completes:**
 
-1. `curl -I https://pushflip.xyz/` → `200 OK`, HTML content-type, HSTS header present (via snippets/security-headers.conf)
-2. `curl -sS https://pushflip.xyz/api/health` → JSON with `status: "ok"` and `authority: <new-faucet-pubkey>`
-3. `curl -X POST -H "Content-Type: application/json" -d '{"recipient":"<fresh>"}' https://pushflip.xyz/api/faucet` → 200 + signature
+1. `curl -I https://play.pushflip.xyz/` → `200 OK`, HTML content-type, HSTS header present (via snippets/security-headers.conf)
+2. `curl -sS https://play.pushflip.xyz/api/health` → JSON with `status: "ok"` and `authority: <new-faucet-pubkey>`
+3. `curl -X POST -H "Content-Type: application/json" -d '{"recipient":"<fresh>"}' https://play.pushflip.xyz/api/faucet` → 200 + signature
 4. Same request immediately: 429 rate-limited
 5. Fresh browser, Phantom on devnet, 0 SOL, 0 `$FLIP` → click "Get test $FLIP" → confirmation toast → balance updates → stake+join succeeds (single signed tx)
 6. `ssh tucker 'journalctl --user -u pushflip-faucet.service -n 20'` → shows startup banner + each mint as an `[faucet]` log line

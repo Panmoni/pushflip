@@ -15,7 +15,11 @@ export const PUSHFLIP_PROGRAM_ID =
  * (both of which re-export this constant; do not hardcode separately).
  *
  * - Decimals: 9
- * - Mint authority: local CLI wallet (3XXMLDEf2DDdmgR978U8T5GhFLnxDNDUcJ2ETDw2bUWp)
+ * - Mint authority: dedicated faucet keypair `5vzyxxJ1NwoN5PgX1p2zCavbxc7mugLMdF7At5syGfA6`
+ *   (transferred from CLI wallet 2026-04-15 via tx
+ *   `5GR6KHASrRtRPqbqCwgXbk3nH3vBKZaLRXpMRTegXKuF9guHmv6My5bKifqCGNvnzP7z56TcNBPRfTfkT8pHN1f1`
+ *   for Pre-Mainnet 5.0.7 deploy. Keypair lives only in operator's password
+ *   manager + on the faucet host — never in this repo.)
  * - Created: 2026-04-10 (Task 3.A.2 setup)
  *
  * Promotion to a permanent mint with metadata + multisig authority is

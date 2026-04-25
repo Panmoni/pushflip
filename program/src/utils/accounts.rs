@@ -28,3 +28,26 @@ pub fn verify_writable(account: &AccountView) -> Result<(), ProgramError> {
     }
     Ok(())
 }
+
+/// Verify that an SPL Token Account holds the expected mint and is owned
+/// (in the SPL Token sense) by the expected wallet.
+pub fn verify_token_account(
+    account: &AccountView,
+    expected_mint: &[u8; 32],
+    expected_owner: &[u8; 32],
+) -> Result<(), ProgramError> {
+    if unsafe { account.owner() } != &pinocchio_token::ID {
+        return Err(PushFlipError::InvalidTokenAccount.into());
+    }
+    let data = account.try_borrow()?;
+    if data.len() < 64 {
+        return Err(PushFlipError::InvalidTokenAccount.into());
+    }
+    if &data[0..32] != expected_mint {
+        return Err(PushFlipError::InvalidTokenAccount.into());
+    }
+    if &data[32..64] != expected_owner {
+        return Err(PushFlipError::InvalidTokenAccount.into());
+    }
+    Ok(())
+}

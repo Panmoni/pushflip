@@ -35,6 +35,7 @@ pub enum PushFlipError {
     VaultNotInitialized,
     VaultAlreadyInitialized,
     MaxBountiesReached,
+    InvalidTokenAccount,
 }
 
 impl From<PushFlipError> for ProgramError {

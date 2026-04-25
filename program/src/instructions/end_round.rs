@@ -8,7 +8,7 @@ use crate::{
         player_state::{PlayerState, PLAYER_STATE_DISCRIMINATOR, STAYED},
     },
     utils::{
-        accounts::{verify_account_owner, verify_signer, verify_writable},
+        accounts::{verify_account_owner, verify_signer, verify_token_account, verify_writable},
         constants::VAULT_SEED,
         events::HexPubkey,
     },
@@ -57,6 +57,8 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
     let vault_bump;
     let logged_game_id;
     let logged_round;
+    let token_mint;
+    let treasury;
     {
         let gs_data = game_session.try_borrow_mut()?;
         let gs = GameSession::from_bytes(&gs_data);
@@ -106,6 +108,8 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         pot_amount = gs.pot_amount();
         treasury_fee_bps = gs.treasury_fee_bps();
         vault_bump = gs.vault_bump();
+        token_mint = *gs.token_mint();
+        treasury = *gs.treasury();
     }
 
     // --- Check all players are inactive, find winner ---
@@ -130,7 +134,12 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         if ps.inactive_reason() == STAYED {
             all_busted = false;
             let score = ps.score();
-            if score > highest_score {
+            // Tie-break: first stayed player in turn_order wins (per
+            // EXECUTION_PLAN Task 1.12.2 step 3). Strict `>` alone would
+            // leave winner_index == None on ties, falling through to a
+            // caller-supplied destination — same redirect class as the
+            // unvalidated winner_token_account vector.
+            if winner_index.is_none() || score > highest_score {
                 highest_score = score;
                 winner_index = Some(i);
             }
@@ -175,6 +184,7 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         // Transfer rake to treasury
         if rake > 0 {
             verify_writable(treasury_token_account)?;
+            verify_token_account(treasury_token_account, &token_mint, &treasury)?;
             Transfer {
                 from: vault,
                 to: treasury_token_account,
@@ -187,6 +197,7 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
         // Transfer winnings to winner
         if winner_payout > 0 {
             verify_writable(winner_token_account)?;
+            verify_token_account(winner_token_account, &token_mint, &winner_pubkey)?;
             Transfer {
                 from: vault,
                 to: winner_token_account,
@@ -209,6 +220,7 @@ pub fn process(accounts: &[AccountView], _data: &[u8]) -> ProgramResult {
                 // permanent token lock. Authority can redistribute manually.
                 if pot_amount > 0 {
                     verify_writable(treasury_token_account)?;
+                    verify_token_account(treasury_token_account, &token_mint, &treasury)?;
                     Transfer {
                         from: vault,
                         to: treasury_token_account,

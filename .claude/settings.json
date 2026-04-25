@@ -126,7 +126,8 @@
       "Bash(pnpm --filter @pushflip/faucet exec typecheck)",
       "Bash(pnpm --filter @pushflip/faucet lint)",
       "Bash(pnpm --filter @pushflip/faucet lint:fix)",
-      "Bash(pkill -9 -f tsx)"
+      "Bash(pkill -9 -f tsx)",
+      "Bash(solana-keygen --version)"
     ],
     "deny": [
       "Bash(rm -rf *)",

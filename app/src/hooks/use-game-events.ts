@@ -1,204 +1,328 @@
 /**
- * `useGameEvents` — derive a stream of human-readable game events from
- * GameSession state changes.
+ * `useGameEvents` — build an authoritative event feed for a game from
+ * the `pushflip:<kind>:...` log lines the program emits on every
+ * state-changing instruction (Pre-Mainnet 5.0.9 PR 1, deployed
+ * 2026-04-15).
  *
- * **Why state diffs instead of program logs:**
+ * **Why this replaces the state-diff approach (Pre-Mainnet 5.0.9 PR 2):**
  *
- * The pushflip program does not currently emit structured events via
- * `pinocchio_log` — only one log call exists in the entire program (an
- * error path in `commit_deck`). Building this hook on top of
- * `logsNotifications` would require waiting for the program to add
- * dedicated event-emission logs to every state-changing instruction
- * (a separate, larger task).
+ * The previous implementation reconstructed events by diffing consecutive
+ * `GameSession` snapshots this browser happened to witness. That had three
+ * problems: (1) not authoritative — a second device saw a different feed;
+ * (2) died on refresh — held only in React state; (3) couldn't answer
+ * "what happened before I opened this tab?". This hook fixes all three
+ * by reading the program's log lines directly from two sources:
  *
- * Instead, we derive events from the diff between the previous and
- * current GameSession snapshots that the existing `useGameSession`
- * subscription is already pulling into the cache. Whenever the cached
- * value changes, we compare relevant fields and synthesize semantic
- * events: PlayerJoined, RoundStarted, DeckCommitted, TurnAdvanced,
- * PotChanged, RoundEnded.
+ * - Historical backfill via `getSignaturesForAddress({limit: 50})` +
+ *   `getTransaction` in concurrent batches of 10.
+ * - Live stream via `logsNotifications({mentions: [gamePda]})`.
  *
- * This is a derived view, not authoritative — if the program later
- * starts emitting real event logs, this hook can be reimplemented in
- * place against `logsNotifications` and the consumer API stays the
- * same. The EventFeed component is unchanged.
+ * **Critical ordering:** the subscription is opened FIRST, then backfill
+ * runs second. Opening in reverse would leave a silent gap: any event
+ * produced between `getSignaturesForAddress` returning and the WebSocket
+ * being established would be dropped forever. With subscribe-first,
+ * anything that fires during backfill is buffered by the live loop and
+ * merged via id-keyed dedupe.
  *
- * Spec: docs/EXECUTION_PLAN.md Task 3.6.1.
+ * **Sort key:** `(slot DESC, logIndex DESC)`. NOT `Date.now()` — the
+ * client's mount time is not related to when a backfilled event
+ * actually happened, so a wall-clock sort would scramble the feed.
+ *
+ * **Toast policy:** toast only new LIVE events. Backfill inserts
+ * silently — we don't want the user to see 50 toasts spray on page load.
  */
 
-import type { GameSession } from "@pushflip/client";
-import { useEffect, useRef, useState } from "react";
+import {
+  deriveGamePda,
+  type GameEvent,
+  parseTransactionEvents,
+} from "@pushflip/client";
+import type { Address, Signature, Slot, UnixTimestamp } from "@solana/kit";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { useGameSession } from "@/hooks/use-game-session";
 import { GAME_ID } from "@/lib/constants";
-import { formatFlip } from "@/lib/flip-format";
+import { renderEventMessage } from "@/lib/event-render";
+import { logError } from "@/lib/logger";
+import { rpc, rpcSubscriptions } from "@/lib/program";
 
-export type GameEventKind =
-  | "PlayerJoined"
-  | "DeckCommitted"
-  | "RoundStarted"
-  | "TurnAdvanced"
-  | "PotChanged"
-  | "RoundEnded";
+// Re-export so consumers can `import type { GameEvent } from "@/hooks/..."`
+// without reaching into the client package directly.
+export type { GameEvent, GameEventKind } from "@pushflip/client";
 
-export interface GameEvent {
-  /** Unique event id (monotonic counter, not random — keeps the React keys stable). */
-  id: number;
-  kind: GameEventKind;
-  /** Short, human-readable label suitable for both toast and feed. */
-  message: string;
-  /** ISO timestamp string for the event log display. */
-  timestamp: string;
-}
-
-const MAX_EVENT_HISTORY = 50;
+const MAX_EVENTS = 200;
+const BACKFILL_SIGNATURE_LIMIT = 50;
+const BACKFILL_TRANSACTION_BATCH = 10;
 
 interface UseGameEventsResult {
-  /**
-   * Manually clear the event log. Currently UNUSED — exposed for the
-   * Phase 4 round-end UX (clear the previous round's history when a
-   * new round starts so the feed doesn't grow unbounded across many
-   * rounds in the same game). Heavy-duty review #10 finding #10:
-   * intentionally kept on the API surface as a forward declaration.
-   */
   clear: () => void;
   events: readonly GameEvent[];
+  /**
+   * True from mount until the initial backfill completes. `EventFeed`
+   * uses this to show skeleton rows instead of the empty-state copy.
+   */
+  isBackfilling: boolean;
 }
 
 /**
- * Pure diff function — compare two GameSession snapshots and emit
- * derived events for each meaningful change. Extracted out of the
- * effect body so the effect itself stays below biome's
- * noExcessiveCognitiveComplexity threshold.
- *
- * `nextId` is a callback that produces the next monotonic id (the
- * caller owns the counter so the ids stay stable across diffs).
+ * Compare two GameEvents by (slot DESC, logIndex DESC). Extracted so
+ * the sort comparator is reused across merges instead of recreated.
  */
-function diffGameSessions(
-  prev: GameSession,
-  current: GameSession,
-  nextId: () => number,
-  timestamp: string
-): GameEvent[] {
-  const out: GameEvent[] = [];
-  const make = (kind: GameEventKind, message: string): GameEvent => ({
-    id: nextId(),
-    kind,
-    timestamp,
-    message,
-  });
-
-  if (current.playerCount > prev.playerCount) {
-    const delta = current.playerCount - prev.playerCount;
-    const message =
-      delta === 1
-        ? `A player joined (${current.playerCount} total)`
-        : `${delta} players joined (${current.playerCount} total)`;
-    out.push(make("PlayerJoined", message));
+function byRecency(a: GameEvent, b: GameEvent): number {
+  if (a.slot !== b.slot) {
+    return a.slot > b.slot ? -1 : 1;
   }
+  return b.logIndex - a.logIndex;
+}
 
-  if (!prev.deckCommitted && current.deckCommitted) {
-    out.push(make("DeckCommitted", "Dealer committed the shuffled deck"));
+type SigInfo = Readonly<{ signature: Signature }>;
+type TxResult = Awaited<
+  ReturnType<ReturnType<typeof rpc.getTransaction>["send"]>
+>;
+
+/**
+ * Absorb a single `(sigInfo, getTransaction result)` pair into the
+ * feed. Extracted from `backfillEvents` so the outer loop stays under
+ * biome's cognitive-complexity budget.
+ */
+function absorbBackfillTx(
+  sigInfo: SigInfo,
+  result: PromiseSettledResult<TxResult>,
+  absorb: (events: readonly GameEvent[]) => void
+): void {
+  if (result.status === "rejected") {
+    logError("useGameEvents.getTransaction", result.reason);
+    return;
   }
-
-  if (!prev.roundActive && current.roundActive) {
-    out.push(
-      make("RoundStarted", `Round ${current.roundNumber.toString()} started`)
-    );
+  const tx = result.value;
+  if (!tx?.meta || tx.meta.err !== null) {
+    return;
   }
-
-  if (prev.roundActive && !current.roundActive) {
-    out.push(make("RoundEnded", `Round ${prev.roundNumber.toString()} ended`));
+  const logs = tx.meta.logMessages;
+  if (!logs) {
+    return;
   }
+  const parsed = parseTransactionEvents(
+    sigInfo.signature,
+    tx.slot,
+    toUnixSeconds(tx.blockTime),
+    logs
+  );
+  if (parsed.length > 0) {
+    absorb(parsed);
+  }
+}
 
-  if (
-    current.roundActive &&
-    prev.roundActive &&
-    prev.currentTurnIndex !== current.currentTurnIndex
+/**
+ * Fetch one page of recent signatures + their transactions and parse
+ * every pushflip event line out of the logs. Runs in the background
+ * while the live subscription feeds the hook — race is harmless, dedupe
+ * by `event.id` handles overlap.
+ */
+async function backfillEvents(
+  pda: Address,
+  absorb: (events: readonly GameEvent[]) => void,
+  abortSignal: AbortSignal
+): Promise<void> {
+  const sigInfos = await rpc
+    .getSignaturesForAddress(pda, {
+      limit: BACKFILL_SIGNATURE_LIMIT,
+      commitment: "confirmed",
+    })
+    .send();
+
+  // Drop failed txs up front — the program reverts state on error, so
+  // log lines from failed txs are runtime noise we don't want to render.
+  const successful = sigInfos.filter((s) => s.err === null);
+
+  for (
+    let start = 0;
+    start < successful.length;
+    start += BACKFILL_TRANSACTION_BATCH
   ) {
-    out.push(
-      make("TurnAdvanced", `Turn advanced to seat ${current.currentTurnIndex}`)
-    );
-  }
-
-  if (prev.potAmount !== current.potAmount && current.potAmount > 0n) {
-    const direction = current.potAmount > prev.potAmount ? "↑" : "↓";
-    // Show the DELTA in human-readable $FLIP, not the raw pot base units.
-    // Before: "Pot ↑ 100000000000" (10^9 base units scaling buried in the
-    // digits, no $FLIP unit label, hard to parse at a glance).
-    // After:  "Pot ↑ 100 $FLIP (total: 100)" — `formatFlip` handles the
-    //         FLIP_SCALE division + thousands separators.
-    const delta =
-      current.potAmount > prev.potAmount
-        ? current.potAmount - prev.potAmount
-        : prev.potAmount - current.potAmount;
-    out.push(
-      make(
-        "PotChanged",
-        `Pot ${direction} ${formatFlip(delta)} $FLIP (total: ${formatFlip(current.potAmount)})`
+    if (abortSignal.aborted) {
+      return;
+    }
+    const batch = successful.slice(start, start + BACKFILL_TRANSACTION_BATCH);
+    // `allSettled` (not `all`) so one failing `getTransaction` — a flaky
+    // RPC, a 429, a tx the node hasn't retained — doesn't drop the whole
+    // batch. Rejections are logged and the batch continues.
+    const results = await Promise.allSettled(
+      batch.map((s) =>
+        rpc
+          .getTransaction(s.signature, {
+            encoding: "json",
+            maxSupportedTransactionVersion: 0,
+            commitment: "confirmed",
+          })
+          .send()
       )
     );
+    for (let i = 0; i < batch.length; i++) {
+      const sigInfo = batch[i];
+      const result = results[i];
+      if (sigInfo && result) {
+        absorbBackfillTx(sigInfo, result, absorb);
+      }
+    }
   }
+}
 
-  return out;
+function toUnixSeconds(
+  blockTime: UnixTimestamp | null | undefined
+): number | null {
+  if (blockTime === null || blockTime === undefined) {
+    return null;
+  }
+  // UnixTimestamp is branded bigint; Unix seconds are well under 2^53.
+  return Number(blockTime);
 }
 
 /**
- * Subscribe to a game and emit derived events as the cached account
- * changes. Returns the running event log (most recent first).
- *
- * Toasts every event by default; the EventFeed component renders the
- * full history below the game board.
+ * Insert new events into the id-keyed Map, dedupe, optionally toast
+ * live ones. Returns `true` if any event was new (the caller uses this
+ * to decide whether to push a fresh sorted snapshot to React state).
  */
-export function useGameEvents(gameId: bigint = GAME_ID): UseGameEventsResult {
-  const gameQuery = useGameSession(gameId);
-  const [events, setEvents] = useState<GameEvent[]>([]);
-  const previousRef = useRef<GameSession | null>(null);
-  const counterRef = useRef(0);
+function insertEvents(
+  eventsById: Map<string, GameEvent>,
+  newEvents: readonly GameEvent[],
+  shouldToast: boolean
+): boolean {
+  let changed = false;
+  for (const ev of newEvents) {
+    if (eventsById.has(ev.id)) {
+      continue;
+    }
+    eventsById.set(ev.id, ev);
+    changed = true;
+    if (shouldToast) {
+      tryToast(ev);
+    }
+  }
+  return changed;
+}
 
-  const game = gameQuery.data?.data ?? null;
+function tryToast(ev: GameEvent): void {
+  try {
+    toast(renderEventMessage(ev));
+  } catch (error) {
+    // Renderer throwing shouldn't kill the feed. Log and move on.
+    logError("useGameEvents.render", error);
+  }
+}
+
+/**
+ * Drain the logsNotifications async iterator until aborted, absorbing
+ * each matching event into the local buffer. Errors that aren't caused
+ * by the abort bubble up to the caller.
+ *
+ * The subscription payload does NOT include `blockTime`, so we stamp
+ * wall-clock-on-arrival as an approximation. This matches the previous
+ * state-diff hook's behavior (it used `new Date().toISOString()` on
+ * detection) and keeps live rows showing a real time instead of a raw
+ * slot number. Backfilled events already carry the node's `blockTime`
+ * from `getTransaction` and don't need this approximation.
+ */
+async function drainSubscription(
+  notifications: AsyncIterable<{
+    readonly context: { readonly slot: Slot };
+    readonly value: {
+      readonly err: unknown;
+      readonly logs: readonly string[];
+      readonly signature: Signature;
+    };
+  }>,
+  absorb: (events: readonly GameEvent[], opts: { toast: boolean }) => void
+): Promise<void> {
+  for await (const notification of notifications) {
+    if (notification.value.err !== null) {
+      continue;
+    }
+    const parsed = parseTransactionEvents(
+      notification.value.signature,
+      notification.context.slot,
+      Math.floor(Date.now() / 1000),
+      notification.value.logs
+    );
+    if (parsed.length > 0) {
+      absorb(parsed, { toast: true });
+    }
+  }
+}
+
+export function useGameEvents(gameId: bigint = GAME_ID): UseGameEventsResult {
+  const [events, setEvents] = useState<readonly GameEvent[]>([]);
+  const [isBackfilling, setIsBackfilling] = useState(true);
 
   useEffect(() => {
-    const prev = previousRef.current;
-    previousRef.current = game;
+    const abortController = new AbortController();
+    const eventsById = new Map<string, GameEvent>();
+    let isMounted = true;
 
-    // First snapshot — nothing to diff against. Don't emit any events.
-    if (prev === null || game === null) {
-      return;
-    }
-
-    const nextId = () => {
-      counterRef.current += 1;
-      return counterRef.current;
+    const absorb = (
+      newEvents: readonly GameEvent[],
+      opts: { toast: boolean }
+    ): void => {
+      if (!isMounted) {
+        return;
+      }
+      const changed = insertEvents(eventsById, newEvents, opts.toast);
+      if (!changed) {
+        return;
+      }
+      const sorted = Array.from(eventsById.values())
+        .sort(byRecency)
+        .slice(0, MAX_EVENTS);
+      setEvents(sorted);
     };
-    const newEvents = diffGameSessions(
-      prev,
-      game,
-      nextId,
-      new Date().toISOString()
-    );
 
-    if (newEvents.length === 0) {
-      return;
-    }
+    const run = async (): Promise<void> => {
+      const [pda] = await deriveGamePda(gameId);
 
-    // Toast each new event so users get real-time feedback.
-    for (const event of newEvents) {
-      toast(event.message);
-    }
+      // Subscription FIRST so we don't drop anything during backfill.
+      const notifications = await rpcSubscriptions
+        .logsNotifications({ mentions: [pda] }, { commitment: "confirmed" })
+        .subscribe({ abortSignal: abortController.signal });
 
-    // Prepend (most recent first) and cap history. `toReversed()` is
-    // ES2023 — non-mutating; cleaner than the previous `.reverse()`
-    // which mutated `newEvents` in place. Heavy-duty review #10
-    // finding #5.
-    setEvents((current) =>
-      [...newEvents.toReversed(), ...current].slice(0, MAX_EVENT_HISTORY)
-    );
-  }, [game]);
+      // Backfill runs alongside the live loop. No await — we want the
+      // drain below to start consuming events the instant the subscription
+      // is established. Any overlap with backfill is handled by dedupe.
+      backfillEvents(
+        pda,
+        (evs) => absorb(evs, { toast: false }),
+        abortController.signal
+      )
+        .catch((error) => {
+          if (!abortController.signal.aborted) {
+            logError("useGameEvents.backfill", error);
+          }
+        })
+        .finally(() => {
+          if (isMounted) {
+            setIsBackfilling(false);
+          }
+        });
+
+      await drainSubscription(notifications, absorb);
+    };
+
+    run().catch((error) => {
+      // AbortError on unmount is expected; everything else is a real drop.
+      // Same pattern as useGameSession / useTokenBalance.
+      if (!abortController.signal.aborted) {
+        logError("useGameEvents.subscription", error);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      abortController.abort();
+    };
+  }, [gameId]);
 
   return {
     events,
+    isBackfilling,
     clear: () => setEvents([]),
   };
 }

@@ -57,3 +57,12 @@ export {
 
 // Instruction builders
 export * from "./instructions.js";
+
+// Event log parsing (Pre-Mainnet 5.0.9 PR 2)
+export {
+  type GameEvent,
+  type GameEventKind,
+  type ParseEventLogContext,
+  parseEventLog,
+  parseTransactionEvents,
+} from "./events.js";

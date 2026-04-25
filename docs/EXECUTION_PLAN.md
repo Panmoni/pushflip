@@ -3173,6 +3173,13 @@ Files: `clients/js/src/events.ts` + `.test.ts` + `app/src/lib/event-render.ts` +
 
 **Full plan:** `/home/george9874/.claude/plans/reflective-honking-riddle.md` (written 2026-04-12, approved for implementation the same session).
 
+**PR 2 review follow-ups (post-merge, non-blocking)** — surfaced during my review of [PR #1](https://github.com/Panmoni/pushflip/pull/1) on 2026-04-25. None of these blocked the approval; tracked here so they don't get lost after the devnet bake completes:
+
+1. **CI mechanism for kind-list drift.** Assert that the 16 `pushflip:<kind>:` format strings in [program/src/instructions/](../program/src/instructions/) match the `KNOWN_KINDS` set in [clients/js/src/events.ts](../clients/js/src/events.ts) and the golden fixtures in [clients/js/src/events.test.ts](../clients/js/src/events.test.ts). A grep + diff in `pre-pr-gate.sh` (or a `build.rs` step) is enough — a developer who edits a program format string without running client tests would otherwise silently break the feed. Per the "workflow rules → mechanism" rule, this should be machinery, not discipline. Same shape as the Pre-Mainnet 5.0.4 / 5.0.8 lint rules.
+2. **Bound `eventsById` Map growth in `useGameEvents`.** [app/src/hooks/use-game-events.ts](../app/src/hooks/use-game-events.ts) slices the rendered array to `MAX_EVENTS = 200` but the dedupe Map keeps every event seen for the lifetime of the effect. Fine at typical game size (<20 events) but leaks if `BACKFILL_SIGNATURE_LIMIT` ever bumps past 200 or a long-running game accumulates many events. Prune the Map alongside the array.
+3. **Render `bounty_type` and `card_type` as named variants.** The renderer in [app/src/lib/event-render.ts](../app/src/lib/event-render.ts) currently shows raw numbers (`type 1`, `card 7/2`). The `BountyType` enum is already exported from `@pushflip/client`; suit/value have well-known mappings. Cosmetic — defer until product names them.
+4. **Consolidate the four `shortAddress` copies.** [app/src/components/game/game-board.tsx](../app/src/components/game/game-board.tsx), [app/src/components/game/turn-indicator.tsx](../app/src/components/game/turn-indicator.tsx), [app/src/components/wallet/wallet-button.tsx](../app/src/components/wallet/wallet-button.tsx), and now [app/src/lib/event-render.ts](../app/src/lib/event-render.ts) all carry their own `${addr.slice(0,4)}…${addr.slice(-4)}` helper. Promote to a single helper in `app/src/lib/` (or `@pushflip/client` if any non-app caller wants it). Pure cleanup PR.
+
 ---
 
 #### Task 5.1: Program Deployment

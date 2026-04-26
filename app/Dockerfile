@@ -28,7 +28,7 @@
 # --- build stage ---------------------------------------------------
 FROM node:20-slim AS build
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@10 --activate
+RUN corepack enable && corepack prepare pnpm@9 --activate
 
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY app/package.json ./app/

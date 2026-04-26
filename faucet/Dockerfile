@@ -19,7 +19,7 @@
 
 FROM node:20-slim AS base
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@10 --activate
+RUN corepack enable && corepack prepare pnpm@9 --activate
 
 # Install workspace deps. Copy the lockfile + the package.json files
 # of the workspaces we need first, so this layer caches across source

@@ -1,0 +1,40 @@
+# Drop heavy paths from the podman build context. Without this, every
+# `podman build` ships ~2 GB to the daemon: node_modules across all
+# workspaces (~1.1 GB), Rust target/ (~485 MB), the wiki Python venv,
+# the local solana program build artifacts, etc.
+#
+# With this file the context is ~50 MB and builds run in 2-3 min
+# instead of 5-10. (17th heavy-duty review M5.)
+
+# JS deps — installed inside the image
+node_modules
+**/node_modules
+
+# Rust artifacts (program is deployed separately, the deploy host
+# never builds the .so locally)
+target
+**/target
+
+# Wiki tooling (Python venv + built site)
+wiki/.venv
+wiki/site
+
+# Build outputs (the multi-stage Dockerfile produces these inside the
+# build container)
+dist
+**/dist
+
+# Tooling state and editor noise
+.git
+.claude
+.vscode
+.idea
+.DS_Store
+*.log
+
+# Local env files — production env is mounted into the container at
+# runtime via EnvironmentFile= in the quadlet, NOT baked into the image
+.env
+.env.*
+**/.env
+**/.env.*

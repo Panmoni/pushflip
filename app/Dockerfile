@@ -27,7 +27,16 @@ RUN corepack enable && corepack prepare pnpm@10 --activate
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY app/package.json ./app/
 COPY clients/js/package.json ./clients/js/
-RUN pnpm install --filter @pushflip/app --filter @pushflip/client --frozen-lockfile
+# --ignore-scripts: workaround for pnpm install hanging on postinstall
+# scripts inside rootless podman on Alpine. Same issue caused yapbay's
+# pnpm-test image to hang for 13 days (see ~/repos/yapbay/Containerfile
+# which works around it by switching to npm ci entirely). Platform-
+# specific binaries that vite/tsc need (esbuild, lightningcss, the
+# rollup-linux-* native binding) are declared as optionalDependencies
+# and install regardless of --ignore-scripts. Biome's postinstall
+# (the likely culprit for the 10-min hang we saw) is dev-only and not
+# needed for the production bundle build.
+RUN pnpm install --filter @pushflip/app --filter @pushflip/client --frozen-lockfile --ignore-scripts
 
 COPY clients/js ./clients/js
 COPY app ./app

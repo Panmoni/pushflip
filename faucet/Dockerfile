@@ -8,8 +8,16 @@
 # on the deploy host. Env comes from .env.production (EnvironmentFile=)
 # and the keypair is bind-mounted read-only from the host filesystem.
 # This image carries NO secrets.
+#
+# Base: node:20-slim (Debian, glibc), NOT node:20-alpine (musl).
+# pnpm install hangs deterministically on Alpine inside rootless
+# podman due to a worker-thread/futex deadlock — see the matching
+# yapbay-pushflip session log + the abandoned ~/repos/yapbay/Containerfile
+# (renamed to .pnpm-test) that hung for 13 days on the same issue.
+# Debian's glibc is the minimal-change fix; image size goes from ~50MB
+# to ~150MB which is irrelevant on tucker (49 GB free).
 
-FROM node:20-alpine AS base
+FROM node:20-slim AS base
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10 --activate
 

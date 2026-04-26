@@ -18,9 +18,15 @@
 # Runtime: see ~/.config/containers/systemd/pushflip-vite.container
 # on the deploy host. Image carries NO secrets — Helius URLs include
 # an API key but it's a public devnet key with no economic value.
+#
+# Build base: node:20-slim (Debian, glibc), NOT node:20-alpine.
+# pnpm install hangs deterministically on Alpine in rootless podman
+# (worker-thread futex deadlock; see faucet/Dockerfile header). Serve
+# stage stays alpine because `serve` is pure JS with no native deps,
+# so the runtime image stays small.
 
 # --- build stage ---------------------------------------------------
-FROM node:20-alpine AS build
+FROM node:20-slim AS build
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10 --activate
 

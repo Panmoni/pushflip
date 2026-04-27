@@ -1,5 +1,42 @@
 # Deploy pushflip to tucker — Implementation Plan
 
+## Status — DEPLOYED 2026-04-26/27 ✅
+
+**Live at https://play.pushflip.xyz/.** All five phases complete; one-command redeploy works (`./scripts/deploy-tucker.sh`, ~25 s end-to-end on cache-warm builds).
+
+Live state at end of deploy session:
+- Frontend SPA + faucet both serving 200 OK behind nginx + Let's Encrypt; HSTS + security headers via shared snippets.
+- Faucet authority: `5vzyxxJ1NwoN5PgX1p2zCavbxc7mugLMdF7At5syGfA6` (dedicated keypair on tucker; old CLI-wallet authority `3XXMLDEf…` relinquished). Authority-transfer tx: `5GR6KHASrRtRPqbqCwgXbk3nH3vBKZaLRXpMRTegXKuF9guHmv6My5bKifqCGNvnzP7z56TcNBPRfTfkT8pHN1f1`. Faucet wallet balance ~9.99 SOL.
+- Helius devnet RPC wired in (free tier, 10 req/s); both backend and the Vite bundle hit Helius (verified by grepping `dist/*.js` for the inlined URL — the `|| "https://api.devnet.solana.com"` fallback in source is a defensive default, not the runtime path).
+- Faucet config: `FAUCET_AMOUNT_WHOLE_FLIP=1000`, `COOLDOWN_MINUTES=1440`, `ALLOWED_ORIGINS` locked to `https://play.pushflip.xyz`.
+- SSL auto-renewal verified active (`certbot.timer` running, `certbot renew --dry-run` clean across all 4 certs on tucker).
+- Demo-stage banner ([app/src/components/misc/demo-stage-banner.tsx](../app/src/components/misc/demo-stage-banner.tsx)) shipped explaining "you can connect, mint, join — full gameplay needs the not-yet-deployed dealer."
+- "A Panmoni project" footer attribution shipped, mirroring the tokenstork pattern; `panmoni.svg` copied into `app/public/`.
+
+### What we encountered along the way (commit chain of fixes)
+
+The 5.0.7 plan didn't anticipate the container-build pathology. Each issue burned ~10–20 minutes of the deploy window:
+
+1. **`pnpm install` hung at biome postinstall** in the Alpine container — `4db68da fix(deploy): pnpm install --ignore-scripts in Dockerfiles to unblock build`. Postinstall scripts aren't needed for our build (we don't run biome inside the deploy image); skipping them got past the immediate hang.
+2. **`pnpm install` then deadlocked at 733/734 packages** — futex deadlock in libuv worker threads. First tried switching the base image: `ac55bd6 fix(deploy): switch Dockerfile build base from node:20-alpine to node:20-slim`. Same deadlock on Debian, so glibc-vs-musl wasn't the cause.
+3. **Root cause: pnpm@10 in containerized Node** — pinning pnpm@9 cleared the deadlock cleanly: `e6ce2d4 fix(deploy): pin pnpm@9 in Dockerfiles`. **Lesson**: yapbay-vite hit the exact same pathology on tucker months ago and switched to `npm ci`; we didn't have that institutional memory in front of us at the time. Now we do (Lesson #53 in EXECUTION_PLAN.md).
+4. **`systemctl restart` killed the pod, then container start failed** — `ExecStopPost=podman pod rm` in the generated unit removed `pushflip.pod` cleanly, but the containers' `BindsTo=pushflip-pod.service` failed to start because the pod was gone. Fixed by adding `pushflip-pod` to the script's `SERVICES` restart list so all three are in a single dependency-resolved restart group: `5db67ce` (rolled into `117d50e feat: scripts/deploy-tucker.sh — one-command production deploy`).
+5. **Smoke check raced ahead of upstream binding** — `systemctl is-active` returns the moment the container starts, but `serve` and Hono need ~1–3 s after that to bind their listening ports. Without a retry, smoke fails with 502. Fixed with retry-with-backoff (2s/4s/6s/8s, max 5 attempts): `927df52` (also rolled into `117d50e`).
+6. **Manual rollback printed by the script also raced 502** — same upstream-binding race, only on the rollback path. Fixed by embedding a self-verifying retry loop in `print_rollback_cmd()` plus splitting `CONTAINER_IMAGES` from `SERVICES` (pods don't have images, so `:prev` tagging skips the pod): `5d784a7`.
+7. **Footer attribution + demo-stage banner** — `e85eec3 feat(app): footer "A Panmoni project" attribution` and `349d682 feat(app): demo-stage banner explaining current deploy scope` (the latter actually 5d784a7's twin, already deployed by the time you read this).
+
+The deploy script absorbed each of these as it learned. End state: cache-warm redeploys take ~25 seconds and auto-verify both URLs.
+
+### Outstanding (small)
+
+- **Browser end-to-end test** still owed: a fresh wallet on devnet → "Get test $FLIP" → mint succeeds → join works. Pending the next live session at the box.
+- **Stray `pushflip-faucetatest:latest` typo'd image tag** reappeared on tucker after a `podman rmi` cleanup — likely regenerated from build history. Cosmetic; investigate next deploy if it persists.
+- See **Phase 5.5 deferred list** (further down) for Helius Developer-tier upgrade trigger, dealer productionization, Cloudflare orange-cloud re-enable, monthly podman prune cron, keypair rotation SOP, GitHub Actions CI, Prometheus monitoring.
+
+The original plan below is preserved as historical reference. **All five phases below are now DONE; the plan executed substantially as written.** The "What we encountered along the way" list above captures the deviations.
+
+---
+
 ## Context
 
 **Goal.** Get a public HTTPS URL (`https://play.pushflip.xyz`) serving the frontend + a working one-click test-`$FLIP` faucet, backed by the on-chain devnet program that's already deployed. This is the first public-facing deploy of this project. Mainnet is far away; this is a devnet demo that stays up for months.
@@ -721,22 +758,14 @@ Scope this to ~15 min — a full component + mount + styling. Can also be deferr
 
 ---
 
-## Plan readiness
+## Plan readiness — EXECUTED ✅
 
-**Wall-clock estimate:** ~4-5 hours across phases 0-4. Doable today (4:43 PM start → done by 9:00-9:30 PM local). Phase 5 (docs) can slide to tomorrow before PR 2 lands.
+**Original wall-clock estimate**: ~4–5 hours across phases 0–4.
+**Actual wall-clock**: ~6 hours over 2026-04-26 → 2026-04-27, including the four container-build issues described in the Status section at the top of this doc. The 5–6 deploy-script iterations cost the most time; once the Dockerfiles + script stabilized, redeploys settled at ~25 seconds.
 
-**Sequence today (4:43 PM start):**
-1. Phase 0 (local, ~40 min): keypair + backup + authority transfer + DNS + doc updates + commit/push
-2. Phase 1 (tucker, ~75 min): Helius signup, infra, nginx config + **reload** (1.6b), cert, **auto-renewal verify** (1.7b), **disk check** (1.7c)
-3. Phase 2 (tucker, ~60 min): frontend deploy
-4. Phase 3 (tucker, ~60 min): faucet deploy + port binding verify
-5. Phase 4 (both, ~40 min): redeploy script + dry-run + rollback test + demo banner (optional, ~15 min)
+All five phases ran substantially as planned. The redeploy ergonomics goal is met: a single `./scripts/deploy-tucker.sh` from a clean local checkout produces a live deploy with rollback printed and self-verifying. The script has now been exercised across multiple back-to-back redeploys (footer attribution, demo banner) without intervention.
 
-**Sequence tomorrow:**
-1. PR 2 (event feed rewrite, per existing `docs/EXECUTION_PLAN.md` Pre-Mainnet 5.0.9 spec)
-2. `bash scripts/deploy-tucker.sh` — proves the redeploy flow with a real code change
-3. Phase 5 (docs + wiki page + plan-doc update + `.claude/settings.json` allowlist) — after the "prove it works twice" moment
-
-**If 17th review catches something I missed here, fold it back into this plan file before executing Phase 0.1.**
-
-When this plan is approved via ExitPlanMode, start at Phase 0.1.
+**Next deploy session goals (deferred from this one):**
+1. Browser E2E from a fresh wallet (connect → faucet → join) — owed.
+2. Investigate the stray typo'd image tag if it persists.
+3. Phase 5.5 deferred items as their triggers fire (Helius upgrade, dealer productionization, Cloudflare orange cloud, monthly prune, keypair rotation SOP, CI, monitoring).

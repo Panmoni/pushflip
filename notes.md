@@ -4,7 +4,6 @@
 - will need tools to analyze patterns to understand how cheating might be happening
 - how to best share deployment privkey with Alex
 - deployment for wiki, host at wiki.pushflip.xyz, link to wiki from www and readmes
-- get server and start deploying the frontend etc there, CI/CD etc
 
 ### Future
 - should have a powers of tau ceremony involving humans at some point

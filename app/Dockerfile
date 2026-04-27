@@ -74,34 +74,39 @@ RUN node -e "\
     fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2)); \
   }"
 
-# --ignore-scripts: skip biome/ultracite postinstalls that aren't
-# needed for the production bundle build.
+# --ignore-scripts: skip biome/ultracite postinstalls.
 # --no-audit --no-fund: less noise + slightly faster.
 # Do NOT pass --omit=optional: rolldown / esbuild / lightningcss / the
 # rollup-linux-x64-gnu binary all ship as optionalDependencies with
 # platform conditionals — those ARE the ones we need on Linux x64.
-# Omitting them produces a "Cannot find module @rolldown/binding-..."
-# error at vite build time.
-# --fetch-retries / --fetch-timeout: tucker's network occasionally
-# stalls mid-download (EIDLETIMEOUT against registry.npmjs.org); the
-# same flake hit `npm install -g serve@14` during the original 5.0.7
-# deploy. Bumping retries 2→5 + idle timeout 60s→10min handles it
-# without the operator having to re-run the deploy.
-#
+# --prefer-offline: use the cache mount aggressively. On retry attempts
+# this skips re-downloading anything already pulled. Critical for
+# making the retry loop below produce net progress.
 # --mount=type=cache,target=/root/.npm: persist npm's tarball cache
-# across container builds. npm has no content-addressable store like
-# pnpm's, so a cold install re-downloads ~956 packages from
-# registry.npmjs.org every time (~60s on tucker's network). The cache
-# mount drops warm rebuilds to ~5s of cache-hit unpack. `sharing=locked`
-# serializes concurrent builds so they don't corrupt the shared cache.
-# Requires podman ≥ 4.0 (tucker has 5.4.2).
+# across container builds AND across retry attempts within one build.
+#
+# Shell retry loop: tucker's network drops idle keep-alive sockets to
+# registry.npmjs.org after ~60s, surfacing as `EIDLETIMEOUT`. npm's
+# --fetch-timeout/--fetch-retries flags don't reach the underlying
+# agentkeepalive layer where this fires, so each EIDLETIMEOUT kills
+# the whole npm install. With the cache mount + --prefer-offline,
+# each retry starts from the cache and only fetches what's missing,
+# so 3-5 retries reliably converge even on a flaky link. The 30s
+# inter-retry sleep gives transient network blips time to clear.
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-    npm install \
-    --no-audit --no-fund --ignore-scripts \
-    --fetch-retries=5 \
-    --fetch-retry-mintimeout=20000 \
-    --fetch-retry-maxtimeout=120000 \
-    --fetch-timeout=600000
+    bash -c "for attempt in 1 2 3 4 5; do \
+      echo \"[npm install attempt \$attempt/5]\"; \
+      npm install \
+        --no-audit --no-fund --ignore-scripts \
+        --prefer-offline \
+        --fetch-retries=5 \
+        --fetch-retry-mintimeout=20000 \
+        --fetch-retry-maxtimeout=120000 \
+        --fetch-timeout=600000 && exit 0; \
+      echo \"[npm install attempt \$attempt failed; sleeping 30s before retry]\"; \
+      sleep 30; \
+    done; \
+    echo '[npm install failed after 5 attempts]'; exit 1"
 
 COPY clients/js ./clients/js
 COPY app ./app

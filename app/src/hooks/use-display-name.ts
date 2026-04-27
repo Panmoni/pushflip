@@ -5,9 +5,16 @@
  * Wraps `GET ${FAUCET_NICKNAME_BASE}/:address`. Cached by React Query
  * with `staleTime: Infinity` + `gcTime: Infinity` because nicknames
  * are first-come-first-served and permanent — once registered, the
- * mapping never changes for that address. Persistence to localStorage
- * (configured at the QueryClient level by the persist provider, when
- * we wire one) keeps the cold-paint clean across reloads.
+ * mapping never changes for that address.
+ *
+ * **localStorage persistence (5.0.10.b)**: registered nicknames are
+ * mirrored to `pushflip:displayName:<address>` so a hard-refresh
+ * doesn't burn a registry round-trip on every address that's already
+ * been seen on this device. The mirror is read once via
+ * `useQuery`'s `initialData` (so the first render goes straight to
+ * the cached nickname, no skeleton flash), and written on each
+ * successful fetch via `onSuccess`. Fallbacks are NEVER persisted —
+ * a faucet-down session shouldn't poison subsequent reloads.
  *
  * Returns a discriminated-union result:
  *   - `{ source: "nickname", name }`  — registry hit (the common case)
@@ -23,6 +30,7 @@
 
 import type { Address } from "@solana/kit";
 import { type UseQueryResult, useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 
 import { truncateAddress } from "@/lib/address-format";
 
@@ -76,6 +84,99 @@ export function displayNameQueryKey(
   addressBase58: string
 ): readonly [string, string] {
   return ["displayName", addressBase58] as const;
+}
+
+/**
+ * localStorage key for one address's persisted nickname. Schema-
+ * versioned so a future format change can ignore old entries cleanly:
+ * bump `STORAGE_SCHEMA_VERSION` and stale entries from older versions
+ * are ignored on read (they'll be overwritten on next successful
+ * fetch).
+ */
+const STORAGE_SCHEMA_VERSION = 1;
+function storageKey(addressBase58: string): string {
+  return `pushflip:displayName:v${STORAGE_SCHEMA_VERSION}:${addressBase58}`;
+}
+
+interface StoredDisplayName {
+  name: string;
+  source: DisplayNameSource;
+  v: number;
+}
+
+/**
+ * Read a persisted nickname for `addressBase58` from localStorage.
+ * Returns `undefined` if missing, malformed, schema-mismatched, or
+ * not a `nickname`/`sns` source (we never persist fallbacks).
+ *
+ * Failure is silent: localStorage may be disabled (privacy modes),
+ * full, or unavailable in non-browser environments. The hook degrades
+ * to fetching from the registry as if the cache were cold.
+ */
+function readStoredDisplayName(addressBase58: string): DisplayName | undefined {
+  if (typeof window === "undefined") {
+    return;
+  }
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(storageKey(addressBase58));
+  } catch {
+    return;
+  }
+  if (raw === null) {
+    return;
+  }
+  let parsed: StoredDisplayName;
+  try {
+    parsed = JSON.parse(raw) as StoredDisplayName;
+  } catch {
+    return;
+  }
+  if (parsed.v !== STORAGE_SCHEMA_VERSION) {
+    return;
+  }
+  if (typeof parsed.name !== "string" || parsed.name.length === 0) {
+    return;
+  }
+  // Only persisted sources are 'nickname' (today) and 'sns' (Phase
+  // 4). Anything else — including the truncated 'fallback' — is
+  // ignored on read so a registry-down session can't poison reloads.
+  if (parsed.source !== "nickname" && parsed.source !== "sns") {
+    return;
+  }
+  return { name: parsed.name, source: parsed.source };
+}
+
+/**
+ * Persist a nickname for `addressBase58` to localStorage. Only writes
+ * for sources that are stable across sessions (`nickname`, `sns`);
+ * silently no-ops for fallbacks. Storage failures (quota exceeded,
+ * disabled by user) are silent — the in-memory React Query cache
+ * still serves the value for the rest of the session.
+ */
+function writeStoredDisplayName(
+  addressBase58: string,
+  value: DisplayName
+): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  if (value.source !== "nickname" && value.source !== "sns") {
+    return;
+  }
+  const payload: StoredDisplayName = {
+    v: STORAGE_SCHEMA_VERSION,
+    name: value.name,
+    source: value.source,
+  };
+  try {
+    window.localStorage.setItem(
+      storageKey(addressBase58),
+      JSON.stringify(payload)
+    );
+  } catch {
+    // localStorage full / disabled / private-mode — ignore.
+  }
 }
 
 interface NicknameResponse {
@@ -138,7 +239,12 @@ export function useDisplayName(
   const enabled = options.enabled !== false && address !== null;
   const addressBase58 = address?.toString() ?? "";
 
-  return useQuery<DisplayName, Error, DisplayName, readonly [string, string]>({
+  const query = useQuery<
+    DisplayName,
+    Error,
+    DisplayName,
+    readonly [string, string]
+  >({
     queryKey: displayNameQueryKey(addressBase58),
     enabled,
     staleTime: Number.POSITIVE_INFINITY,
@@ -148,7 +254,28 @@ export function useDisplayName(
     // registers the address inline), so a non-200 means a real
     // outage. Retrying fast just amplifies load on a degraded faucet.
     retry: false,
+    // Seed from localStorage so a hard-refresh on an address we've
+    // already resolved on this device skips the round-trip entirely.
+    // `initialData` as a function returns `undefined` when there's
+    // nothing to seed (or when the hook is disabled), which React
+    // Query treats as no seed. `staleTime: Infinity` means it's
+    // never re-fetched once seeded. 5.0.10.b.
+    initialData: () =>
+      enabled ? readStoredDisplayName(addressBase58) : undefined,
   });
+
+  // Mirror successful fetches back to localStorage. Using an effect
+  // because React Query v5 dropped the `onSuccess` query callback;
+  // the effect re-fires only when the resolved value or address
+  // changes, so the write is at most once per (address, value) pair.
+  // Fallbacks are filtered inside `writeStoredDisplayName`.
+  useEffect(() => {
+    if (query.data && enabled) {
+      writeStoredDisplayName(addressBase58, query.data);
+    }
+  }, [addressBase58, enabled, query.data]);
+
+  return query;
 }
 
 /**

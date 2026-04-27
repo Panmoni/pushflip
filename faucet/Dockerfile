@@ -71,9 +71,21 @@ RUN node -e "\
 # explicitly run `npm rebuild better-sqlite3` after to fetch its
 # native binding.
 # --no-audit --no-fund: less noise + slightly faster.
-# --omit=optional: drop platform-specific optional binaries we don't
-# need (e.g. esbuild's macOS binaries on a Linux build).
-RUN npm install --no-audit --no-fund --ignore-scripts --omit=optional
+# Do NOT pass --omit=optional: native bindings for cross-platform
+# packages (rolldown, esbuild, lightningcss, the rollup-linux-* binary)
+# ship as optionalDependencies with platform conditionals — those ARE
+# what we need on Linux x64; omitting them breaks the build.
+# --fetch-retries / --fetch-timeout: tucker's network occasionally
+# stalls mid-download (EIDLETIMEOUT against registry.npmjs.org); the
+# same flake hit `npm install -g serve@14` during the original 5.0.7
+# deploy. Bumping retries 2→5 + idle timeout 60s→10min handles it
+# without the operator having to re-run the deploy.
+RUN npm install \
+    --no-audit --no-fund --ignore-scripts \
+    --fetch-retries=5 \
+    --fetch-retry-mintimeout=20000 \
+    --fetch-retry-maxtimeout=120000 \
+    --fetch-timeout=600000
 
 # `--ignore-scripts` blocked better-sqlite3's prebuild-install, which
 # normally downloads the precompiled native binding for the running

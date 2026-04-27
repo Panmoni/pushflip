@@ -75,13 +75,24 @@ RUN node -e "\
   }"
 
 # --ignore-scripts: skip biome/ultracite postinstalls that aren't
-# needed for the production bundle build. Vite + tsc come via npm's
-# optionalDependencies (esbuild, lightningcss, rollup-linux-*) which
-# install regardless of --ignore-scripts.
+# needed for the production bundle build.
 # --no-audit --no-fund: less noise + slightly faster.
-# --omit=optional: drop platform-specific binaries we don't need on
-# this Linux x64 build.
-RUN npm install --no-audit --no-fund --ignore-scripts --omit=optional
+# Do NOT pass --omit=optional: rolldown / esbuild / lightningcss / the
+# rollup-linux-x64-gnu binary all ship as optionalDependencies with
+# platform conditionals — those ARE the ones we need on Linux x64.
+# Omitting them produces a "Cannot find module @rolldown/binding-..."
+# error at vite build time.
+# --fetch-retries / --fetch-timeout: tucker's network occasionally
+# stalls mid-download (EIDLETIMEOUT against registry.npmjs.org); the
+# same flake hit `npm install -g serve@14` during the original 5.0.7
+# deploy. Bumping retries 2→5 + idle timeout 60s→10min handles it
+# without the operator having to re-run the deploy.
+RUN npm install \
+    --no-audit --no-fund --ignore-scripts \
+    --fetch-retries=5 \
+    --fetch-retry-mintimeout=20000 \
+    --fetch-retry-maxtimeout=120000 \
+    --fetch-timeout=600000
 
 COPY clients/js ./clients/js
 COPY app ./app

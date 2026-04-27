@@ -33,6 +33,19 @@ The deploy script absorbed each of these as it learned. End state: cache-warm re
 - **Stray `pushflip-faucetatest:latest` typo'd image tag** reappeared on tucker after a `podman rmi` cleanup — likely regenerated from build history. Cosmetic; investigate next deploy if it persists.
 - See **Phase 5.5 deferred list** (further down) for Helius Developer-tier upgrade trigger, dealer productionization, Cloudflare orange-cloud re-enable, monthly podman prune cron, keypair rotation SOP, GitHub Actions CI, Prometheus monitoring.
 
+### Queued for the next redeploy — Pre-Mainnet 5.0.10 (display names)
+
+Code-complete 2026-04-27, awaiting `./scripts/deploy-tucker.sh` to land in production:
+
+- **Faucet gains a SQLite-backed nickname registry.** New `GET /api/nickname/:address` endpoint (idempotent registration); `POST /api/faucet` registers as a side effect. New dep: `better-sqlite3@^11.7.0`. Bind-mounted DB at `/home/george9874/repos/pushflip/faucet/data/nicknames.db` (already provisioned on tucker; quadlet updated; `Environment=NICKNAME_DB_PATH` already set).
+- **Frontend renders globally-unique adjective-noun nicknames** in the wallet pill, every player row, the turn indicator, and the event feed (replacing the truncated `4…4` form everywhere). Falls back to truncation gracefully if the registry endpoint is unreachable.
+- **Deploy script change**: `--build-arg VITE_NICKNAME_URL=/api/nickname` added next to the existing `VITE_FAUCET_URL` arg. nginx already routes `/api/*` upstream, so no nginx config change.
+- **18th heavy-duty review clean** (0C / 0H / 2M / 9L, all 11 fixed in-session pre-deploy).
+
+**Pre-deploy local E2E**: `bubbly-crystal` registered for `AczL…MDjH`, `topaz-seagull` for `CAgD…XDxb`; `/health` reported `nickname_count: 2`. Production redeploy will hit a fresh empty registry and assign nicknames as users arrive.
+
+**Risk for this redeploy specifically**: `pnpm rebuild better-sqlite3` in the faucet Dockerfile is a new build step; if upstream ever drops the prebuild for our (node-20, linux-x64, glibc) target, the Dockerfile's `node -e "require('better-sqlite3')"` smoke check fails the build loud rather than producing a broken image. Tested locally; expected to work on tucker first try.
+
 The original plan below is preserved as historical reference. **All five phases below are now DONE; the plan executed substantially as written.** The "What we encountered along the way" list above captures the deviations.
 
 ---

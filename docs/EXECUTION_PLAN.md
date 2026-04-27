@@ -22,7 +22,7 @@
 
 ---
 
-## Current Status (snapshot for new collaborators) — 2026-04-27 (Phase 3 complete; 5.0.4 + 5.0.5 + 5.0.7 + 5.0.8 + 5.0.9 PR 1 DONE; reviews #14–#17 clean; **public devnet demo LIVE at https://play.pushflip.xyz/**)
+## Current Status (snapshot for new collaborators) — 2026-04-27 (Phase 3 complete; 5.0.4 + 5.0.5 + 5.0.7 + 5.0.8 + 5.0.9 PR 1 DONE; **5.0.10 Phases 1–3 code-complete, redeploy queued**; reviews #14–#18 clean; **public devnet demo LIVE at https://play.pushflip.xyz/**)
 
 > **Living section.** Update at the end of every session so new contributors can find "where we are now" without scrolling. For full history see the **Phase 3 Prerequisites Status** block (~line 1759), the **Phase 3 Decisions Log** table (~line 1777), and the **Lessons Learned** section (~line 1819) — or use the `Where to find things in this plan` table at the bottom of this section.
 

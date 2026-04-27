@@ -7,5 +7,14 @@
     "build": "just build",
     "test": "just test",
     "lint": "just lint"
-  }
+  },
+  "workspaces": [
+    "app",
+    "faucet",
+    "clients/js",
+    "scripts",
+    "dealer",
+    "house-ai",
+    "zk-circuits"
+  ]
 }

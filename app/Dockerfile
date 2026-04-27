@@ -22,36 +22,45 @@
 # on the deploy host. Image carries NO secrets — Helius URLs include
 # an API key but it's a public devnet key with no economic value.
 #
-# Build base: node:20-slim (Debian, glibc), NOT node:20-alpine.
-# pnpm install hangs deterministically on Alpine in rootless podman
-# (worker-thread futex deadlock; see faucet/Dockerfile header). Serve
-# stage stays alpine because `serve` is pure JS with no native deps,
-# so the runtime image stays small.
+# Base: node:20-slim (Debian, glibc) for build, node:20-alpine for
+# the serve stage (pure JS, no native deps so musl is fine).
+#
+# Install: `npm install` (NOT pnpm). pnpm install in containerized
+# Node deadlocks deterministically at ~734 packages — libuv worker-
+# thread futex hang. Documented as Lesson #54; re-hit during the
+# 5.0.10 deploy with better-sqlite3 in the lockfile. yapbay-vite hit
+# this same bug on the same host and resolved it by switching to
+# npm; we do the same.
 
 # --- build stage ---------------------------------------------------
 FROM node:20-slim AS build
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@9 --activate
 
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+# Copy workspace package.json files first so this layer caches across
+# source edits.
+COPY package.json ./
 COPY app/package.json ./app/
 COPY clients/js/package.json ./clients/js/
-# --ignore-scripts: workaround for pnpm install hanging on postinstall
-# scripts inside rootless podman on Alpine. Same issue caused yapbay's
-# pnpm-test image to hang for 13 days (see ~/repos/yapbay/Containerfile
-# which works around it by switching to npm ci entirely). Platform-
-# specific binaries that vite/tsc need (esbuild, lightningcss, the
-# rollup-linux-* native binding) are declared as optionalDependencies
-# and install regardless of --ignore-scripts. Biome's postinstall
-# (the likely culprit for the 10-min hang we saw) is dev-only and not
-# needed for the production bundle build.
-RUN pnpm install --filter @pushflip/app --filter @pushflip/client --frozen-lockfile --ignore-scripts
+COPY faucet/package.json ./faucet/
+COPY scripts/package.json ./scripts/
+COPY dealer/package.json ./dealer/
+COPY house-ai/package.json ./house-ai/
+COPY zk-circuits/package.json ./zk-circuits/
+
+# --ignore-scripts: skip biome/ultracite postinstalls that aren't
+# needed for the production bundle build. Vite + tsc come via npm's
+# optionalDependencies (esbuild, lightningcss, rollup-linux-*) which
+# install regardless of --ignore-scripts.
+# --no-audit --no-fund: less noise + slightly faster.
+# --omit=optional: drop platform-specific binaries we don't need on
+# this Linux x64 build.
+RUN npm install --no-audit --no-fund --ignore-scripts --omit=optional
 
 COPY clients/js ./clients/js
 COPY app ./app
 
 # Defaults match the dev expectation but production builds MUST pass
-# all three via --build-arg. The deploy script does this.
+# all four via --build-arg. The deploy script does this.
 ARG VITE_FAUCET_URL=/api/faucet
 ARG VITE_NICKNAME_URL=/api/nickname
 ARG VITE_RPC_ENDPOINT=https://api.devnet.solana.com
@@ -61,7 +70,8 @@ ENV VITE_NICKNAME_URL=${VITE_NICKNAME_URL}
 ENV VITE_RPC_ENDPOINT=${VITE_RPC_ENDPOINT}
 ENV VITE_RPC_WS_ENDPOINT=${VITE_RPC_WS_ENDPOINT}
 
-RUN pnpm --filter @pushflip/app build
+# Run the workspace's build script via npm.
+RUN npm run build --workspace=@pushflip/app
 
 # --- serve stage ---------------------------------------------------
 # Serves the built dist/ on port 5175. Matches the yapbay-vite pattern

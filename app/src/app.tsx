@@ -64,6 +64,25 @@ function App() {
             </a>
             <span className="mx-2">·</span>
             devnet
+            <span className="mx-2">·</span>A{" "}
+            <img
+              alt=""
+              aria-hidden="true"
+              className="mx-0.5 inline h-[1em] w-[1em] align-[-0.15em]"
+              height={16}
+              src="/panmoni.svg"
+              width={16}
+            />
+            <a
+              className="bg-linear-to-r from-[#00abda] to-[#1476ff] bg-clip-text font-bold text-transparent tracking-wider hover:underline"
+              href="https://www.panmoni.com/"
+              rel="noopener noreferrer"
+              target="_blank"
+              title="Panmoni is a Web3 product studio"
+            >
+              Panmoni
+            </a>{" "}
+            project
           </footer>
         </div>
 

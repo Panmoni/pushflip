@@ -7,6 +7,9 @@
 # Build-time vars (Vite inlines these into the JS bundle):
 #   VITE_FAUCET_URL       — same-origin path; `/api/faucet` keeps the
 #                           browser on play.pushflip.xyz, no CORS.
+#   VITE_NICKNAME_URL     — same-origin path; `/api/nickname` for the
+#                           globally-unique-nickname registry endpoint
+#                           (Pre-Mainnet 5.0.10).
 #   VITE_RPC_ENDPOINT     — Helius devnet HTTP URL. Public devnet's
 #                           1 r/s limit is below baseline demand once
 #                           the 5.0.9 PR 2 logsNotifications consumer
@@ -50,9 +53,11 @@ COPY app ./app
 # Defaults match the dev expectation but production builds MUST pass
 # all three via --build-arg. The deploy script does this.
 ARG VITE_FAUCET_URL=/api/faucet
+ARG VITE_NICKNAME_URL=/api/nickname
 ARG VITE_RPC_ENDPOINT=https://api.devnet.solana.com
 ARG VITE_RPC_WS_ENDPOINT=wss://api.devnet.solana.com
 ENV VITE_FAUCET_URL=${VITE_FAUCET_URL}
+ENV VITE_NICKNAME_URL=${VITE_NICKNAME_URL}
 ENV VITE_RPC_ENDPOINT=${VITE_RPC_ENDPOINT}
 ENV VITE_RPC_WS_ENDPOINT=${VITE_RPC_WS_ENDPOINT}
 

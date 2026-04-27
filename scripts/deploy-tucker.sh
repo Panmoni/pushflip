@@ -135,6 +135,7 @@ step "rebuilding pushflip-vite (~2-15 min depending on lockfile churn)"
 ssh "$REMOTE_HOST" "set -a; source $PROD_ENV; set +a; cd $REMOTE_REPO && podman build \
   -t localhost/pushflip-vite:latest \
   --build-arg VITE_FAUCET_URL=/api/faucet \
+  --build-arg VITE_NICKNAME_URL=/api/nickname \
   --build-arg VITE_RPC_ENDPOINT=\"\$RPC_ENDPOINT\" \
   --build-arg VITE_RPC_WS_ENDPOINT=\"\$WS_ENDPOINT\" \
   -f app/Dockerfile ." \

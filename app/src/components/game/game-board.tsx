@@ -40,6 +40,7 @@ import { JoinGameDialog } from "@/components/game/join-game-dialog";
 import { PlayerHand } from "@/components/game/player-hand";
 import { PotDisplay } from "@/components/game/pot-display";
 import { TurnIndicator } from "@/components/game/turn-indicator";
+import { DisplayName } from "@/components/misc/display-name";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -54,11 +55,6 @@ import { useGameSession } from "@/hooks/use-game-session";
 import { usePlayerState } from "@/hooks/use-player-state";
 import { useScryResult } from "@/hooks/use-scry-result";
 import { GAME_ID } from "@/lib/constants";
-
-function shortAddress(addr: Address): string {
-  const s = addr.toString();
-  return `${s.slice(0, 4)}…${s.slice(-4)}`;
-}
 
 interface ActiveTurnInfo {
   /** The address whose turn it is right now, or null if no round is active. */
@@ -213,9 +209,11 @@ export function GameBoard() {
                 isCurrentTurn={isCurrentTurnForThisPlayer}
                 key={addr.toString()}
                 label={
-                  isMe ? `${shortAddress(addr)} (you)` : shortAddress(addr)
+                  <>
+                    <DisplayName address={addr} />
+                    {isMe ? " (you)" : ""}
+                  </>
                 }
-                labelTitle={addr.toString()}
                 score={scoreForThisPlayer}
               />
             );

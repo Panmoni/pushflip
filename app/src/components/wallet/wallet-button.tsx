@@ -17,19 +17,16 @@
  * Spec: docs/EXECUTION_PLAN.md Task 3.4.1.
  */
 
+import { fromLegacyPublicKey } from "@solana/compat";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 
+import { DisplayName } from "@/components/misc/display-name";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTokenBalance } from "@/hooks/use-token-balance";
 import { formatFlip } from "@/lib/flip-format";
 import { cn } from "@/lib/utils";
-
-/** Truncate a base58 wallet address to 4 chars on each side. */
-function shortAddress(base58: string): string {
-  return `${base58.slice(0, 4)}…${base58.slice(-4)}`;
-}
 
 /**
  * Three-state display string for the wallet's $FLIP balance.
@@ -62,7 +59,7 @@ export function WalletButton({ className }: WalletButtonProps) {
     );
   }
 
-  const base58 = publicKey.toBase58();
+  const kitAddress = fromLegacyPublicKey(publicKey);
   const balance = balanceQuery.data?.balance ?? null;
 
   return (
@@ -74,12 +71,14 @@ export function WalletButton({ className }: WalletButtonProps) {
       data-testid="wallet-button"
     >
       <div className="flex flex-col items-end leading-tight">
-        {/* `title` carries the full base58 so the user can hover-verify
-            and the truncation can never produce a visual collision attack
-            (heavy-duty review #10 finding #12). */}
-        <span className="font-mono text-foreground text-sm" title={base58}>
-          {shortAddress(base58)}
-        </span>
+        {/* DisplayName resolves a globally-unique adjective-noun
+            nickname from the faucet registry (Pre-Mainnet 5.0.10).
+            Falls back to truncated `4…4` if the faucet is unreachable.
+            `title` (set inside DisplayName) carries the full base58 so
+            the user can hover-verify and the truncation can never
+            produce a visual collision attack (heavy-duty review #10
+            finding #12). */}
+        <DisplayName address={kitAddress} className="text-foreground text-sm" />
         {balanceQuery.isLoading ? (
           <Skeleton className="h-3 w-16" />
         ) : (

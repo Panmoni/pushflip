@@ -10,6 +10,7 @@
     "dev": "vite",
     "typecheck": "tsc -b --noEmit",
     "build": "tsc -b && vite build",
+    "test": "find src -name '*.test.ts' -o -name '*.test.tsx' | xargs npx tsx --test",
     "lint": "biome check",
     "lint:fix": "biome check --fix",
     "format": "biome format --write",

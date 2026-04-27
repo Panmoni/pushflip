@@ -12,6 +12,7 @@
 import type { Address } from "@solana/kit";
 import { motion } from "motion/react";
 
+import { DisplayName } from "@/components/misc/display-name";
 import { cn } from "@/lib/utils";
 
 export interface TurnIndicatorProps {
@@ -23,11 +24,6 @@ export interface TurnIndicatorProps {
   emptyMessage?: string;
   /** True if `activePlayer` is the connected wallet. */
   isMe: boolean;
-}
-
-function shortAddress(addr: Address): string {
-  const s = addr.toString();
-  return `${s.slice(0, 4)}…${s.slice(-4)}`;
 }
 
 export function TurnIndicator({
@@ -86,12 +82,10 @@ export function TurnIndicator({
     >
       <span>
         Waiting for{" "}
-        {/* `title` carries the full base58 so the user can hover-verify
-            and the truncation can never produce a visual collision
-            attack (heavy-duty review #10 finding #12). */}
-        <span className="font-mono text-xs" title={activePlayer.toString()}>
-          {shortAddress(activePlayer)}
-        </span>
+        {/* DisplayName: registry nickname → fallback `4…4`, with full
+            base58 in the hover title (defends against visual-collision
+            attacks per heavy-duty review #10 finding #12). */}
+        <DisplayName address={activePlayer} className="font-semibold" />
       </span>
     </div>
   );

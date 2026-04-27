@@ -36,13 +36,24 @@ import { tokenBalanceQueryKey } from "./use-token-balance";
 function resolveFaucetUrl(): string {
   const fromEnv = import.meta.env.VITE_FAUCET_URL as string | undefined;
   if (fromEnv && fromEnv.length > 0) {
+    // Same defense applied to VITE_NICKNAME_URL: reject cross-origin
+    // values in production. A misconfigured build that sets
+    // VITE_FAUCET_URL=https://attacker.example/faucet would silently
+    // ship every visitor's wallet address (recipient field of the
+    // mint POST) to the attacker. Dev allows cross-origin because the
+    // Vite dev server is on :5173 and the faucet is on :3001.
+    if (!(import.meta.env.DEV || fromEnv.startsWith("/"))) {
+      throw new Error(
+        `VITE_FAUCET_URL must be a same-origin relative path starting with "/" in production builds. Got: ${fromEnv}`
+      );
+    }
     return fromEnv;
   }
   if (import.meta.env.DEV) {
     return "http://localhost:3001/faucet";
   }
   throw new Error(
-    "VITE_FAUCET_URL is required in production builds. Set it at build time to the deployed faucet service URL.",
+    "VITE_FAUCET_URL is required in production builds. Set it at build time to the deployed faucet service URL."
   );
 }
 

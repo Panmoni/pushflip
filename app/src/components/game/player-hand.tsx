@@ -10,6 +10,7 @@
 
 import type { Card } from "@pushflip/client";
 import { motion } from "motion/react";
+import type { ReactNode } from "react";
 
 import { GameCard } from "@/components/game/card";
 import { cn } from "@/lib/utils";
@@ -43,13 +44,17 @@ export interface PlayerHandProps {
    * active. Highlights the row with an accent border.
    */
   isCurrentTurn?: boolean;
-  /** Display label for the player (e.g. "Player 1" or truncated address). */
-  label: string;
   /**
-   * Optional full text shown on hover via the `title` attribute. Used
-   * by the GameBoard to expose the full base58 wallet address when the
-   * `label` is a truncated form (defends against visual-collision
-   * attacks per heavy-duty review #10 finding #12).
+   * Display label for the player. Typically a `<DisplayName>` element
+   * (Pre-Mainnet 5.0.10) so the row shows the registered nickname
+   * with the full address in the hover title; can also be a plain
+   * string for non-wallet rows ("House", a hardcoded label, etc).
+   */
+  label: ReactNode;
+  /**
+   * Optional fallback `title` shown on hover. Only used when `label`
+   * is a plain string; when `label` is a `<DisplayName>`, the full
+   * address is already in its own `title`.
    */
   labelTitle?: string;
   /** The player's current score (sum of card values + multipliers). */

@@ -7,17 +7,46 @@
  * backfill.
  */
 
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 
+import { DisplayName } from "@/components/misc/display-name";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type GameEvent, useGameEvents } from "@/hooks/use-game-events";
 import {
   EVENT_CATEGORY,
+  type EventToken,
   explorerTxUrl,
   type GameEventCategory,
-  renderEventMessage,
+  renderEventTokens,
 } from "@/lib/event-render";
 import { cn } from "@/lib/utils";
+
+/**
+ * Pre-compute a content-stable key per token. Within a single event's
+ * tokens array, string fragments are always unique-by-content (the
+ * renderer composes them from kind-specific templates with distinct
+ * connectors) and address tokens are unique-by-pubkey (each kind only
+ * mentions a given address slot once). Using content avoids biome's
+ * `noArrayIndexKey` rule and keeps React's reconciliation stable
+ * across re-renders driven by the parent's React Query cache.
+ */
+function tokenKey(tok: EventToken): string {
+  return typeof tok === "string" ? `s:${tok}` : `a:${tok.address.toString()}`;
+}
+
+function EventMessage({ tokens }: { tokens: readonly EventToken[] }) {
+  return (
+    <span>
+      {tokens.map((tok) =>
+        typeof tok === "string" ? (
+          <Fragment key={tokenKey(tok)}>{tok}</Fragment>
+        ) : (
+          <DisplayName address={tok.address} key={tokenKey(tok)} />
+        )
+      )}
+    </span>
+  );
+}
 
 // Theme-aware tag palette keyed by coarse category (8 buckets, not 16 —
 // same pattern as the previous diff-based version). Light mode uses
@@ -63,7 +92,7 @@ function formatEventTime(event: GameEvent): string {
 
 function EventRow({ event }: { event: GameEvent }) {
   const category = EVENT_CATEGORY[event.kind];
-  const message = renderEventMessage(event);
+  const tokens = renderEventTokens(event);
   const time = formatEventTime(event);
   return (
     <li
@@ -75,7 +104,9 @@ function EventRow({ event }: { event: GameEvent }) {
       <span className="font-mono text-muted-foreground tabular-nums">
         {time}
       </span>
-      <span className="flex-1">{message}</span>
+      <span className="flex-1">
+        <EventMessage tokens={tokens} />
+      </span>
       <a
         className="font-mono text-[10px] text-muted-foreground underline-offset-2 hover:underline"
         href={explorerTxUrl(event.signature)}

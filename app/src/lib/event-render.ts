@@ -12,6 +12,7 @@
 import { type GameEvent, type GameEventKind, parseU64 } from "@pushflip/client";
 import { type Address, getAddressDecoder } from "@solana/kit";
 
+import { truncateAddress } from "./address-format";
 import { formatFlip } from "./flip-format";
 
 const addressDecoder = getAddressDecoder();
@@ -47,21 +48,15 @@ export function hexPubkeyToAddress(hex: string): Address {
 }
 
 /**
- * Truncate a base58 address to `4…4` for compact display.
- * Kept in lockstep with the `shortAddress` copies in game-board.tsx,
- * turn-indicator.tsx, and wallet-button.tsx.
+ * Resolve a 64-char hex pubkey to a Kit `Address` (base58). Returns
+ * `null` if the hex is malformed — callers render a literal "?" or
+ * a fallback string so a single bad log line doesn't blow up the row.
  */
-export function shortAddress(address: string): string {
-  return `${address.slice(0, 4)}…${address.slice(-4)}`;
-}
-
-function shortHexPubkey(hex: string): string {
+function hexPubkeyToAddressOrNull(hex: string): Address | null {
   try {
-    return shortAddress(hexPubkeyToAddress(hex));
+    return hexPubkeyToAddress(hex);
   } catch {
-    // Fall back to truncating the hex itself if the decoder choked —
-    // better to show *something* in the feed than blow up the row.
-    return `${hex.slice(0, 4)}…${hex.slice(-4)}`;
+    return null;
   }
 }
 
@@ -98,69 +93,151 @@ function req(f: Readonly<Record<string, string>>, key: string): string {
 }
 
 /**
- * Map each kind to a human-readable sentence.
+ * One token of a rendered event message.
+ *
+ * - `string`: a literal sentence fragment (already formatted).
+ * - `{ kind: "address", address }`: a wallet address that should be
+ *   rendered as its registered nickname (or fallback) by the consumer.
+ *
+ * Pre-Mainnet 5.0.10 — separates the renderer from address resolution
+ * so the feed can swap truncated `4…4` for `<DisplayName>` JSX
+ * without coupling event-render to React Query / faucet plumbing.
  */
-export function renderEventMessage(event: GameEvent): string {
+export type EventToken = string | { kind: "address"; address: Address };
+
+/**
+ * Resolve a hex pubkey field to an EventToken: either an `address`
+ * token (when the hex parses cleanly) or a literal "?" string (when
+ * malformed — better than blowing up the row).
+ */
+function addressToken(hex: string): EventToken {
+  const addr = hexPubkeyToAddressOrNull(hex);
+  return addr === null ? "?" : { kind: "address", address: addr };
+}
+
+/**
+ * Map each kind to a sequence of tokens. Consumers (event-feed.tsx)
+ * walk the array and render strings as text + address tokens as
+ * `<DisplayName>` JSX.
+ *
+ * Tokens are joined visually with no extra separator — the strings
+ * carry their own whitespace.
+ *
+ * **Invariant (load-bearing for `event-feed.tsx`'s React keys)**: each
+ * kind's token list must contain **at most one** address token. The
+ * consumer keys address tokens by `a:${address}`; two address tokens
+ * with the same pubkey in one event would produce duplicate React
+ * keys. The current 17 kinds satisfy this, and the test
+ * `event-render-tokens.test.ts` walks the full kind set to enforce it
+ * mechanically — adding a new kind that mentions two pubkeys breaks
+ * the test, forcing the author to disambiguate (e.g., `a:winner:…` /
+ * `a:loser:…`) before merging.
+ */
+export function renderEventTokens(event: GameEvent): EventToken[] {
   const f = event.fields;
   switch (event.kind) {
     case "initialize":
-      return `Game ${req(f, "game_id")} initialized by ${shortHexPubkey(req(f, "authority"))} · fee ${req(f, "fee_bps")} bps`;
+      return [
+        `Game ${req(f, "game_id")} initialized by `,
+        addressToken(req(f, "authority")),
+        ` · fee ${req(f, "fee_bps")} bps`,
+      ];
     case "init_vault":
-      return `Vault created for game ${req(f, "game_id")}`;
+      return [`Vault created for game ${req(f, "game_id")}`];
     case "join_round": {
       const count = req(f, "player_count");
-      return `${shortHexPubkey(req(f, "player"))} joined · stake ${formatStake(req(f, "stake"), "stake")} · ${count} player${count === "1" ? "" : "s"}`;
+      return [
+        addressToken(req(f, "player")),
+        ` joined · stake ${formatStake(req(f, "stake"), "stake")} · ${count} player${count === "1" ? "" : "s"}`,
+      ];
     }
     case "commit_deck":
-      return `Dealer committed the shuffled deck for round ${req(f, "round")}`;
+      return [
+        `Dealer committed the shuffled deck for round ${req(f, "round")}`,
+      ];
     case "start_round": {
       const count = req(f, "player_count");
-      return `Round ${req(f, "round")} started · ${count} player${count === "1" ? "" : "s"}`;
+      return [
+        `Round ${req(f, "round")} started · ${count} player${count === "1" ? "" : "s"}`,
+      ];
     }
     case "hit": {
       const bust = readBool(f.bust);
       const card = `card ${req(f, "value")}/${req(f, "suit")}`;
-      const who = shortHexPubkey(req(f, "player"));
-      return bust ? `${who} hit — BUST on ${card}` : `${who} hit — ${card}`;
+      return [
+        addressToken(req(f, "player")),
+        bust ? ` hit — BUST on ${card}` : ` hit — ${card}`,
+      ];
     }
     case "stay":
-      return `${shortHexPubkey(req(f, "player"))} stayed · score ${req(f, "score")}`;
+      return [
+        addressToken(req(f, "player")),
+        ` stayed · score ${req(f, "score")}`,
+      ];
     case "end_round": {
       const pot = formatStake(req(f, "pot"), "pot");
       if (readBool(f.all_busted)) {
-        return `Round ${req(f, "round")} ended · everyone busted · pot ${pot} to house`;
+        return [
+          `Round ${req(f, "round")} ended · everyone busted · pot ${pot} to house`,
+        ];
       }
-      return `Round ${req(f, "round")} ended · ${shortHexPubkey(req(f, "winner"))} won ${pot}`;
+      return [
+        `Round ${req(f, "round")} ended · `,
+        addressToken(req(f, "winner")),
+        ` won ${pot}`,
+      ];
     }
     case "burn_second_chance":
-      return `${shortHexPubkey(req(f, "player"))} burned for a second chance`;
+      return [addressToken(req(f, "player")), " burned for a second chance"];
     case "burn_scry":
-      return `${shortHexPubkey(req(f, "player"))} burned to scry · round ${req(f, "round")}`;
+      return [
+        addressToken(req(f, "player")),
+        ` burned to scry · round ${req(f, "round")}`,
+      ];
     case "leave_game": {
-      const who = shortHexPubkey(req(f, "player"));
-      return readBool(f.mid_round)
-        ? `${who} left mid-round`
-        : `${who} left the game`;
+      return [
+        addressToken(req(f, "player")),
+        readBool(f.mid_round) ? " left mid-round" : " left the game",
+      ];
     }
     case "close_game":
-      return `Game ${req(f, "game_id")} closed`;
+      return [`Game ${req(f, "game_id")} closed`];
     case "init_bounty_board":
-      return `Bounty board created for game ${req(f, "game_id")}`;
+      return [`Bounty board created for game ${req(f, "game_id")}`];
     case "add_bounty":
-      return `Bounty #${req(f, "index")} added · type ${req(f, "bounty_type")} · ${formatStake(req(f, "amount"), "amount")}`;
+      return [
+        `Bounty #${req(f, "index")} added · type ${req(f, "bounty_type")} · ${formatStake(req(f, "amount"), "amount")}`,
+      ];
     case "claim_bounty":
-      return `${shortHexPubkey(req(f, "claimer"))} claimed bounty #${req(f, "index")} · ${formatStake(req(f, "amount"), "amount")}`;
+      return [
+        addressToken(req(f, "claimer")),
+        ` claimed bounty #${req(f, "index")} · ${formatStake(req(f, "amount"), "amount")}`,
+      ];
     case "close_bounty_board":
-      return `Bounty board closed for game ${req(f, "game_id")}`;
+      return [`Bounty board closed for game ${req(f, "game_id")}`];
     default: {
       // Exhaustiveness check — `event.kind` is `GameEventKind` so the
       // switch above must cover every variant. If a new kind is added
       // to the client without a case here, this line becomes a type
       // error at `never` assignment.
       const _exhaustive: never = event.kind;
-      return _exhaustive;
+      return [_exhaustive];
     }
   }
+}
+
+/**
+ * Plain-text variant of the renderer for contexts that can't render
+ * JSX (e.g. sonner toasts fired outside the React tree). Converts
+ * address tokens to truncated `4…4` form. The tokenizer is the source
+ * of truth for the message; this function just collapses it.
+ */
+export function renderEventMessageText(event: GameEvent): string {
+  return renderEventTokens(event)
+    .map((tok) =>
+      typeof tok === "string" ? tok : truncateAddress(tok.address.toString())
+    )
+    .join("");
 }
 
 /**

@@ -42,7 +42,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { GAME_ID } from "@/lib/constants";
-import { renderEventMessage } from "@/lib/event-render";
+import { renderEventMessageText } from "@/lib/event-render";
 import { logError } from "@/lib/logger";
 import { rpc, rpcSubscriptions } from "@/lib/program";
 
@@ -204,7 +204,7 @@ function insertEvents(
 
 function tryToast(ev: GameEvent): void {
   try {
-    toast(renderEventMessage(ev));
+    toast(renderEventMessageText(ev));
   } catch (error) {
     // Renderer throwing shouldn't kill the feed. Log and move on.
     logError("useGameEvents.render", error);

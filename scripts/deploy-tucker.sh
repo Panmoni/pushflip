@@ -141,22 +141,28 @@ for svc in "${SERVICES[@]}"; do
 done
 
 # --- End-to-end smoke ---
-step "public-URL smoke check"
-http_code=$(curl -sS -o /dev/null -w '%{http_code}' "$PUBLIC_ROOT_URL/" || echo 000)
-if [ "$http_code" != "200" ]; then
-  fail "$PUBLIC_ROOT_URL/ returned HTTP $http_code (expected 200)"
-  print_rollback_cmd
-  exit 1
-fi
-ok "frontend $PUBLIC_ROOT_URL/ -> 200"
+# Retry with backoff: systemd reports `is-active` the instant the
+# container starts, but the process inside (serve, hono) needs another
+# 1-3s to bind to its port. Without a retry, smoke fails with 502 even
+# though the deploy is fine — caught on Phase 4.3 dry-run #2.
+smoke_check() {
+  local url=$1 label=$2
+  local code attempt
+  for attempt in 1 2 3 4 5; do
+    code=$(curl -sS -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || echo 000)
+    if [ "$code" = "200" ]; then
+      ok "$label $url -> 200 (attempt $attempt)"
+      return 0
+    fi
+    [ "$attempt" -lt 5 ] && sleep $((attempt * 2))
+  done
+  fail "$label $url returned HTTP $code (expected 200) after 5 attempts"
+  return 1
+}
 
-http_code=$(curl -sS -o /dev/null -w '%{http_code}' "$PUBLIC_HEALTH_URL" || echo 000)
-if [ "$http_code" != "200" ]; then
-  fail "$PUBLIC_HEALTH_URL returned HTTP $http_code (expected 200)"
-  print_rollback_cmd
-  exit 1
-fi
-ok "faucet $PUBLIC_HEALTH_URL -> 200"
+step "public-URL smoke check (retries with 2s/4s/6s/8s backoff)"
+smoke_check "$PUBLIC_ROOT_URL/" frontend || { print_rollback_cmd; exit 1; }
+smoke_check "$PUBLIC_HEALTH_URL" faucet  || { print_rollback_cmd; exit 1; }
 
 # --- Done ---
 echo

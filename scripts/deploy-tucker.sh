@@ -72,12 +72,33 @@ ok()   { printf '%s✓%s %s\n' "$c_green" "$c_reset" "$*"; }
 fail() { printf '%s✗%s %s\n' "$c_red" "$c_reset" "$*" >&2; }
 note() { printf '%s%s%s\n' "$c_yellow" "$*" "$c_reset"; }
 
+# Container services have images and are taggable. Pods don't (they're
+# pure systemd lifecycle wrappers); excluding them from the :prev/:latest
+# loop keeps the rollback command and the printed deploy log clean.
+CONTAINER_IMAGES=(pushflip-vite pushflip-faucet)
+
 print_rollback_cmd() {
   cat <<EOF
 
 To rollback to the previous build:
 
-  ssh $REMOTE_HOST 'for s in ${SERVICES[*]}; do podman tag localhost/\$s:prev localhost/\$s:latest; done && systemctl --user restart ${SERVICES[*]/%/.service}'
+  ssh $REMOTE_HOST '
+    for s in ${CONTAINER_IMAGES[*]}; do
+      podman tag localhost/\$s:prev localhost/\$s:latest
+    done
+    systemctl --user restart ${SERVICES[*]/%/.service}
+    # Containers report active before serve/Hono bind their port; sleep
+    # long enough for nginx to upstream-200 instead of 502, then verify.
+    sleep 5
+    for url in $PUBLIC_ROOT_URL/ $PUBLIC_HEALTH_URL; do
+      for attempt in 1 2 3 4 5; do
+        code=\$(curl -sS -o /dev/null -w "%{http_code}" "\$url" 2>/dev/null || echo 000)
+        [ "\$code" = "200" ] && { echo "[rollback] \$url OK"; break; }
+        [ "\$attempt" -lt 5 ] && sleep \$((attempt * 2))
+      done
+      [ "\$code" = "200" ] || echo "[rollback] FAIL: \$url -> \$code (after 5 attempts)"
+    done
+  '
 
 EOF
 }
@@ -97,8 +118,9 @@ ssh "$REMOTE_HOST" "test -f $PROD_ENV && grep -q '^RPC_ENDPOINT=' $PROD_ENV && g
 ok "$PROD_ENV present + has RPC/WS endpoints"
 
 # --- Tag current images as :prev for rollback (idempotent — first deploy has nothing to tag) ---
+# Loop over CONTAINER_IMAGES (excludes pushflip-pod — pods have no image).
 step "tagging current images as :prev for rollback"
-for img in "${SERVICES[@]}"; do
+for img in "${CONTAINER_IMAGES[@]}"; do
   ssh "$REMOTE_HOST" "podman image exists localhost/$img:latest && podman tag localhost/$img:latest localhost/$img:prev || echo '  (no prior $img — first deploy)'"
 done
 

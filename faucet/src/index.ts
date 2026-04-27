@@ -4,14 +4,39 @@
  * so operators can tell at a glance whether the service is healthy.
  */
 
+import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+
 import { serve } from "@hono/node-server";
 
 import { CONFIG } from "./config";
 import { createFaucetContext, FAUCET_MINT } from "./mint";
+import {
+  assertSchemaInvariants,
+  countNicknames,
+  NICKNAME_ALGORITHM_VERSION,
+  openNicknameDb,
+} from "./nicknames/db";
 import { createApp } from "./server";
 
 async function main(): Promise<void> {
-  const ctx = await createFaucetContext();
+  // Open the nickname registry first so a malformed DB fails fast, before
+  // we burn an RPC round-trip to validate the keypair.
+  const dbPath = resolve(CONFIG.nicknameDbPath);
+  // Ensure the parent directory exists. With a bind-mounted path the
+  // dir is provided by the host; with the default `./data/...` path
+  // the dev developer expects the dir to be auto-created.
+  mkdirSync(dirname(dbPath), { recursive: true });
+  const nicknameDb = openNicknameDb(dbPath);
+  try {
+    assertSchemaInvariants(nicknameDb);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[faucet] FATAL: nickname db invariant failed: ${msg}`);
+    process.exit(1);
+  }
+
+  const ctx = await createFaucetContext(nicknameDb);
 
   // Boot-time balance check so misconfigured deploys scream early.
   let balanceLamports: bigint;
@@ -52,6 +77,9 @@ async function main(): Promise<void> {
     `[faucet] listening on http://localhost:${CONFIG.port}  authority=${ctx.authority.address}  mint=${FAUCET_MINT}  balance=${balanceLamports} lamports  cooldown=${CONFIG.cooldownMs / 1000 / 60}m  amount=${CONFIG.faucetAmountWhole} $FLIP`
   );
   console.log(`[faucet] allowed origins: ${CONFIG.allowedOrigins.join(", ")}`);
+  console.log(
+    `[faucet] nickname registry: ${countNicknames(nicknameDb)} row(s) at ${dbPath}  algorithm=v${NICKNAME_ALGORITHM_VERSION}`
+  );
 }
 
 main().catch((e) => {

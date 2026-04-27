@@ -12,3 +12,7 @@ zk-circuits/build/
 wiki/site/
 wiki/.venv/
 wiki/__pycache__/
+
+# Faucet runtime data (SQLite registry — Pre-Mainnet 5.0.10)
+faucet/data/*
+!faucet/data/.gitkeep

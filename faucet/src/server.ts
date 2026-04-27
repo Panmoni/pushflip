@@ -20,10 +20,34 @@ import {
   mintToRecipient,
   parseRecipient,
 } from "./mint";
+import { assignNickname } from "./nicknames/assign";
+import { countNicknames } from "./nicknames/db";
 import { releaseClaim, tryAcquireClaim } from "./rate-limit";
 
 interface FaucetRequestBody {
   recipient?: unknown;
+}
+
+/**
+ * Register the recipient's nickname as a side effect of a successful
+ * mint. Best-effort: a registry failure is logged but the mint
+ * response still succeeds; the frontend re-fetches via
+ * `GET /nickname/:address` if the value is missing.
+ */
+function registerNicknameBestEffort(
+  ctx: FaucetContext,
+  recipient: Address
+): string | null {
+  try {
+    return assignNickname(ctx.nicknameDb, recipient).nickname;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(
+      `[faucet] nickname registration failed for ${recipient}:`,
+      msg
+    );
+    return null;
+  }
 }
 
 export function createApp(ctx: FaucetContext): Hono {
@@ -57,7 +81,44 @@ export function createApp(ctx: FaucetContext): Hono {
         balanceLamports === null ? null : balanceLamports.toString(),
       faucet_amount_whole_flip: CONFIG.faucetAmountWhole.toString(),
       cooldown_minutes: CONFIG.cooldownMs / 1000 / 60,
+      nickname_count: countNicknames(ctx.nicknameDb),
     });
+  });
+
+  // GET /nickname/:address — returns the registered nickname for the
+  // given wallet address, registering it on first access. Idempotent.
+  // Pre-Mainnet 5.0.10 — globally-unique deterministic-probe assignment.
+  app.get("/nickname/:address", (c) => {
+    const raw = c.req.param("address");
+    let recipient: Address;
+    try {
+      recipient = parseRecipient(raw);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return c.json({ error: msg }, 400);
+    }
+    try {
+      const result = assignNickname(ctx.nicknameDb, recipient);
+      return c.json({
+        status: "ok",
+        address: recipient,
+        nickname: result.nickname,
+        assigned: result.assigned,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(
+        `[faucet] nickname assignment failed for ${recipient}:`,
+        msg
+      );
+      return c.json(
+        {
+          error: "assignment_failed",
+          message: "Could not resolve a display name for this wallet.",
+        },
+        500
+      );
+    }
   });
 
   app.post("/faucet", async (c) => {
@@ -109,6 +170,7 @@ export function createApp(ctx: FaucetContext): Hono {
     try {
       const result = await mintToRecipient(ctx, recipient);
       releaseClaim(recipient, true);
+      const nickname = registerNicknameBestEffort(ctx, recipient);
       return c.json({
         status: "ok",
         signature: result.signature,
@@ -116,6 +178,7 @@ export function createApp(ctx: FaucetContext): Hono {
         amount_base_units: result.amountBaseUnits.toString(),
         amount_whole_flip: CONFIG.faucetAmountWhole.toString(),
         explorer_url: `https://explorer.solana.com/tx/${result.signature}?cluster=devnet`,
+        nickname,
       });
     } catch (e) {
       releaseClaim(recipient, false);

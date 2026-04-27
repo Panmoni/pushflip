@@ -15,6 +15,7 @@
     "start": "tsx src/index.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "test": "find src -name '*.test.ts' -exec npx tsx --test {} +",
     "lint": "biome check src/",
     "lint:fix": "biome check --fix src/"
   },
@@ -23,11 +24,13 @@
     "@pushflip/client": "workspace:*",
     "@solana-program/token": "^0.13.0",
     "@solana/kit": "^6.8.0",
+    "better-sqlite3": "^11.7.0",
     "dotenv": "^17.0.0",
     "hono": "^4.10.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.11",
+    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^24.12.2",
     "tsx": "^4.19.0",
     "typescript": "~6.0.2",

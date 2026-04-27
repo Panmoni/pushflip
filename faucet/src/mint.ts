@@ -44,6 +44,7 @@ import {
 } from "@solana-program/token";
 
 import { CONFIG, loadFaucetKeypairBytes } from "./config";
+import type { NicknameDb } from "./nicknames/db";
 
 const FLIP_SCALE = 10n ** BigInt(FLIP_DECIMALS);
 
@@ -54,6 +55,8 @@ export const FAUCET_MINT = TEST_FLIP_MINT;
 
 export interface FaucetContext {
   authority: KeyPairSigner;
+  /** Globally-unique-nickname registry (Pre-Mainnet 5.0.10). */
+  nicknameDb: NicknameDb;
   rpc: Rpc<SolanaRpcApi>;
   rpcSubs: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
   sendAndConfirm: ReturnType<typeof sendAndConfirmTransactionFactory>;
@@ -64,7 +67,9 @@ export interface FaucetContext {
  * eagerly (fail-fast on misconfiguration) and the RPC clients are
  * reused across requests.
  */
-export async function createFaucetContext(): Promise<FaucetContext> {
+export async function createFaucetContext(
+  nicknameDb: NicknameDb
+): Promise<FaucetContext> {
   const rpc = createSolanaRpc(devnet(CONFIG.rpcEndpoint));
   const rpcSubs = createSolanaRpcSubscriptions(devnet(CONFIG.wsEndpoint));
   const sendAndConfirm = sendAndConfirmTransactionFactory({
@@ -74,7 +79,7 @@ export async function createFaucetContext(): Promise<FaucetContext> {
   const authority = await createKeyPairSignerFromBytes(
     loadFaucetKeypairBytes()
   );
-  return { rpc, rpcSubs, sendAndConfirm, authority };
+  return { rpc, rpcSubs, sendAndConfirm, authority, nicknameDb };
 }
 
 export interface MintResult {

@@ -51,6 +51,11 @@ export const CONFIG = {
     60 *
     1000,
   logLevel: optional("LOG_LEVEL", "info"),
+  // Path to the SQLite file backing the globally-unique-nickname registry
+  // (Pre-Mainnet 5.0.10). Default is `./data/nicknames.db` relative to the
+  // service cwd; in production it points at a bind-mounted host directory
+  // so the file survives container restarts.
+  nicknameDbPath: optional("NICKNAME_DB_PATH", "./data/nicknames.db"),
 } as const;
 
 /**

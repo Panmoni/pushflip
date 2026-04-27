@@ -7,6 +7,7 @@
  * game id the UI binds to, network selection, etc.
  */
 
+import { TEST_FLIP_MINT } from "@pushflip/client";
 
 /**
  * Devnet RPC HTTP endpoint. Used by both the wallet adapter's
@@ -47,12 +48,17 @@ export const RPC_WS_ENDPOINT: string =
   deriveWsEndpoint(RPC_ENDPOINT);
 
 /**
- * Test `$FLIP` mint on devnet. Re-exported from `@pushflip/client` so
- * there is exactly one source of truth; no hardcoding here.
- * (16th heavy-duty review M1 — previously triplicated across the app,
- * the faucet, and `scripts/devnet-config.ts`.)
+ * Test `$FLIP` mint on devnet. Aliased from `@pushflip/client`'s
+ * `TEST_FLIP_MINT` so there is exactly one source of truth; no
+ * hardcoding here. (16th heavy-duty review M1 — previously
+ * triplicated across the app, the faucet, and
+ * `scripts/devnet-config.ts`.)
+ *
+ * Declared as a local `const` rather than `export ... from` because
+ * biome's `noBarrelFile` rule flags re-exports — see Pre-Mainnet
+ * 5.0.10 cleanup.
  */
-export { TEST_FLIP_MINT as TOKEN_MINT } from "@pushflip/client";
+export const TOKEN_MINT = TEST_FLIP_MINT;
 
 /**
  * Default game id the UI binds to. Phase 3.1 ships with a single hardcoded

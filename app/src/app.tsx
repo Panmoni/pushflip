@@ -1,4 +1,5 @@
 import { GameBoard } from "@/components/game/game-board";
+import { DemoStageBanner } from "@/components/misc/demo-stage-banner";
 import { Toaster } from "@/components/ui/sonner";
 import { ClusterHint } from "@/components/wallet/cluster-hint";
 import { ConnectionStatus } from "@/components/wallet/connection-status";
@@ -40,6 +41,13 @@ function App() {
               <WalletButton />
             </div>
           </header>
+
+          {/* Demo-stage notice. Always-on (until dismissed) so first-
+              time visitors understand the deploy scope: faucet + join
+              work, full gameplay needs the not-yet-deployed dealer.
+              Remove this component (and its file) when the dealer
+              ships in Phase 4 / Pre-Mainnet 5.2+. */}
+          <DemoStageBanner />
 
           {/* Devnet-cluster reminder. Only renders when a wallet is
               connected; dismissible per-session. Pairs with the

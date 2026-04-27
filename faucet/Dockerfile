@@ -39,6 +39,33 @@ COPY dealer/package.json ./dealer/
 COPY house-ai/package.json ./house-ai/
 COPY zk-circuits/package.json ./zk-circuits/
 
+# Rewrite pnpm's `workspace:*` protocol into npm-readable relative
+# `file:` paths. pnpm-only syntax breaks `npm install` with
+# "Unsupported URL Type" (npm 10 + 11 both reject it). We can't just
+# use `"*"` because pnpm interprets that as "fetch from registry"
+# locally (kills `pnpm install` at dev time). Keep `workspace:*` in
+# source for pnpm dev; rewrite per-Dockerfile for the npm container
+# build. The map matches every cross-workspace dep in this monorepo;
+# adding a new one means extending this list.
+RUN node -e "\
+  const fs = require('fs'); \
+  const map = { \
+    '@pushflip/client': '../clients/js', \
+    '@pushflip/dealer': '../dealer' \
+  }; \
+  for (const pkgPath of ['app/package.json', 'faucet/package.json', 'scripts/package.json']) { \
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')); \
+    for (const section of ['dependencies', 'devDependencies']) { \
+      if (!pkg[section]) continue; \
+      for (const [name, spec] of Object.entries(pkg[section])) { \
+        if (spec === 'workspace:*' && map[name]) { \
+          pkg[section][name] = 'file:' + map[name]; \
+        } \
+      } \
+    } \
+    fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2)); \
+  }"
+
 # --ignore-scripts: skip postinstall hooks that previously triggered
 # the same hang (biome/ultracite postinstalls do disk-heavy work). We
 # explicitly run `npm rebuild better-sqlite3` after to fetch its

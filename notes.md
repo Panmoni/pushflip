@@ -1,20 +1,17 @@
 # NOTES
 
 ## ToDo
-- manually review the deployment plan and make decisions
-
+- add SNS names
 - will need tools to analyze patterns to understand how cheating might be happening
-- colosseum weekly video https://arena.colosseum.org/hackathon
 - how to best share deployment privkey with Alex
 - deployment for wiki, host at wiki.pushflip.xyz, link to wiki from www and readmes
 - get server and start deploying the frontend etc there, CI/CD etc
-
-thread: 3.3. manually review the deployment plan and make decisions
 
 ### Future
 - should have a powers of tau ceremony involving humans at some point
 
 ## REF
+faucet 5vzyxxJ1NwoN5PgX1p2zCavbxc7mugLMdF7At5syGfA6
 
 ### Wiki
 cd wiki

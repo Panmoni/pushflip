@@ -80,7 +80,16 @@ RUN node -e "\
 # same flake hit `npm install -g serve@14` during the original 5.0.7
 # deploy. Bumping retries 2→5 + idle timeout 60s→10min handles it
 # without the operator having to re-run the deploy.
-RUN npm install \
+#
+# --mount=type=cache,target=/root/.npm: persist npm's tarball cache
+# across container builds. npm has no content-addressable store like
+# pnpm's, so a cold install re-downloads ~956 packages from
+# registry.npmjs.org every time (~60s on tucker's network). The cache
+# mount drops warm rebuilds to ~5s of cache-hit unpack. `sharing=locked`
+# serializes concurrent builds so they don't corrupt the shared cache.
+# Requires podman ≥ 4.0 (tucker has 5.4.2).
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    npm install \
     --no-audit --no-fund --ignore-scripts \
     --fetch-retries=5 \
     --fetch-retry-mintimeout=20000 \

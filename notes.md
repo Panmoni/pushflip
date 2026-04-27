@@ -1,7 +1,6 @@
 # NOTES
 
 ## ToDo
-- add SNS names
 - will need tools to analyze patterns to understand how cheating might be happening
 - how to best share deployment privkey with Alex
 - deployment for wiki, host at wiki.pushflip.xyz, link to wiki from www and readmes

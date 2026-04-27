@@ -54,7 +54,14 @@ REMOTE_REPO=/home/george9874/repos/pushflip
 PROD_ENV=/home/george9874/repos/pushflip/faucet/.env.production
 PUBLIC_ROOT_URL=https://play.pushflip.xyz
 PUBLIC_HEALTH_URL=https://play.pushflip.xyz/api/health
-SERVICES=(pushflip-vite pushflip-faucet)
+# NOTE the pod service is in the list explicitly. Without it, `systemctl
+# --user restart pushflip-vite pushflip-faucet` triggers ExecStopPost=podman
+# pod rm on the pod, fully removing it; then the start phase fails because
+# the containers' BindsTo=pushflip-pod.service can't bind to a removed pod.
+# Including the pod here puts all three in one restart group, so systemd
+# resolves the start dependency correctly. (Caught on the first real
+# Phase 4.3 dry-run.)
+SERVICES=(pushflip-pod pushflip-vite pushflip-faucet)
 DISK_THRESHOLD_PCT=85
 HEALTH_TIMEOUT_S=30
 

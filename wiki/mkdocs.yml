@@ -129,6 +129,7 @@ nav:
       - Overview: operations/index.md
       - Dealer Runbook: operations/dealer-runbook.md
       - Hosting & RPC: operations/hosting-and-rpc.md
+      - Podman rootless network traps: operations/podman-rootless-network-traps.md
       - Telegram Notifications: operations/telegram-notifications.md
       - Claude Hooks: operations/claude-hooks.md
   - Project History:

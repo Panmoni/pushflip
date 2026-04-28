@@ -1,7 +1,7 @@
 ---
 title: Operations
 diataxis_type: how-to
-last_compiled: 2026-04-11
+last_compiled: 2026-04-28
 ---
 
 # Operations
@@ -12,6 +12,7 @@ Runbooks and operational guides for deploying and running PushFlip in production
 |---|---|
 | **[Dealer Runbook](dealer-runbook.md)** | How to run the dealer service in production: env setup, snarkjs parameters, health checks, error recovery (stub — fleshed out when the dealer first deploys to production) |
 | **[Hosting & RPC](hosting-and-rpc.md)** | Infrastructure sizing for 2 concurrent games, resource budget, VPS provider selection (OVH), Helius RPC plan, bottom-line monthly cost |
+| **[Podman rootless network traps](podman-rootless-network-traps.md)** | Why `podman build --network=host` is in the deploy script: the netavark TCP keep-alive bug that ate ~7 hours of debugging across pnpm and npm before the actual cause was found |
 | **[Telegram Notifications](telegram-notifications.md)** | GitHub Actions workflow for push notifications: setup, verification, security, customization |
 | **[Claude Hooks](claude-hooks.md)** | AI-assisted development safety nets: protected file guards, blocked command patterns, audit log, escape hatches |
 

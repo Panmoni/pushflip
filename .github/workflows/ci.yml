@@ -67,35 +67,43 @@ jobs:
           cache: pnpm
 
       - name: Install workspace deps
-        run: pnpm install --frozen-lockfile --ignore-scripts
-        # --ignore-scripts: same reason as the Dockerfile — skip
-        # biome/ultracite postinstalls that aren't needed for CI gates.
+        run: pnpm install --frozen-lockfile
+        # The repo-level `.npmrc` already sets `ignore-scripts=true`,
+        # which skips biome/ultracite postinstalls AND better-sqlite3's
+        # `prebuild-install || node-gyp rebuild` install script. The
+        # better-sqlite3 binding is restored by the dedicated step
+        # below. The `--ignore-scripts` CLI flag was previously passed
+        # here too — it was redundant with the .npmrc setting, so
+        # removed for clarity.
 
       - name: Build better-sqlite3 native binding
-        # --ignore-scripts above skips better-sqlite3's own postinstall,
-        # which is the step that fetches/compiles its .node binary.
-        # Without this rebuild, faucet tests that touch the nicknames
-        # DB fail with "Could not locate the bindings file". Rebuilding
-        # only this one package keeps the security posture of
-        # --ignore-scripts intact (biome/ultracite postinstalls stay
-        # blocked). Mirrors the faucet/dealer Dockerfiles, which use
-        # the same `--ignore-scripts` + targeted rebuild + require()
-        # smoke pattern.
-        run: pnpm rebuild better-sqlite3
+        # The repo's `.npmrc ignore-scripts=true` blocks every form of
+        # `pnpm install/rebuild` from running install scripts, even
+        # with explicit allow-lists like `pnpm.onlyBuiltDependencies`
+        # — verified empirically (commit 7f8e646's `pnpm rebuild
+        # better-sqlite3` step ran in 700ms with zero output and
+        # produced no binding). The reliable bypass is to invoke the
+        # package's own install script directly via `npm run install`
+        # from its directory: that runs `prebuild-install`, which
+        # downloads the precompiled binding from upstream's GitHub
+        # release for the current (node-20, linux-x64) tuple. The
+        # `bash -c` form lets the glob expand the pnpm-store path
+        # without committing to a specific better-sqlite3 version.
+        run: |
+          cd node_modules/.pnpm/better-sqlite3@*/node_modules/better-sqlite3
+          npm run install
 
       - name: Verify better-sqlite3 native binding loads
-        # Load-bearing guard, not paranoia. `pnpm rebuild` can silently
-        # succeed-while-failing: if upstream ever drops the prebuild
-        # for our (node-20, linux-x64, glibc) tuple it falls back to
-        # a from-source build that needs python3/make/g++; if any of
-        # those are missing the fallback fails to produce a binding
-        # but the rebuild step itself still exits 0. The require()
-        # call below fails loudly with the same error the faucet
-        # tests would hit, giving a clear signal at install time
-        # rather than several steps later inside `pnpm test`. Pattern
-        # mirrored from faucet/Dockerfile (see comments there for the
-        # full rationale).
-        run: pnpm --filter @pushflip/faucet exec node -e "require('better-sqlite3')"
+        # Load-bearing guard. `require('better-sqlite3')` alone does
+        # NOT trigger the binding load — better-sqlite3's lib/database.js
+        # only calls `require('bindings')('better_sqlite3.node')` lazily
+        # inside the Database constructor (line 48). So this step
+        # instantiates an in-memory Database AND executes a query,
+        # which forces the .node file to load. Without this, a missing
+        # binding would slip past the smoke and only surface inside
+        # `pnpm test`, several steps later, with a less actionable
+        # failure context.
+        run: pnpm --filter @pushflip/faucet exec node -e "const D=require('better-sqlite3'); const db=new D(':memory:'); db.exec('SELECT 1'); db.close()"
 
       - name: Lint (app)
         run: pnpm --filter @pushflip/app lint

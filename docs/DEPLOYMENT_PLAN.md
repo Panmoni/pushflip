@@ -33,6 +33,43 @@ The deploy script absorbed each of these as it learned. End state: cache-warm re
 - **Stray `pushflip-faucetatest:latest` typo'd image tag** reappeared on tucker after a `podman rmi` cleanup — likely regenerated from build history. Cosmetic; investigate next deploy if it persists.
 - See **Phase 5.5 deferred list** (further down) for Helius Developer-tier upgrade trigger, dealer productionization, Cloudflare orange-cloud re-enable, monthly podman prune cron, keypair rotation SOP, GitHub Actions CI, Prometheus monitoring.
 
+### Pre-Mainnet 5.2 / Phase 4 (dealer service) — CODE-COMPLETE pre-deploy 2026-04-28
+
+The ZK dealer that previously ran only inside `scripts/smoke-test.ts` is now a long-running Hono daemon at [`dealer/src/service.ts`](../dealer/src/service.ts) wrapping the existing `Dealer` class. Five decisions locked in (full rationale in [`docs/wiki/operations/dealer-runbook.md`](wiki/operations/dealer-runbook.md)):
+
+1. **Dedicated dealer keypair** (Option C) — `init-game.ts` accepts `DEALER_PUBKEY` env var; the production game gets initialized with a separate `pushflip-dealer.json` keypair so tucker compromise yields "can re-shuffle this game's deck", not arbitrary token movement. Same blast-radius separation as the 5.0.7 faucet keypair pattern.
+2. **Polling auto-commit** — `startAutoCommitLoop` polls GameSession every 5s, triggers `commit_deck` when `!round_active && !deck_committed && active_player_count >= 2 && round_number !== committedRoundNumber`. `commitInFlight` mutex claimed BEFORE the first await (H2 race fix). Reset gated on `!roundActive && !deckCommitted` so the loop doesn't wipe the local Merkle tree between commit and start_round (H1 state-machine fix).
+3. **`commit_deck` submission** extracted to [`dealer/src/commit-tx.ts`](../dealer/src/commit-tx.ts) — single shared helper between auto-loop and any future caller. `COMMIT_DECK_COMPUTE_LIMIT=400_000` lives next to it.
+4. **Frontend `useGameActions.hit()` wired** — reads on-chain `roundNumber + drawCounter`, fetches reveal from `GET /api/dealer/reveal/:gameId/:roundNumber/:leafIndex` (5s timeout, schema-validated, hex-decoded Merkle proof), then submits the hit ix.
+5. **nginx route `/api/dealer/*` → `127.0.0.1:3002`** — full diff against the live `play.pushflip.xyz.conf` inlined in the runbook. Separate rate-limit zone (`dealer_req`, 20r/s burst 30). Dealer service binds explicitly to `127.0.0.1` so nginx is the only ingress despite `Network=host`.
+
+**Heavy-duty review #19 clean** (1 Critical / 3 High / 3 Medium, all fixed pre-commit):
+- C1: `dealer/Dockerfile` workspace-rewrite list now includes `dealer/package.json` (was missing — Lesson #55 redux).
+- H1: deck-committed-vs-round-ended distinction in the auto-loop reset branch.
+- H2: mutex claimed before first await (no parallel commits across racing ticks).
+- H3: unauthenticated `POST /commit/:gameId` operator-override deleted.
+- M1: explicit `127.0.0.1` binding (was inheriting `0.0.0.0` from `@hono/node-server`).
+- M2: hex regex no longer case-insensitive.
+- M3: Dockerfile comment env var corrected (`DEALER_ZK_ARTIFACTS_DIR` → `ZK_ARTIFACTS_DIR`).
+
+Commit chain: `801e230 feat(dealer): productionize ZK dealer as long-running HTTP service` + `3601ee8 docs(dealer): document Pre-Mainnet 5.2 locked-in decisions + nginx diff`.
+
+**What's required to actually deploy** (gated on operator action; runbook step-by-step in `docs/wiki/operations/dealer-runbook.md`):
+- Generate the dealer keypair: `solana-keygen new --outfile ~/.config/solana/pushflip-dealer.json`
+- Fund it: `solana transfer <pubkey> 0.5 --url devnet`
+- Init a NEW game with `DEALER_PUBKEY=<pubkey> pnpm --filter @pushflip/scripts init-game` — the live `game_id=2` keeps its current dealer (= CLI wallet); production needs a fresh game id since `set_dealer` isn't exposed on chain.
+- `scp` the keypair to tucker (mode 0600 both ends).
+- Create `dealer/.env.production` on tucker (PORT=3002, ALLOWED_ORIGINS, RPC/WS, DEALER_KEYPAIR_PATH, ZK_ARTIFACTS_DIR=/app/zk-artifacts, GAME_ID).
+- Add `~/.config/containers/systemd/pushflip-dealer.container` quadlet (template in runbook).
+- Apply the nginx diff in `~/repos/server-config/nginx/conf.d/play.pushflip.xyz.conf` + reload nginx.
+- Fold the dealer build into `scripts/deploy-tucker.sh` (`SERVICES` + `CONTAINER_IMAGES` arrays + a third `podman build --network=host -t localhost/pushflip-dealer:latest -f dealer/Dockerfile .` step).
+- `bash scripts/deploy-tucker.sh`. Smoke: `curl https://play.pushflip.xyz/api/dealer/health`.
+- After it's live: delete `<DemoStageBanner>` and its mount in `app.tsx`.
+
+**Known gap**: dealer service has no automated tests of the auto-commit state machine. The H1/H2/H3 findings were state-machine bugs that targeted unit tests would have caught. Tracked as the next follow-up work item.
+
+---
+
 ### Pre-Mainnet 5.0.10 (display names) — DEPLOYED 2026-04-28
 
 Live in production. Adjective-noun nicknames (`woodland-quasar`, `fond-turquoise`, `fresh-galaxy`, …) replace `UoZh…naxa`-style truncations across the wallet pill, player rows, turn indicator, and event feed. localStorage persistence (5.0.10.b) means hard-refreshes don't burn a registry round-trip on previously-seen addresses.

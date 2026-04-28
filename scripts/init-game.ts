@@ -47,6 +47,7 @@ import {
   parseU64,
   PUSHFLIP_PROGRAM_ID,
 } from "@pushflip/client";
+import type { Address } from "@solana/kit";
 
 import { TEST_FLIP_MINT } from "./devnet-config.js";
 
@@ -72,6 +73,16 @@ const GAME_ID: bigint = (() => {
   if (!raw) return 1n;
   return parseU64(raw, "GAME_ID env var");
 })();
+
+// Optional dealer pubkey (Pre-Mainnet 5.2 / Decision #1 = Option C).
+// Default: same as the CLI wallet (legacy behavior). For
+// productionized dealer deploys, set DEALER_PUBKEY=<dedicated-pubkey>
+// so the on-chain `dealer` field is a separate keypair from the
+// CLI authority (blast-radius separation, mirrors the 5.0.7 faucet
+// pattern). The dedicated keypair lives at
+// /home/george9874/.config/solana/pushflip-dealer.json on tucker
+// once the deploy lands.
+const DEALER_PUBKEY: string | null = process.env.DEALER_PUBKEY?.trim() || null;
 
 const TREASURY_FEE_BPS = 200; // 2%
 
@@ -131,15 +142,29 @@ async function main(): Promise<void> {
 
   // --- Initialize ---
   step(3, "Send Initialize instruction");
-  // Same wallet fills authority + dealer + house + treasury for simplicity.
+  // authority + house + treasury default to the CLI wallet for
+  // simplicity (single operator running the game). `dealer` is
+  // overridable via DEALER_PUBKEY env var (Pre-Mainnet 5.2 /
+  // Decision #1 = Option C): when set, the dedicated dealer keypair
+  // signs `commit_deck` from tucker without exposing the CLI
+  // wallet's broader authority. When unset, defaults to wallet.address
+  // (legacy behavior, same blast radius as before).
   // tokenMint is the real test mint; vault_ready stays false because no
   // SPL token account exists at the vault PDA.
+  const dealerAddress: Address = DEALER_PUBKEY === null
+    ? wallet.address
+    : (DEALER_PUBKEY as Address);
+  if (DEALER_PUBKEY !== null) {
+    info(`dealer:      ${dealerAddress} (from DEALER_PUBKEY env var)`);
+  } else {
+    info(`dealer:      ${dealerAddress} (default: CLI wallet)`);
+  }
   const initIx = getInitializeInstruction(
     {
       authority: wallet.address,
       gameSession: gamePda,
       house: wallet.address,
-      dealer: wallet.address,
+      dealer: dealerAddress,
       treasury: wallet.address,
       tokenMint: TEST_FLIP_MINT,
     },

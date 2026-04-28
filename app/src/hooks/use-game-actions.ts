@@ -35,11 +35,13 @@
  */
 
 import {
+  decodeGameSession,
   deriveGamePda,
   derivePlayerPda,
   deriveVaultPda,
   getBurnScryInstruction,
   getBurnSecondChanceInstruction,
+  getHitInstruction,
   getJoinRoundInstruction,
   getStayInstruction,
   MIN_STAKE,
@@ -51,6 +53,7 @@ import {
   appendTransactionMessageInstruction,
   createTransactionMessage,
   type Instruction,
+  parseBase64RpcAccount,
   pipe,
   type Signature,
   setTransactionMessageFeePayerSigner,
@@ -81,6 +84,127 @@ import { playerStateQueryKey } from "./use-player-state";
  * let users override this with any value `>= MIN_STAKE`.
  */
 const DEFAULT_STAKE_AMOUNT = MIN_STAKE;
+
+/**
+ * Resolve the dealer service base URL. Same shape + production guard
+ * as `resolveFaucetUrl` / `resolveNicknameBaseUrl`: dev defaults to
+ * `http://localhost:3002`, production builds REQUIRE
+ * `VITE_DEALER_URL=/api/dealer` (or similar same-origin path) and
+ * throw at module load if missing. Cross-origin URLs in production
+ * are refused — same exfiltration-class defense as the faucet
+ * resolver.
+ *
+ * Pre-Mainnet 5.2 / Phase 4. The path appended to this base for the
+ * card-reveal endpoint is `/reveal/:gameId/:roundNumber/:leafIndex`,
+ * which routes (after nginx strips `/api/dealer/`) to the dealer
+ * service's `GET /reveal/...` handler in `dealer/src/service.ts`.
+ */
+function resolveDealerUrl(): string {
+  const fromEnv = import.meta.env.VITE_DEALER_URL as string | undefined;
+  if (fromEnv && fromEnv.length > 0) {
+    if (!(import.meta.env.DEV || fromEnv.startsWith("/"))) {
+      throw new Error(
+        `VITE_DEALER_URL must be a same-origin relative path starting with "/" in production builds. Got: ${fromEnv}`
+      );
+    }
+    return fromEnv;
+  }
+  if (import.meta.env.DEV) {
+    return "http://localhost:3002";
+  }
+  throw new Error(
+    "VITE_DEALER_URL is required in production builds. Set it at build time to the deployed dealer service URL (e.g. /api/dealer)."
+  );
+}
+
+const DEALER_BASE_URL = resolveDealerUrl();
+
+// 32-byte hex sibling hash. Hoisted to module scope per biome's
+// `useTopLevelRegex` — `fetchDealerReveal` validates 7 of these per
+// hit, so re-compiling the regex inside a `.map` callback would
+// recompile 7 times per action.
+const HEX_SIBLING_HASH = /^[0-9a-f]+$/;
+
+interface DealerReveal {
+  card: { cardType: number; value: number; suit: number };
+  leafIndex: number;
+  /** 7 sibling hashes, 32 bytes each (decoded from hex). */
+  merkleProof: Uint8Array[];
+}
+
+/**
+ * Fetch the next card + Merkle proof from the dealer service for the
+ * given (gameId, roundNumber, leafIndex). The on-chain hit instruction
+ * validates `leafIndex` matches the GameSession's `draw_counter`; we
+ * trust the dealer to be in sync since both read the same on-chain
+ * state.
+ *
+ * Throws on network error, non-200 response, or malformed payload.
+ * The 5-second timeout (AbortSignal.timeout) is generous: a healthy
+ * dealer responds in ~5ms (purely in-memory tree lookup, no I/O
+ * beyond the HTTP overhead), so anything > 5s indicates a real
+ * problem the user should know about.
+ */
+async function fetchDealerReveal(
+  gameId: bigint,
+  roundNumber: bigint,
+  leafIndex: number
+): Promise<DealerReveal> {
+  const url = `${DEALER_BASE_URL}/reveal/${gameId}/${roundNumber}/${leafIndex}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Dealer reveal failed (HTTP ${res.status}): ${body}`);
+  }
+  const body = (await res.json()) as {
+    leaf_index?: number;
+    card?: { card_type?: number; value?: number; suit?: number };
+    merkle_proof?: string[];
+  };
+  if (
+    typeof body.leaf_index !== "number" ||
+    !body.card ||
+    typeof body.card.card_type !== "number" ||
+    typeof body.card.value !== "number" ||
+    typeof body.card.suit !== "number" ||
+    !Array.isArray(body.merkle_proof) ||
+    body.merkle_proof.length !== 7
+  ) {
+    throw new Error(
+      `Dealer reveal malformed: expected {leaf_index, card, merkle_proof[7]}, got ${JSON.stringify(body).slice(0, 200)}`
+    );
+  }
+  // Decode hex → Uint8Array per sibling. Each hash is 32 bytes = 64 hex chars.
+  const merkleProof: Uint8Array[] = body.merkle_proof.map((hex, i) => {
+    if (
+      typeof hex !== "string" ||
+      hex.length !== 64 ||
+      !HEX_SIBLING_HASH.test(hex)
+    ) {
+      throw new Error(
+        `Dealer reveal merkle_proof[${i}] is not a 64-char lowercase hex string`
+      );
+    }
+    const bytes = new Uint8Array(32);
+    for (let j = 0; j < 32; j++) {
+      bytes[j] = Number.parseInt(hex.slice(j * 2, j * 2 + 2), 16);
+    }
+    return bytes;
+  });
+  return {
+    leafIndex: body.leaf_index,
+    card: {
+      cardType: body.card.card_type,
+      value: body.card.value,
+      suit: body.card.suit,
+    },
+    merkleProof,
+  };
+}
 
 /**
  * Reduce an action failure to the single-line description that the
@@ -345,16 +469,53 @@ export function useGameActions(gameId: bigint = GAME_ID): UseGameActionsResult {
   });
 
   const hitMutation = useMutation({
-    mutationFn: (): Promise<Signature> => {
-      // hit() needs a card revealed by the dealer service + a Merkle proof
-      // for that card's position in the committed deck. Wiring the dealer
-      // HTTP API into the frontend is Task 3.6.3.
-      return Promise.reject(
-        new Error(
-          "hit() is not yet implemented — wire up the dealer service in Task 3.6.3"
-        )
-      );
-    },
+    mutationFn: () =>
+      runAction("Hit", async (player) => {
+        // Read the on-chain GameSession to learn the current
+        // round_number + draw_counter. The dealer's reveal endpoint
+        // will only return a valid card if these match its committed
+        // round + next leaf index. We could trust the dealer's
+        // internal counters, but reading the chain first means a
+        // dealer that's out of sync (crashed + restarted, missed a
+        // commit, etc.) gets caught here — before we burn the user's
+        // gas on a hit instruction the program would reject.
+        const [gameSession] = await deriveGamePda(gameId);
+        const [playerState] = await derivePlayerPda(gameId, player);
+        const accountInfo = await rpc
+          .getAccountInfo(gameSession, { encoding: "base64" })
+          .send();
+        const parsed = parseBase64RpcAccount(gameSession, accountInfo.value);
+        if (!parsed.exists) {
+          throw new Error(`GameSession at ${gameSession} does not exist`);
+        }
+        const gs = decodeGameSession(parsed.data);
+        if (!gs.roundActive) {
+          throw new Error(
+            "No active round — dealer hasn't committed a deck yet"
+          );
+        }
+
+        // Pre-Mainnet 5.2 / Decision #4: fetch the next card + Merkle
+        // proof from the dealer service. The dealer is the single
+        // source of truth for the shuffled deck; the on-chain program
+        // verifies the proof against the committed Merkle root.
+        const reveal = await fetchDealerReveal(
+          gameId,
+          gs.roundNumber,
+          gs.drawCounter
+        );
+
+        return getHitInstruction(
+          { gameSession, player, playerState },
+          {
+            cardValue: reveal.card.value,
+            cardType: reveal.card.cardType,
+            cardSuit: reveal.card.suit,
+            merkleProof: reveal.merkleProof,
+            leafIndex: reveal.leafIndex,
+          }
+        );
+      }),
   });
 
   /**

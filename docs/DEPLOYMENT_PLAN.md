@@ -33,18 +33,26 @@ The deploy script absorbed each of these as it learned. End state: cache-warm re
 - **Stray `pushflip-faucetatest:latest` typo'd image tag** reappeared on tucker after a `podman rmi` cleanup — likely regenerated from build history. Cosmetic; investigate next deploy if it persists.
 - See **Phase 5.5 deferred list** (further down) for Helius Developer-tier upgrade trigger, dealer productionization, Cloudflare orange-cloud re-enable, monthly podman prune cron, keypair rotation SOP, GitHub Actions CI, Prometheus monitoring.
 
-### Queued for the next redeploy — Pre-Mainnet 5.0.10 (display names)
+### Pre-Mainnet 5.0.10 (display names) — DEPLOYED 2026-04-28
 
-Code-complete 2026-04-27, awaiting `./scripts/deploy-tucker.sh` to land in production:
+Live in production. Adjective-noun nicknames (`woodland-quasar`, `fond-turquoise`, `fresh-galaxy`, …) replace `UoZh…naxa`-style truncations across the wallet pill, player rows, turn indicator, and event feed. localStorage persistence (5.0.10.b) means hard-refreshes don't burn a registry round-trip on previously-seen addresses.
 
-- **Faucet gains a SQLite-backed nickname registry.** New `GET /api/nickname/:address` endpoint (idempotent registration); `POST /api/faucet` registers as a side effect. New dep: `better-sqlite3@^11.7.0`. Bind-mounted DB at `/home/george9874/repos/pushflip/faucet/data/nicknames.db` (already provisioned on tucker; quadlet updated; `Environment=NICKNAME_DB_PATH` already set).
-- **Frontend renders globally-unique adjective-noun nicknames** in the wallet pill, every player row, the turn indicator, and the event feed (replacing the truncated `4…4` form everywhere). Falls back to truncation gracefully if the registry endpoint is unreachable.
-- **Deploy script change**: `--build-arg VITE_NICKNAME_URL=/api/nickname` added next to the existing `VITE_FAUCET_URL` arg. nginx already routes `/api/*` upstream, so no nginx config change.
-- **18th heavy-duty review clean** (0C / 0H / 2M / 9L, all 11 fixed in-session pre-deploy).
+**What landed in production:**
+- Faucet's SQLite registry (`/home/george9874/repos/pushflip/faucet/data/nicknames.db`) — idempotent `GET /api/nickname/:address` + side-effect registration on `POST /api/faucet`. better-sqlite3 native binding fetched cleanly via `npm rebuild better-sqlite3` + the Dockerfile smoke check.
+- Frontend `<DisplayName>` component everywhere; Phase B suffix fallback ready (untriggered until > 65K registered nicknames collide).
+- `--build-arg VITE_NICKNAME_URL=/api/nickname` wired through the deploy script.
 
-**Pre-deploy local E2E**: `bubbly-crystal` registered for `AczL…MDjH`, `topaz-seagull` for `CAgD…XDxb`; `/health` reported `nickname_count: 2`. Production redeploy will hit a fresh empty registry and assign nicknames as users arrive.
+**The deploy itself was a 7-hour saga** (logged in full in EXECUTION_PLAN.md Lessons #54-#56). Eight build-time install hangs in a row across the pnpm→npm migration, all symptoms of the same root cause: **podman's rootless netavark networking stack breaks npm's HTTP-agent connection pool, idling out long-lived TCP keep-alives at ~60s**. The fix that finally landed it: `--network=host` on `podman build` — the build container then uses the host's network stack directly (same as how the runtime pushflip pod already runs `Network=host`). Once that flag was in place, npm install completed in 43s on the first attempt of the retry loop; total deploy 2m 51s. The runtime services were never affected — only the *build* containers were.
 
-**Risk for this redeploy specifically**: `pnpm rebuild better-sqlite3` in the faucet Dockerfile is a new build step; if upstream ever drops the prebuild for our (node-20, linux-x64, glibc) target, the Dockerfile's `node -e "require('better-sqlite3')"` smoke check fails the build loud rather than producing a broken image. Tested locally; expected to work on tucker first try.
+**Layers kept after the saga, sorted by what they fix:**
+- `--network=host` on `podman build` — load-bearing correctness fix.
+- `npm install` (replacing `pnpm install`) — required as a side effect of the migration; not strictly needed now that we know the bug, but the migration is already shipped.
+- Workspace-protocol rewrite at Dockerfile build time (`workspace:*` → `file:../<path>`) — required because we use npm in the container; pnpm-native locally.
+- `--ignore-scripts` — biome postinstalls remain disk-heavy + unnecessary in the build image.
+- `--mount=type=cache,target=/root/.npm` — pure perf, ~40s → ~5s on warm rebuilds.
+- `--fetch-retries`, `--fetch-timeout`, retry loop, `--prefer-offline` — belt-and-suspenders for transient registry hiccups; never engaged in the successful build but cost nothing.
+
+**Browser E2E owed**: ✓ confirmed via the user's screenshot showing live nicknames `woodland-quasar` (connected), `fond-turquoise`, `fresh-galaxy` for three real wallets at `play.pushflip.xyz`.
 
 The original plan below is preserved as historical reference. **All five phases below are now DONE; the plan executed substantially as written.** The "What we encountered along the way" list above captures the deviations.
 

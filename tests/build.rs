@@ -34,6 +34,27 @@
 //! workspace target directory. To avoid a deadlock when the nested
 //! `cargo build-sbf` tries to acquire the same lock, we set
 //! `CARGO_TARGET_DIR` to an isolated directory for the child process.
+//!
+//! ## `PUSHFLIP_SKIP_SBF` hatch
+//!
+//! When the environment variable `PUSHFLIP_SKIP_SBF` is set (any value),
+//! the script writes a stub byte sequence to a SEPARATE file
+//! (`target/deploy-test/pushflip-skip-sbf-stub.so`) and exports
+//! `PUSHFLIP_TEST_SBF_PATH` pointing at it, instead of invoking
+//! `cargo build-sbf`. This is for `cargo check` / `cargo clippy` in
+//! environments that don't have the Solana platform-tools installed
+//! (notably the standard GitHub Actions runner). It exists so the
+//! integration test crate's source code (~1.5k LOC across `src/*.rs`)
+//! still gets type-checked in CI even though it can't be EXECUTED there.
+//!
+//! Two safety properties:
+//!   1. The stub goes to a different filename so a real
+//!      `pushflip.so` produced by a previous full build is never
+//!      clobbered.
+//!   2. The stub is intentionally NOT a valid SBF binary. Any test that
+//!      tries to actually load it under LiteSVM will fail loudly. The
+//!      hatch is for type-checking, not for masking missing tooling
+//!      during real test runs.
 
 use std::env;
 use std::path::{Path, PathBuf};
@@ -46,6 +67,9 @@ fn main() {
     println!("cargo:rerun-if-changed=../program/src");
     println!("cargo:rerun-if-changed=../program/Cargo.toml");
     println!("cargo:rerun-if-changed=build.rs");
+    // Toggling the skip hatch must invalidate the cache so the next
+    // build picks the correct branch (real .so vs stub).
+    println!("cargo:rerun-if-env-changed=PUSHFLIP_SKIP_SBF");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
@@ -54,11 +78,26 @@ fn main() {
         .to_path_buf();
 
     let sbf_out_dir = workspace_root.join("target").join("deploy-test");
+    std::fs::create_dir_all(&sbf_out_dir)
+        .unwrap_or_else(|e| panic!("failed to create {}: {e}", sbf_out_dir.display()));
+
+    if env::var_os("PUSHFLIP_SKIP_SBF").is_some() {
+        // Distinct path from `pushflip.so` so a real build artifact is
+        // never overwritten. The bytes themselves are intentionally not
+        // a valid ELF/SBF binary.
+        let stub_path = sbf_out_dir.join("pushflip-skip-sbf-stub.so");
+        std::fs::write(&stub_path, b"PUSHFLIP_STUB_SBF\n")
+            .unwrap_or_else(|e| panic!("failed to write stub {}: {e}", stub_path.display()));
+        println!(
+            "cargo:rustc-env=PUSHFLIP_TEST_SBF_PATH={}",
+            stub_path.display()
+        );
+        return;
+    }
+
     let nested_target_dir = sbf_out_dir.join("cargo-target");
     let test_binary = sbf_out_dir.join("pushflip.so");
 
-    std::fs::create_dir_all(&sbf_out_dir)
-        .unwrap_or_else(|e| panic!("failed to create {}: {e}", sbf_out_dir.display()));
     std::fs::create_dir_all(&nested_target_dir)
         .unwrap_or_else(|e| panic!("failed to create {}: {e}", nested_target_dir.display()));
 

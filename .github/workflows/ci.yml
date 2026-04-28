@@ -71,6 +71,32 @@ jobs:
         # --ignore-scripts: same reason as the Dockerfile — skip
         # biome/ultracite postinstalls that aren't needed for CI gates.
 
+      - name: Build better-sqlite3 native binding
+        # --ignore-scripts above skips better-sqlite3's own postinstall,
+        # which is the step that fetches/compiles its .node binary.
+        # Without this rebuild, faucet tests that touch the nicknames
+        # DB fail with "Could not locate the bindings file". Rebuilding
+        # only this one package keeps the security posture of
+        # --ignore-scripts intact (biome/ultracite postinstalls stay
+        # blocked). Mirrors the faucet/dealer Dockerfiles, which use
+        # the same `--ignore-scripts` + targeted rebuild + require()
+        # smoke pattern.
+        run: pnpm rebuild better-sqlite3
+
+      - name: Verify better-sqlite3 native binding loads
+        # Load-bearing guard, not paranoia. `pnpm rebuild` can silently
+        # succeed-while-failing: if upstream ever drops the prebuild
+        # for our (node-20, linux-x64, glibc) tuple it falls back to
+        # a from-source build that needs python3/make/g++; if any of
+        # those are missing the fallback fails to produce a binding
+        # but the rebuild step itself still exits 0. The require()
+        # call below fails loudly with the same error the faucet
+        # tests would hit, giving a clear signal at install time
+        # rather than several steps later inside `pnpm test`. Pattern
+        # mirrored from faucet/Dockerfile (see comments there for the
+        # full rationale).
+        run: pnpm --filter @pushflip/faucet exec node -e "require('better-sqlite3')"
+
       - name: Lint (app)
         run: pnpm --filter @pushflip/app lint
 
@@ -140,7 +166,15 @@ jobs:
           shared-key: pushflip-rust
 
       - name: Cargo check (all targets)
-        run: cargo check --all-targets --locked
+        # Exclude the integration-test crate: its build.rs invokes
+        # `cargo build-sbf`, which requires the Solana platform-tools
+        # that this runner intentionally doesn't install (see the
+        # workflow header — sbf builds are deferred to a slower job).
+        # `cargo check --all-targets` would still run that build.rs
+        # and panic. The test crate's source IS still type-checked,
+        # via the dedicated `Cargo check (integration test crate)`
+        # step below using `PUSHFLIP_SKIP_SBF=1`.
+        run: cargo check --workspace --exclude pushflip-tests --all-targets --locked
 
       - name: Cargo clippy (all targets, report-only)
         # `-D warnings` would block every PR on the ~24 deferred
@@ -149,7 +183,8 @@ jobs:
         # job log + summary, but doesn't block. Future tightening
         # (once the deferred warnings are cleaned up) should add
         # `-- -D warnings` here.
-        run: cargo clippy --all-targets --locked 2>&1 | tee clippy.log
+        # `--exclude pushflip-tests`: same reason as Cargo check above.
+        run: cargo clippy --workspace --exclude pushflip-tests --all-targets --locked 2>&1 | tee clippy.log
         continue-on-error: false
 
       - name: Cargo clippy summary
@@ -185,6 +220,22 @@ jobs:
         # `cargo build-sbf` to have run first. That's a separate slower
         # job (deferred — see workflow comment header).
         run: cargo test -p pushflip --locked
+
+      - name: Cargo check (integration test crate)
+        # Type-checks tests/src/*.rs (~1.5k LOC of LiteSVM-based
+        # integration tests) WITHOUT invoking `cargo build-sbf`.
+        # `PUSHFLIP_SKIP_SBF=1` makes tests/build.rs short-circuit and
+        # write a stub `pushflip-skip-sbf-stub.so` so the
+        # `include_bytes!(env!("PUSHFLIP_TEST_SBF_PATH"))` in the test
+        # source still resolves at compile time. This catches accidental
+        # compile breakage in the integration test crate that the
+        # `--exclude pushflip-tests` step above would otherwise let
+        # through. ACTUALLY RUNNING the tests is the deferred
+        # SBF-toolchain job's responsibility; this step is a typecheck
+        # gate only.
+        env:
+          PUSHFLIP_SKIP_SBF: "1"
+        run: cargo check -p pushflip-tests --tests --locked
 
       - name: Summary
         if: always()

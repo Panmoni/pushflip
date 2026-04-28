@@ -141,9 +141,24 @@ importers:
 
   dealer:
     dependencies:
+      '@hono/node-server':
+        specifier: ^1.19.0
+        version: 1.19.13(hono@4.12.12)
+      '@pushflip/client':
+        specifier: workspace:*
+        version: link:../clients/js
+      '@solana-program/compute-budget':
+        specifier: ^0.15.0
+        version: 0.15.0(@solana/kit@6.8.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@6.0.2)(utf-8-validate@6.0.6))
+      '@solana/kit':
+        specifier: ^6.8.0
+        version: 6.8.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@6.0.2)(utf-8-validate@6.0.6)
       circomlibjs:
         specifier: ^0.1.7
         version: 0.1.7(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      hono:
+        specifier: ^4.10.0
+        version: 4.12.12
       snarkjs:
         specifier: ^0.7.6
         version: 0.7.6

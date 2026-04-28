@@ -1,0 +1,197 @@
+name: CI
+
+# Gates every PR + push to main on:
+#   - TypeScript: lint, typecheck, tests, production bundle build
+#   - Rust: cargo check + clippy + unit tests against the program
+# Both job families run in parallel; failures fail the workflow.
+#
+# Deliberately NOT here:
+#   - cargo build-sbf (requires Solana toolchain, slow ~5m, deferred to
+#     a future job that runs on a schedule or workflow_dispatch only).
+#   - pnpm --filter @pushflip/dealer test (LiteSVM-based; runs locally,
+#     adds CI minutes for marginal value — re-enable once dealer
+#     productionization stabilizes).
+#   - Container build smoke (covered end-to-end by deploy-tucker.sh).
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'wiki/**'
+      - 'docs/wiki/**'
+      - 'scripts/wiki-health-check.sh'
+      - '.github/workflows/wiki-build.yml'
+      - '.github/workflows/telegram-notify.yml'
+      - 'notes.md'
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'wiki/**'
+      - 'docs/wiki/**'
+      - 'scripts/wiki-health-check.sh'
+      - '.github/workflows/wiki-build.yml'
+      - '.github/workflows/telegram-notify.yml'
+      - 'notes.md'
+  workflow_dispatch:
+
+# Least-privilege token. The workflow only needs to read repo contents
+# (checkout) — no writes, no PR comments, no package operations. Setting
+# this explicitly closes the org/repo default which is typically
+# `contents: write` and would let a compromised dep push to the repo
+# via the workflow's GITHUB_TOKEN. Defense-in-depth.
+permissions:
+  contents: read
+
+# Cancel an in-flight CI run when a new push lands on the same ref.
+# Saves CI minutes and gives faster feedback on the head commit.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typescript:
+    name: TypeScript (lint + typecheck + test + build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile --ignore-scripts
+        # --ignore-scripts: same reason as the Dockerfile — skip
+        # biome/ultracite postinstalls that aren't needed for CI gates.
+
+      - name: Lint (app)
+        run: pnpm --filter @pushflip/app lint
+
+      - name: Lint (faucet)
+        run: pnpm --filter @pushflip/faucet lint
+
+      - name: Typecheck (client)
+        run: pnpm --filter @pushflip/client exec tsc --noEmit
+
+      - name: Typecheck (app)
+        run: pnpm --filter @pushflip/app typecheck
+
+      - name: Typecheck (faucet)
+        run: pnpm --filter @pushflip/faucet typecheck
+
+      - name: Typecheck (scripts)
+        run: pnpm --filter @pushflip/scripts exec tsc --noEmit
+
+      - name: Test (client)
+        run: pnpm --filter @pushflip/client test
+
+      - name: Test (faucet)
+        run: pnpm --filter @pushflip/faucet test
+
+      - name: Test (app)
+        run: pnpm --filter @pushflip/app test
+
+      - name: Build (app — proves Vite production bundle compiles)
+        env:
+          # Match the deploy-script defaults so the build doesn't fail
+          # on the production-only env-var-required guards in
+          # use-faucet.ts / use-display-name.ts.
+          VITE_FAUCET_URL: /api/faucet
+          VITE_NICKNAME_URL: /api/nickname
+          VITE_RPC_ENDPOINT: https://api.devnet.solana.com
+          VITE_RPC_WS_ENDPOINT: wss://api.devnet.solana.com
+        run: pnpm --filter @pushflip/app build
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## TypeScript CI summary"
+            echo
+            echo "- pnpm: $(pnpm --version)"
+            echo "- node: $(node --version)"
+            echo "- workspaces: $(jq -r '.workspaces[]' package.json | wc -l)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  rust:
+    name: Rust (check + clippy + test)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo registry + build
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Scope cache to the workspace; the test harness shares the
+          # same target dir as the program so cache reuse is high.
+          shared-key: pushflip-rust
+
+      - name: Cargo check (all targets)
+        run: cargo check --all-targets --locked
+
+      - name: Cargo clippy (all targets, report-only)
+        # `-D warnings` would block every PR on the ~24 deferred
+        # dead-code warnings tracked under Task 3.B.End. Running
+        # without `-D warnings` so the report still appears in the
+        # job log + summary, but doesn't block. Future tightening
+        # (once the deferred warnings are cleaned up) should add
+        # `-- -D warnings` here.
+        run: cargo clippy --all-targets --locked 2>&1 | tee clippy.log
+        continue-on-error: false
+
+      - name: Cargo clippy summary
+        # Note: NOT `if: always()`. If the prior clippy step failed
+        # (which would be a `cargo clippy` invocation error, not a
+        # warning count), `clippy.log` may be missing or partial and
+        # this summary would lie. Letting the summary skip in that
+        # case keeps the GitHub run page honest.
+        run: |
+          if [ ! -s clippy.log ]; then
+            echo "clippy.log missing or empty — clippy step failed before producing output" >&2
+            exit 1
+          fi
+          # `^warning:` (with the colon) matches individual diagnostic
+          # headers and skips the per-crate roll-up like
+          # `warning: pushflip (lib) generated 8 warnings`.
+          # `^error:` is similarly precise.
+          warning_count=$(grep -c '^warning:' clippy.log || true)
+          error_count=$(grep -c '^error:' clippy.log || true)
+          {
+            echo "### Clippy"
+            echo
+            echo "- Warnings: $warning_count"
+            echo "- Errors: $error_count"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Fail the step if clippy produced ANY error (not warning).
+          # Errors here would mean a real lint regression, not a
+          # deferred dead-code warning.
+          [ "$error_count" -eq 0 ]
+
+      - name: Cargo test (program unit tests)
+        # `-p pushflip` skips the integration-test crate which requires
+        # `cargo build-sbf` to have run first. That's a separate slower
+        # job (deferred — see workflow comment header).
+        run: cargo test -p pushflip --locked
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Rust CI summary"
+            echo
+            echo "- rustc: $(rustc --version)"
+            echo "- cargo: $(cargo --version)"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -26,11 +26,12 @@
 //   grep -rn '\[publicKey\.toBase58()' app/src && exit 1
 
 `$hook($_callback, $deps)` where {
-    $hook <: or { `useEffect`, `useMemo`, `useCallback`, `useQuery` },
-    $deps <: contains `publicKey`,
-    register_diagnostic(
-        span = $deps,
-        message = "Wallet `publicKey` is an object reference; use `publicKeyBase58` (or another stable string) in hook deps. See Pre-Mainnet 5.0.8 / Lesson #40.",
-        severity = "error"
-    )
+  $hook <: or {
+    `useEffect`,
+    `useMemo`,
+    `useCallback`,
+    `useQuery`
+  },
+  $deps <: contains `publicKey`,
+  register_diagnostic(span=$deps, message="Wallet `publicKey` is an object reference; use `publicKeyBase58` (or another stable string) in hook deps. See Pre-Mainnet 5.0.8 / Lesson #40.", severity="error")
 }

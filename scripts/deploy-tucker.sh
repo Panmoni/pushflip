@@ -131,8 +131,17 @@ ssh "$REMOTE_HOST" "cd $REMOTE_REPO && git fetch origin main && git checkout mai
 ok "main checked out + workspace installed"
 
 # --- Rebuild images ---
+# `--network=host`: bypass podman's rootless netavark stack during the
+# build. From the host, `curl https://registry.npmjs.org/...` returns
+# 200 in 0.37 s; from inside a default-network rootless container,
+# the same fetch idle-times-out at ~60 s under EIDLETIMEOUT (verified
+# 2026-04-27 after 8 consecutive deploy attempts hit the same
+# pattern). Netavark mangles the TCP keep-alives that npm's HTTP
+# agent relies on. Using host networking for the BUILD only —
+# runtime containers still use the pod's Network=host already.
 step "rebuilding pushflip-vite (~2-15 min depending on lockfile churn)"
 ssh "$REMOTE_HOST" "set -a; source $PROD_ENV; set +a; cd $REMOTE_REPO && podman build \
+  --network=host \
   -t localhost/pushflip-vite:latest \
   --build-arg VITE_FAUCET_URL=/api/faucet \
   --build-arg VITE_NICKNAME_URL=/api/nickname \
@@ -143,7 +152,7 @@ ssh "$REMOTE_HOST" "set -a; source $PROD_ENV; set +a; cd $REMOTE_REPO && podman 
 ok "pushflip-vite:latest built"
 
 step "rebuilding pushflip-faucet (~1-3 min)"
-ssh "$REMOTE_HOST" "cd $REMOTE_REPO && podman build -t localhost/pushflip-faucet:latest -f faucet/Dockerfile ." \
+ssh "$REMOTE_HOST" "cd $REMOTE_REPO && podman build --network=host -t localhost/pushflip-faucet:latest -f faucet/Dockerfile ." \
   || { fail "pushflip-faucet build failed"; print_rollback_cmd; exit 1; }
 ok "pushflip-faucet:latest built"
 

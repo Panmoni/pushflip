@@ -1,16 +1,17 @@
 ---
 title: Dealer Runbook
 diataxis_type: how-to
-last_compiled: 2026-04-15
+last_compiled: 2026-04-28
 related_wiki:
   - operations/hosting-and-rpc.md
+  - operations/podman-rootless-network-traps.md
   - architecture/index.md
   - architecture/threat-model.md
 ---
 
 # Dealer Runbook
 
-Operational guide for running the PushFlip ZK dealer ([dealer/](https://github.com/Panmoni/pushflip/blob/main/dealer)) in production. Today the dealer only runs as part of the smoke-test pipeline; this page is the runbook for the first 24/7 deployment.
+Operational guide for running the PushFlip ZK dealer ([dealer/](https://github.com/Panmoni/pushflip/blob/main/dealer)) in production. Today the dealer runs as part of the smoke-test pipeline + as a service skeleton ([`dealer/src/service.ts`](https://github.com/Panmoni/pushflip/blob/main/dealer/src/service.ts), code-complete pre-deploy 2026-04-28). This page is the runbook for the first 24/7 deployment.
 
 **Scope.** Phase 3 (devnet active demos) and Phase 4 (House AI depends on a live dealer). Mainnet-scale operations are out of scope until [Pre-Mainnet 5.0.2](https://github.com/Panmoni/pushflip/blob/main/docs/EXECUTION_PLAN.md) (threshold randomness) replaces the single-trusted-dealer model.
 
@@ -26,7 +27,168 @@ A TypeScript service that owns the random shuffle + ZK proof for every round:
 4. **Submit.** Sign + send `commit_deck` with the proof + root + canonical hash as instruction data. Only the game's dealer keypair can sign this instruction.
 5. **Reveal.** As players call `hit`, serve each card with its 7-depth Merkle proof so the on-chain `sol_poseidon`-backed Merkle verifier can confirm the card was in the committed deck.
 
-Source lives at [`dealer/src/dealer.ts`](https://github.com/Panmoni/pushflip/blob/main/dealer/src/dealer.ts). Today consumed directly in-source via `tsx` (`pnpm --filter @pushflip/dealer start`) — no compiled artifact, no separate Dockerfile yet.
+Source lives at [`dealer/src/dealer.ts`](https://github.com/Panmoni/pushflip/blob/main/dealer/src/dealer.ts) (the library) and [`dealer/src/service.ts`](https://github.com/Panmoni/pushflip/blob/main/dealer/src/service.ts) (the HTTP daemon wrapping it). The library is consumed in-source via `tsx`; the service runs in its own podman container per the deploy described below.
+
+## Pre-Mainnet 5.2 deploy plan (target: tucker, share infra with faucet)
+
+This is the concrete plan for the first dealer production deploy. It sits on top of the existing tucker infrastructure ([Pre-Mainnet 5.0.7 deploy](https://github.com/Panmoni/pushflip/blob/main/docs/DEPLOYMENT_PLAN.md)) — same VPS, same nginx, same podman+systemd-quadlet pattern, same `pushflip` pod. The dealer becomes a third container in the pod alongside `pushflip-vite` and `pushflip-faucet`.
+
+Status as of 2026-04-28: **service skeleton + Dockerfile + this runbook are committed; actual deploy is gated on the open decisions in the next subsection.**
+
+### Decisions locked in 2026-04-28 (Pre-Mainnet 5.2)
+
+1. **Dealer keypair source = Option C: new game with dedicated dealer keypair.** The current `game_id=2` dealer is `wallet.address` from the user's CLI wallet `~/.config/solana/id.json`. Shipping that to tucker would expand blast radius beyond pushflip-devnet. The on-chain program has no `rotate-dealer` instruction (only the `set_dealer` setter on `GameSession` exists, but it's not exposed via any instruction), so rotation requires a fresh `init_game` with the new dealer pubkey. Cost: `GAME_ID` constant in [`app/src/lib/constants.ts`](https://github.com/Panmoni/pushflip/blob/main/app/src/lib/constants.ts) changes (likely `2n` → `3n`). [`scripts/init-game.ts`](https://github.com/Panmoni/pushflip/blob/main/scripts/init-game.ts) updated to accept `DEALER_PUBKEY` env var (defaulting to wallet.address for legacy behavior).
+
+2. **Round commit trigger = polling auto-commit, no manual override exposed.** [`dealer/src/service.ts`](https://github.com/Panmoni/pushflip/blob/main/dealer/src/service.ts)'s `startAutoCommitLoop` polls the GameSession every `POLL_INTERVAL_MS=5000` ms. When `!round_active && !deck_committed && active_player_count >= MIN_PLAYERS_TO_COMMIT (=2) && committedRoundNumber !== current round_number`, the loop calls `commitDeckForGame`. The `commitInFlight` mutex is claimed BEFORE the first await so two ticks can't race past it; same single-threaded-Node-event-loop reasoning as the faucet's `pendingClaims` Set, applied at the right point in the function body. The `POST /commit/:gameId` operator-override endpoint was deliberately NOT exposed (heavy-duty review finding H3 — public, unauthenticated, no player-count guard); if needed later, add it back behind a shared-secret header (`X-Dealer-Operator: ...`) plus the same player-count check the auto-loop has.
+
+3. **`commit_deck` submission code path = extracted to [`dealer/src/commit-tx.ts`](https://github.com/Panmoni/pushflip/blob/main/dealer/src/commit-tx.ts).** New `commitDeckForGame()` helper takes `{dealer, dealerSigner, rpc, sendAndConfirm, gameId}` and runs: shuffle → build `commit_deck` ix with `COMMIT_DECK_COMPUTE_LIMIT=400_000` CU bump → blockhash → sign → confirm → return `{signature, gameSession}`. The auto-commit poll loop is the single caller. `scripts/smoke-test.ts` keeps its inline copy for now (separate cleanup task — folding the smoke-test into the helper would require a small smoke-test refactor that's not load-bearing for the dealer deploy).
+
+4. **Frontend `hit()` integration = wired in [`app/src/hooks/use-game-actions.ts`](https://github.com/Panmoni/pushflip/blob/main/app/src/hooks/use-game-actions.ts).** New `resolveDealerUrl()` (same shape + production guard as `resolveFaucetUrl` / `resolveNicknameBaseUrl`) + `fetchDealerReveal(gameId, roundNumber, leafIndex)` helper. The hit mutation now: reads on-chain `GameSession.roundNumber + drawCounter` → fetches `/api/dealer/reveal/<gameId>/<roundNumber>/<drawCounter>` → builds `getHitInstruction` with the returned card + proof → wallet-signs + submits. New env var `VITE_DEALER_URL` (build-time, set to `/api/dealer` in production by the deploy script).
+
+5. **nginx route = `/api/dealer/*` → `127.0.0.1:3002`.** Same-origin path keeps CORS surface zero. Diff against the live `play.pushflip.xyz.conf` (in the `server-config` repo on tucker, NOT in this repo): add a new `location /api/dealer/` block BEFORE the existing `/api/` block (longest-prefix-match makes the dealer block win) + a separate rate-limit zone (`dealer_req`, 20r/s with burst 30 — generous because `/reveal` is hit per-action during a live round, where the faucet's 5r/s would bite a fast player). Full diff inlined below in the [nginx diff](#nginx-diff) section.
+
+### Deploy artifacts (committed alongside this runbook)
+
+- [`dealer/src/service.ts`](https://github.com/Panmoni/pushflip/blob/main/dealer/src/service.ts) — Hono daemon. Loads env config, opens RPC + WS, holds a single `Dealer` instance. Binds explicitly to `127.0.0.1:3002` so nginx is the only ingress (M1 fix — `Network=host` would otherwise expose the dealer on tucker's public IP, bypassing rate limiting). Endpoints: `GET /health`, `GET /round/:gameId`, `GET /reveal/:gameId/:roundNumber/:leafIndex`. Single-game v1 — multi-game support is a later increment.
+- [`dealer/Dockerfile`](https://github.com/Podman/pushflip/blob/main/dealer/Dockerfile) — same install discipline as `faucet/Dockerfile` after Lessons #54-#56: `node:20-slim`, `npm install` with retry loop + cache mount, `--ignore-scripts`, workspace-protocol rewrite at build time. ZK artifacts (~10 MB total: wasm + zkey + vkey) baked into `/app/zk-artifacts/` rather than bind-mounted — they're part of the circuit version and don't change without a redeploy anyway.
+- [`dealer/package.json`](https://github.com/Panmoni/pushflip/blob/main/dealer/package.json) — adds `@hono/node-server`, `@solana/kit`, `hono` as runtime deps. Adds `service` and `typecheck` npm scripts.
+
+### Deploy steps (when the open decisions above are resolved)
+
+```bash
+# 1. Decide the dealer keypair (decision #1) and place it on tucker:
+#    scp ~/.config/solana/pushflip-dealer.json tucker:~/.config/solana/pushflip-dealer.json
+#    ssh tucker 'chmod 600 ~/.config/solana/pushflip-dealer.json'
+#    Verify identity: ssh tucker 'solana-keygen pubkey ~/.config/solana/pushflip-dealer.json'
+#    Should match the on-chain `dealer` field of GameSession at game_id=2.
+
+# 2. Create /home/george9874/repos/pushflip/dealer/.env.production on
+#    tucker (mode 0600, NEVER in git):
+#       PORT=3002
+#       ALLOWED_ORIGINS=https://play.pushflip.xyz
+#       RPC_ENDPOINT=https://devnet.helius-rpc.com/?api-key=<HELIUS_KEY>
+#       WS_ENDPOINT=wss://devnet.helius-rpc.com/?api-key=<HELIUS_KEY>
+#       DEALER_KEYPAIR_PATH=/home/george9874/.config/solana/pushflip-dealer.json
+#       ZK_ARTIFACTS_DIR=/app/zk-artifacts
+#       GAME_ID=2
+
+# 3. Add the quadlet at ~/.config/containers/systemd/pushflip-dealer.container
+#    on tucker (template below).
+
+# 4. Add the dealer to the deploy script:
+#    Edit scripts/deploy-tucker.sh:
+#      - SERVICES=(pushflip-pod pushflip-vite pushflip-faucet pushflip-dealer)
+#      - CONTAINER_IMAGES=(pushflip-vite pushflip-faucet pushflip-dealer)
+#      - Add a third `podman build --network=host` step for the dealer
+#        (mirroring the existing pushflip-faucet step).
+
+# 5. Add the nginx /api/dealer/* proxy block to server-config + reload nginx.
+#    Concrete diff against the live play.pushflip.xyz.conf is in the
+#    "nginx diff" section below.
+
+# 6. ./scripts/deploy-tucker.sh
+```
+
+### nginx diff
+
+The dealer needs a same-origin path under `play.pushflip.xyz` so the SPA can `fetch('/api/dealer/...')` without CORS. nginx's `location` matching is longest-prefix-wins, so the new `/api/dealer/` block must appear in the same `server {}` as the existing `/api/` (faucet) block — order in the file does not matter, length of the prefix does. A separate rate-limit zone (`dealer_req`) avoids the faucet's 5r/s shared bucket eating a fast player's `/reveal` calls during a live round.
+
+Apply this diff to `~/repos/server-config/nginx/conf.d/play.pushflip.xyz.conf` on tucker (separate `server-config` repo — do NOT commit to pushflip):
+
+```diff
+@@ inside the `server { listen 443 ssl; ... }` block @@
+     include /etc/nginx/snippets/cloudflare-real-ip.conf;
+     include /etc/nginx/snippets/security-headers.conf;
+
++    # Dealer service (Pre-Mainnet 5.2). MUST appear before the /api/
++    # block conceptually — but nginx uses longest-prefix-match, so this
++    # /api/dealer/ block wins over /api/ regardless of file order.
++    # Strip the /api/dealer prefix; upstream sees /round/:gameId etc.
++    location /api/dealer/ {
++        proxy_pass http://127.0.0.1:3002/;
++        proxy_http_version 1.1;
++        proxy_set_header Host $host;
++        proxy_set_header X-Real-IP $remote_addr;
++        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
++        proxy_set_header X-Forwarded-Proto $scheme;
++        proxy_connect_timeout 30s;
++        proxy_send_timeout 60s;
++        proxy_read_timeout 60s;
++        # 20r/s burst 30 — generous because /reveal is hit per-action
++        # during a live round; the faucet's 5r/s would bite a fast
++        # player. Keyed on $http_cf_connecting_ip so Cloudflare's
++        # orange cloud doesn't collapse this to a single bucket.
++        limit_req zone=dealer_req burst=30 nodelay;
++    }
++
+     location /api/ {
+         proxy_pass http://127.0.0.1:3001/;
+         proxy_http_version 1.1;
+@@ end of file @@
+ limit_req_zone $http_cf_connecting_ip zone=faucet_req:10m rate=5r/s;
++limit_req_zone $http_cf_connecting_ip zone=dealer_req:10m rate=20r/s;
+```
+
+Reload procedure (matches the 5.0.7 deploy pattern):
+
+```bash
+ssh tucker
+cd ~/repos/server-config
+# edit nginx/conf.d/play.pushflip.xyz.conf, apply the diff above
+sudo podman exec nginx nginx -t          # MUST pass before reload
+sudo podman exec nginx nginx -s reload
+curl -I https://play.pushflip.xyz/api/dealer/health   # 200 once the dealer container is up
+```
+
+### Quadlet template
+
+`~/.config/containers/systemd/pushflip-dealer.container`:
+
+```ini
+[Unit]
+Description=PushFlip ZK Dealer Service
+After=network-online.target pushflip-pod.service
+Wants=network-online.target pushflip-pod.service
+
+[Container]
+Image=localhost/pushflip-dealer:latest
+ContainerName=pushflip-dealer
+Pod=pushflip.pod
+WorkingDir=/app/dealer
+
+EnvironmentFile=/home/george9874/repos/pushflip/dealer/.env.production
+
+# Dealer keypair — bind-mounted read-only.
+Volume=/home/george9874/.config/solana/pushflip-dealer.json:/home/george9874/.config/solana/pushflip-dealer.json:ro
+
+HealthCmd=wget -q --spider http://localhost:3002/health || exit 1
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=15s
+
+# 1 GB ceiling: snarkjs proof generation peaks ~600 MB during the
+# witness + Groth16 prover. 1 GB gives 65% headroom.
+PodmanArgs=--memory 1g --memory-reservation 512m
+
+LogDriver=journald
+
+[Service]
+Restart=always
+RestartSec=10s
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target
+```
+
+### Risks specific to this deploy
+
+- **Crash mid-round**: in-memory deck + Merkle tree are lost; players who haven't hit yet cannot proceed. Documented in [`service.ts` header](https://github.com/Panmoni/pushflip/blob/main/dealer/src/service.ts). Acceptable for the demo. Mainnet would need persistence of the encrypted shuffled deck or a different protocol.
+- **Single dealer instance, single game**: multi-game support is a later increment. For the demo with `game_id=2` only, single-instance is sufficient.
+- **`commit_deck` CU budget**: ~86K CU empirically, with the 200K headroom budget set in the smoke-test. The on-chain Groth16 verification dominates. Captured under Pre-Mainnet 5.0.4's `assertCuBudget(rpc, sig, "commit_deck", 200_000)` in smoke-test; the service should adopt the same compute-unit limit (`COMMIT_DECK_COMPUTE_LIMIT` constant).
+- **snarkjs proof time**: ~30s on the devnet smoke-test setup. tucker's hardware should be similar; verify on first commit. If it's >60s, the dealer's commit endpoint should return `202 Accepted` and process asynchronously rather than block the HTTP response.
 
 ## Deployment topology (when it lands)
 

@@ -63,17 +63,15 @@ import {
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
+import {
+  type AutoCommitTickDeps,
+  type RoundSnapshot,
+  MIN_PLAYERS_TO_COMMIT,
+  POLL_INTERVAL_MS,
+  startAutoCommitLoop as startAutoCommitLoopGeneric,
+} from "./auto-commit.js";
 import { commitDeckForGame } from "./commit-tx.js";
 import { Dealer, type DealerConfig } from "./dealer.js";
-
-// ============================================================================
-// Auto-commit poll loop tuning
-// ============================================================================
-
-/** Floor for triggering auto-commit. join_round at this count → commit_deck. */
-const MIN_PLAYERS_TO_COMMIT = 2;
-/** Interval between GameSession polls. 5s gives near-real-time response without burning RPC budget. */
-const POLL_INTERVAL_MS = 5_000;
 
 // ============================================================================
 // Configuration
@@ -346,28 +344,6 @@ export function createApp(ctx: DealerContext): Hono {
 // ============================================================================
 
 /**
- * Decoded snapshot of the relevant subset of GameSession fields the
- * poll loop needs. Decoupled from `GameSession` directly so a future
- * field addition doesn't churn this signature.
- */
-interface RoundSnapshot {
-  roundActive: boolean;
-  /**
-   * Whether the dealer has committed a deck for this round. Distinguishes
-   * the three off-states: init (`!roundActive && !deckCommitted`),
-   * committed-waiting-for-start (`!roundActive && deckCommitted`), and
-   * round-ended (`!roundActive && !deckCommitted` again, after end_round
-   * clears both flags). Critical for the reset branch in the poll loop:
-   * resetting on `!roundActive` alone would wipe the local Merkle tree
-   * the moment commit_deck lands, before start_round can use it.
-   */
-  deckCommitted: boolean;
-  roundNumber: bigint;
-  /** Number of seats currently occupied (player_count from the on-chain account). */
-  activePlayerCount: number;
-}
-
-/**
  * Read the GameSession PDA + return the round-relevant fields. Returns
  * `null` if the account doesn't exist yet (game not initialized) so the
  * caller can no-op on the next poll.
@@ -391,147 +367,37 @@ async function fetchGameSession(ctx: DealerContext): Promise<RoundSnapshot | nul
 
 /**
  * Decision #2 — auto-commit when enough players have joined and no
- * round is currently active. Runs every POLL_INTERVAL_MS in the
- * background; the only commit path. (Heavy-duty review finding H3:
- * the manual `POST /commit` operator-override endpoint was removed
- * because it was reachable unauthenticated through the public
- * `/api/dealer/*` nginx prefix and lacked the player-count guard.)
+ * round is currently active. Wires the pure tick (in
+ * `auto-commit.ts`) to the production I/O surface: real RPC fetch,
+ * real `commitDeckForGame`, real `Dealer` instance, `[dealer]`-
+ * prefixed `console` logging.
  *
- * Trigger conditions (all must hold):
- *   - GameSession exists on chain.
- *   - `round_active === false` (no live round).
- *   - `deck_committed === false` (no prior unbroken commit waiting).
- *   - `active_player_count >= MIN_PLAYERS_TO_COMMIT`.
- *   - The dealer hasn't already committed for this round_number
- *     (avoids double-commit if poll fires while the previous commit
- *     is still confirming).
- *   - `commitInFlight` is false (mutex against parallel commits;
- *     claimed BEFORE the first await — H2 fix).
- *
- * On commit success: records the round_number to `committedRoundNumber`
- * so subsequent `/reveal` queries validate cleanly.
- *
- * On commit failure: logs + resets the dealer state, lets the next
- * tick retry. Failures are usually transient (RPC blip, blockhash
- * stale, retry succeeds).
+ * The state-machine logic + the H1/H2 fixes from heavy-duty review
+ * #19 live in `auto-commit.ts` so they can be unit-tested without
+ * standing up the RPC / keypair / snarkjs stack. See
+ * `auto-commit.test.ts` for the regression-coverage suite.
  */
-function startAutoCommitLoop(ctx: DealerContext): NodeJS.Timeout {
-  const tick = async (): Promise<void> => {
-    // Mutex MUST be claimed before any `await` — otherwise a second
-    // setInterval tick can pass this same check while the first tick
-    // is still awaiting `fetchGameSession`, and both would reach the
-    // commit path in parallel. dealer.shuffle() mutates instance state
-    // (`merkleTree`, `serializedProof`), so two concurrent shuffles
-    // would corrupt each other and the on-chain `commit_deck` would
-    // reject the second once `deck_committed=true`.
-    if (ctx.commitInFlight) {
-      return;
-    }
-    ctx.commitInFlight = true;
-    try {
-      if (ctx.dealer.isRoundActive()) {
-        // Local dealer state already says we're mid-round. Three
-        // off-chain states are possible:
-        //   1. committed-waiting-for-start: deckCommitted=true,
-        //      roundActive=false. start_round hasn't run yet.
-        //      Local tree is still load-bearing — DO NOT reset.
-        //   2. round-active: roundActive=true. Stay parked.
-        //   3. round-ended: deckCommitted=false, roundActive=false.
-        //      end_round cleared both flags. Local tree is stale —
-        //      reset so the next round can commit.
-        // Distinguishing (1) from (3) requires reading `deckCommitted`,
-        // not just `roundActive`.
-        const gs = await fetchGameSession(ctx).catch((e) => {
-          const msg = e instanceof Error ? e.message : String(e);
-          console.warn(`[dealer] poll: re-entry GameSession fetch failed: ${msg}`);
-          return null;
-        });
-        if (gs && !gs.roundActive && !gs.deckCommitted) {
-          console.log(
-            `[dealer] round ${ctx.committedRoundNumber} ended on chain — resetting dealer for next round`
-          );
-          ctx.dealer.reset();
-          ctx.committedRoundNumber = null;
-        }
-        return;
-      }
-
-      let gs: RoundSnapshot | null;
-      try {
-        gs = await fetchGameSession(ctx);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.warn(`[dealer] poll: GameSession fetch failed: ${msg}`);
-        return;
-      }
-      if (gs === null) {
-        // Game not initialized yet; quietly try again next tick.
-        return;
-      }
-      if (gs.roundActive) {
-        // Race: chain says active, our local Dealer says no round. This
-        // can happen if the service restarted mid-round. Cards already
-        // dealt are unrecoverable — we can't re-shuffle and serve the
-        // same reveals. Wait for the round to end.
-        return;
-      }
-      if (gs.deckCommitted) {
-        // Chain says deck is committed (by us or a prior dealer instance)
-        // but local state is empty. We can't serve reveals against a
-        // committed Merkle root we no longer have. Wait for end_round
-        // to clear `deck_committed` before re-committing.
-        return;
-      }
-      if (gs.activePlayerCount < MIN_PLAYERS_TO_COMMIT) {
-        return;
-      }
-      // Avoid re-committing for the same round_number. The on-chain
-      // round_number doesn't increment until end_round runs, so checking
-      // `>= committed` (rather than `>`) handles the post-end_round case
-      // where the next round shares the prior counter momentarily.
-      if (
-        ctx.committedRoundNumber !== null &&
-        gs.roundNumber === ctx.committedRoundNumber
-      ) {
-        return;
-      }
-
-      try {
-        console.log(
-          `[dealer] auto-commit triggered — game=${ctx.config.gameId} round=${gs.roundNumber} players=${gs.activePlayerCount}`
-        );
-        const result = await commitDeckForGame({
-          dealer: ctx.dealer,
-          dealerSigner: ctx.authority,
-          rpc: ctx.rpc,
-          sendAndConfirm: ctx.sendAndConfirm,
-          gameId: ctx.config.gameId,
-        });
-        ctx.committedRoundNumber = gs.roundNumber;
-        console.log(
-          `[dealer] auto-commit OK — game=${ctx.config.gameId} round=${gs.roundNumber} sig=${result.signature}`
-        );
-      } catch (e) {
-        ctx.dealer.reset();
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error(
-          `[dealer] auto-commit failed for game ${ctx.config.gameId} round ${gs.roundNumber}: ${msg}`
-        );
-      }
-    } finally {
-      ctx.commitInFlight = false;
-    }
+function startServiceAutoCommitLoop(ctx: DealerContext): NodeJS.Timeout {
+  const deps: AutoCommitTickDeps = {
+    fetchSnapshot: () => fetchGameSession(ctx),
+    commitDeck: async () => {
+      const result = await commitDeckForGame({
+        dealer: ctx.dealer,
+        dealerSigner: ctx.authority,
+        rpc: ctx.rpc,
+        sendAndConfirm: ctx.sendAndConfirm,
+        gameId: ctx.config.gameId,
+      });
+      return { signature: result.signature };
+    },
+    isRoundActive: () => ctx.dealer.isRoundActive(),
+    resetDealer: () => ctx.dealer.reset(),
+    minPlayersToCommit: MIN_PLAYERS_TO_COMMIT,
+    log: (line) => console.log(`[dealer] ${line}`),
+    warn: (line) => console.warn(`[dealer] ${line}`),
+    errorLog: (line) => console.error(`[dealer] ${line}`),
   };
-
-  // setInterval fires-and-forgets the async tick. If a tick takes
-  // longer than POLL_INTERVAL_MS (proof generation can be 30s), the
-  // commitInFlight mutex above no-ops the overlapping invocations.
-  return setInterval(() => {
-    tick().catch((e) => {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error(`[dealer] poll tick error: ${msg}`);
-    });
-  }, POLL_INTERVAL_MS);
+  return startAutoCommitLoopGeneric(ctx, deps);
 }
 
 // ============================================================================
@@ -580,7 +446,7 @@ export async function main(): Promise<void> {
   });
 
   // Decision #2 — start auto-commit poll loop.
-  const pollHandle = startAutoCommitLoop(ctx);
+  const pollHandle = startServiceAutoCommitLoop(ctx);
 
   // SIGTERM/SIGINT: stop the poll loop cleanly so a deploy-time
   // redeploy doesn't leave a half-committed round in flight. The HTTP

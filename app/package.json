@@ -20,6 +20,7 @@
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",
     "@pushflip/client": "workspace:*",
+    "@solana-mobile/wallet-adapter-mobile": "^2.2.8",
     "@solana-program/token": "^0.13.0",
     "@solana/compat": "^6.8.0",
     "@solana/kit": "^6.8.0",

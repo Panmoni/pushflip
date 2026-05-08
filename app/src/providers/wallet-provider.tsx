@@ -22,41 +22,75 @@ import {
   ConnectionProvider,
 } from "@solana/wallet-adapter-react";
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
+import {
+  createDefaultAddressSelector,
+  createDefaultAuthorizationResultCache,
+  createDefaultWalletNotFoundHandler,
+  SolanaMobileWalletAdapter,
+} from "@solana-mobile/wallet-adapter-mobile";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import { type ReactNode, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 
-import { RPC_ENDPOINT } from "@/lib/constants";
+import { MWA_CHAIN, RPC_ENDPOINT } from "@/lib/constants";
 
 interface WalletProviderProps {
   children: ReactNode;
 }
 
 export function WalletProvider({ children }: WalletProviderProps) {
-  // Empty wallets array — every modern Solana wallet (Phantom 2024+,
-  // Solflare 2024+, Backpack, Glow, ...) registers itself via the
-  // Wallet Standard protocol on `window.navigator.wallets`, and
-  // `@solana/wallet-adapter-react@0.15.30+` discovers them
-  // automatically without needing explicit adapter constructors.
+  // Wallet list contains exactly one explicit adapter — the Mobile
+  // Wallet Adapter (MWA) for the Solana Seeker / dApp Store TWA path
+  // (Phase 2 of `docs/GO_TO_SEEKER.md`).
   //
-  // Earlier versions of this provider passed
-  // `[new PhantomWalletAdapter(), new SolflareWalletAdapter()]` here,
-  // which produced two console warnings on every page load:
+  // Desktop wallets (Phantom 2024+, Solflare 2024+, Backpack, Glow,
+  // ...) still auto-discover via the Wallet Standard protocol on
+  // `window.navigator.wallets`; we don't list them explicitly. MWA is
+  // the exception because it doesn't have a window-injected sibling —
+  // the host wallet (Seed Vault on Seeker, Phantom Mobile, etc.)
+  // talks via an Android intent bridge, not via `window.solana`.
   //
-  //   "Phantom was registered as a Standard Wallet. The Wallet
-  //    Adapter for Phantom can be removed from your app."
-  //   "Solflare was registered as a Standard Wallet. The Wallet
-  //    Adapter for Solflare can be removed from your app."
+  // Why include MWA on non-Android contexts: its `readyState` reports
+  // as `Unsupported` outside of an MWA-capable Android browser, so the
+  // wallet modal hides it automatically. Including it unconditionally
+  // is the documented Solana Mobile pattern — gating it ourselves
+  // would mean shipping browser-detection that the adapter already
+  // does internally.
   //
-  // Removing the explicit adapters drops both warnings, slims the
-  // bundle (the `@solana/wallet-adapter-phantom` and
-  // `@solana/wallet-adapter-solflare` packages can also be removed
-  // from package.json in a follow-up — they're now unused).
+  // `appIdentity.uri` MUST match the domain claimed by the
+  // `assetlinks.json` we'll publish in Phase 3 — mismatch fails the
+  // MWA handshake silently. We derive it from `window.location.origin`
+  // at construction time so dev (`http://localhost:5173`) and
+  // production (`https://play.pushflip.xyz`) both work without an
+  // env-var step.
   //
-  // The memoized empty array still gets a stable reference so
-  // `BaseWalletProvider` doesn't tear down its internal state on
-  // every render.
-  const wallets = useMemo(() => [], []);
+  // The `useMemo([])` is critical: `BaseWalletProvider` tears down
+  // its internal state when the wallets array reference changes.
+  // Constructing the adapter inside the memo guarantees one instance
+  // for the lifetime of the provider mount.
+  const wallets = useMemo(() => {
+    // Belt-and-suspenders SSR guard. Vite doesn't SSR our app today,
+    // but the adapter constructor reads `navigator` and would throw
+    // at module-init time if it ever ran in a Node context.
+    if (typeof window === "undefined") {
+      return [];
+    }
+    return [
+      new SolanaMobileWalletAdapter({
+        addressSelector: createDefaultAddressSelector(),
+        appIdentity: {
+          name: "PushFlip",
+          uri: window.location.origin,
+          // Resolved against `appIdentity.uri` — same SVG as the
+          // browser favicon and PWA manifest icon source.
+          icon: "/favicon.svg",
+        },
+        authorizationResultCache: createDefaultAuthorizationResultCache(),
+        chain: MWA_CHAIN,
+        onWalletNotFound: createDefaultWalletNotFoundHandler(),
+      }),
+    ];
+  }, []);
 
   const onError = useCallback((error: WalletError) => {
     // Surface adapter errors as toasts so the user sees them. The wallet

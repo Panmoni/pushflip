@@ -74,3 +74,21 @@ export const TOKEN_MINT = TEST_FLIP_MINT;
  *   the vault.
  */
 export const GAME_ID = 2n;
+
+/**
+ * Mobile Wallet Adapter (MWA) chain identifier — passed to
+ * `SolanaMobileWalletAdapter`'s `chain` field, which tells the on-device
+ * wallet (Seed Vault on Seeker, Phantom Mobile, etc.) which network to
+ * authorize the session for.
+ *
+ * Format follows CAIP-2 / Wallet Standard: `solana:devnet`,
+ * `solana:mainnet`, `solana:testnet`. Pushflip is devnet-only today;
+ * when the mainnet decision (Open Question #1 in `docs/GO_TO_SEEKER.md`)
+ * lands, this becomes a build-time env var alongside `VITE_RPC_ENDPOINT`.
+ *
+ * This is INDEPENDENT of `RPC_ENDPOINT` because the wallet's network
+ * choice and the app's RPC choice are decoupled — a private Helius
+ * mainnet RPC and `solana:mainnet` is a valid combo, as is the
+ * default public-devnet RPC and `solana:devnet`.
+ */
+export const MWA_CHAIN = "solana:devnet" as const;

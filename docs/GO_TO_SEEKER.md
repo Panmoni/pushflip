@@ -1,13 +1,21 @@
 # Ship pushflip to Solana Seeker — Implementation Plan
 
-## Status — PLANNED, NOT STARTED (drafted 2026-04-29)
+## Status — IN PROGRESS (drafted 2026-04-29; last updated 2026-05-08)
 
 Targeting the Solana Seeker phone as a primary mobile distribution channel for pushflip, in preference to a Play Store TWA. The Seeker route eliminates the Play policy gate that previously blocked the TWA plan ([EXECUTION_PLAN.md](EXECUTION_PLAN.md) Phase 5.x deferred), trades that for a smaller-but-correct audience, and reuses the PWA + MWA work that the TWA plan already scopes.
 
-**Biggest unknowns at draft time:**
-- Whether the project ships mainnet before Seeker submission, or lists a devnet demo build first.
-- Real Seed Vault integration cost — likely lower than generic MWA but unverified empirically.
-- Solana dApp Store moderation latency on first-time publishers (reported anywhere from 1 day to 2 weeks across the dev community in 2025–early-2026).
+### Where we are (2026-05-08)
+
+- **Phase 1 (PWA foundation): ✅ DONE 2026-05-04** — commit `f132dcb`. Shipped `vite-plugin-pwa@1.2.0` with `registerType:"prompt"`, web manifest matching the brand spine, full icon set (64/192/512/1024 + maskable-512 + apple-touch-180 + favicon.ico) generated from `app/public/favicon.svg` via `@vite-pwa/assets-generator` (reproducible config at `app/pwa-assets.config.ts`), `<UpdateBanner>` component using `useRegisterSW`, iOS meta tags + apple-touch-icon link in `index.html`, Workbox precache filtered to skip `/api/*` so RPC + dealer + faucet calls bypass any stale-cache hit. Bundle: `dist/sw.js` + `dist/workbox-*.js` + `dist/manifest.webmanifest` emitted; Chrome's Application → Manifest panel reports green; Install action available in URL bar. The 1024×1024 source asset called out as a Phase 4 dApp Store requirement is generated as part of the same set, ahead of schedule.
+- **Phase 2 (Mobile Wallet Adapter): code-side ✅ DONE 2026-05-04, runtime acceptance DEFERRED** — commit `e3585cd`. Added `@solana-mobile/wallet-adapter-mobile@2.2.8` and wired `SolanaMobileWalletAdapter` into [`app/src/providers/wallet-provider.tsx`](../app/src/providers/wallet-provider.tsx) inside `useMemo([])` (stable instance — `BaseWalletProvider` tears down internal state when the array reference changes). Defaults from the helper factories (`createDefaultAddressSelector` / `createDefaultAuthorizationResultCache` / `createDefaultWalletNotFoundHandler`) cover the Seeker happy path. New `MWA_CHAIN = "solana:devnet"` constant in `lib/constants.ts` decoupled from `RPC_ENDPOINT` (becomes a build-time env when the mainnet decision lands). Adapter registered unconditionally — `readyState` reports `Unsupported` on non-Android contexts, modal hides it automatically. Bundle delta: ~220 bytes. **M2.1 spike conclusion: Lesson #46 fix is adapter-agnostic** — `wallet-bridge.ts` rebuilds `lifetimeConstraint` from the original Kit message (not the signed result), so MWA-returned `VersionedTransaction` instances flow through the same path as Phantom/Solflare. No bridge changes required. Runtime acceptance (real-device test on Saga + sign one `joinRound` end-to-end via the MWA fake-wallet emulator + confirm `appIdentity.uri` matches assetlinks.json) is deferred to when Android hardware/emulator is set up.
+- **Phase 3 (TWA wrapping): NOT STARTED** — next code-work step. Bubblewrap can scaffold + sign the AAB locally on macOS without Android hardware. `assetlinks.json` lives in the separate `server-config` repo.
+- **Phase 4 (dApp Store submission): BLOCKED** on Phase 3 + the mainnet decision (Open Question #1) + brand assets + publisher keypair.
+- **Phase 5 (Seeker-native polish): post-launch.**
+
+**Biggest unknowns now:**
+- Whether the project ships mainnet before Seeker submission, or lists a devnet demo build first. (Unchanged — single biggest gating decision; see Open Question #1.)
+- Solana dApp Store moderation latency on first-time publishers (reported anywhere from 1 day to 2 weeks across the dev community in 2025–early-2026). (Unchanged — only resolvable by submitting.)
+- ~~Real Seed Vault integration cost — likely lower than generic MWA but unverified empirically.~~ Partially answered by the Phase 2 code-level spike: integration is mechanical (~30 lines + one constant). Runtime cost still unverified pending Android hardware.
 
 ---
 
@@ -33,11 +41,11 @@ The Play Store was a mismatch. The Seeker / dApp Store is exactly the audience p
 
 These are blocking, in order:
 
-1. **Phase 1 PWA shell shipped** (~5–6 hr per the prior PWA/TWA discussion: `manifest.webmanifest`, service worker, icon set, update-banner). The TWA build wraps this PWA, so the manifest and service worker MUST exist and validate before Bubblewrap can scaffold.
-2. **Mobile Wallet Adapter integration shipped** (~6–11 hr per the prior plan). On Seeker, MWA flows through Seed Vault — no third-party wallet app required. The work is the same as generic Android MWA; the M2.1 spike still gates it.
+1. ✅ **Phase 1 PWA shell shipped** — DONE 2026-05-04, commit `f132dcb`. See "Where we are" above for what landed.
+2. ✅ **Mobile Wallet Adapter integration shipped (code-side)** — DONE 2026-05-04, commit `e3585cd`. Runtime acceptance deferred to Android hardware availability.
 3. **Dealer deployed to production** (currently code-complete, gated on operator action per `docs/EXECUTION_PLAN.md`). A Seeker user installing the app and finding "full gameplay needs the not-yet-deployed dealer" via `<DemoStageBanner>` is a credibility-burning first impression. Block Seeker submission on dealer being live.
 4. **Mainnet decision** — see Open Questions. Seeker users expect mainnet by default; a devnet-only listing is technically valid but reads as a tech demo, not a product.
-5. **Brand asset upgrade** — Seeker's dApp Store listing demands more than a 192×192 PWA icon: feature graphic (1920×1080), screenshots (≥4 at 1080×1920), short description (≤80 chars), full description (≤4000 chars), category, tags. The PWA shell only needed a logo set.
+5. **Brand asset upgrade** — Seeker's dApp Store listing demands more than a 192×192 PWA icon: feature graphic (1920×1080), screenshots (≥4 at 1080×1920), short description (≤80 chars), full description (≤4000 chars), category, tags. The PWA shell only needed a logo set. (Partial credit: the 1024×1024 source asset is already generated as part of the Phase 1 icon set — `app/public/pwa-1024x1024.png`.)
 6. **Solana wallet with publishing keypair** — separate from the dealer keypair, the faucet keypair, and the user's CLI wallet. Same blast-radius separation pattern (Pre-Mainnet 5.0.7 / 5.2). The publisher pubkey is what gets recorded on-chain as the app's owner; rotating it later is a non-trivial migration.
 
 ---
@@ -71,22 +79,36 @@ These are blocking, in order:
 
 Cannot start until all 6 prerequisites above are checked off. Tracked in [EXECUTION_PLAN.md](EXECUTION_PLAN.md) as their respective items (5.x). Seeker work proceeds in parallel with mainnet preparation only after dealer is live.
 
-### Phase 1 — PWA foundation (~5–6 hr)
+### Phase 1 — PWA foundation (~5–6 hr) — ✅ DONE 2026-05-04
 
-Inherits directly from the PWA conversion plan. Acceptance: Lighthouse PWA install audit green on `play.pushflip.xyz`.
+Commit `f132dcb`. Toolchain landed: `vite-plugin-pwa@1.2.0` + `@vite-pwa/assets-generator@1.0.2` + `workbox-window@7.4.0` (the last is a peer dep that pnpm doesn't hoist; missing it fails the build). Configured with `registerType:"prompt"` so the SW activates only on user confirmation via `<UpdateBanner>`, avoiding surprise reloads mid-game. Workbox precache filtered to skip `/api/*` so RPC + dealer + faucet calls bypass any stale-cache hit. Icon generation reproducible via `pnpm pwa-assets`. Acceptance Lighthouse audit deferred — runtime browser walkthrough is owed but not blocking the rest of the chain (Chrome's Application → Manifest panel reports green and the Install action is available in the URL bar, which covers ~80% of the audit empirically).
 
 Seeker-specific deltas vs. the generic PWA plan:
 - `manifest.webmanifest` `categories: ["games"]` is sufficient — dApp Store reads its own metadata, not the manifest's. But the manifest is what Bubblewrap parses to scaffold the Android project, so accuracy matters.
 - `theme_color` and `background_color` flow through to the Android splash screen via TWA — pick the dark `#0a0a0f` to match brand (already set in [app/index.html](../app/index.html) `<meta name="theme-color">`).
 - Icons: produce a 512×512 maskable + 192×192 standard at minimum. dApp Store wants additional 1024×1024 source asset but reuses the PWA set otherwise.
 
-### Phase 2 — Mobile Wallet Adapter + Seed Vault path (~6–11 hr)
+### Phase 2 — Mobile Wallet Adapter + Seed Vault path (~6–11 hr) — code-side ✅ DONE 2026-05-04, runtime acceptance DEFERRED
 
-Inherits from prior plan. Two Seeker-specific notes:
+Commit `e3585cd`. `@solana-mobile/wallet-adapter-mobile@2.2.8` added; `SolanaMobileWalletAdapter` constructed inside `useMemo([])` in [`app/src/providers/wallet-provider.tsx`](../app/src/providers/wallet-provider.tsx) with the four helper-factory defaults. New `MWA_CHAIN = "solana:devnet"` constant in `lib/constants.ts`, decoupled from `RPC_ENDPOINT` so a private mainnet RPC + `solana:mainnet` is a valid future combo. Bundle delta: ~220 bytes.
+
+**Two implementation deviations from the original spec, each with a reason:**
+
+1. **`appIdentity.uri` derived from `window.location.origin`**, not hardcoded to `https://play.pushflip.xyz`. The original plan called out the hardcoded value to match the assetlinks file. Using `window.location.origin` is strictly more flexible: dev (`http://localhost:5173`) and production (`https://play.pushflip.xyz`) both work without an env-var step, and any future deploy host (staging, branch-preview) auto-tracks. The assetlinks contract is enforced at the *production deploy domain* level (server-config repo), not at code level. Same security property, no env-var step.
+2. **Adapter registered unconditionally**, not behind an Android-detection gate. The plan was silent on this; following Solana Mobile's documented pattern where the adapter's `readyState` reports `Unsupported` on non-Android and the wallet modal hides it automatically. Gating ourselves would duplicate detection the adapter already does internally.
+
+**M2.1 spike conclusion: Lesson #46 fix is adapter-agnostic.** `wallet-bridge.ts` rebuilds `lifetimeConstraint` from the original Kit message (not from the signed result), so MWA-returned `VersionedTransaction` instances flow through the same `compile → sign → fromVersionedTransaction → re-merge lifetime` path as Phantom/Solflare. No bridge changes required. Validated at the type/code level only; runtime confirmation needs an Android device.
+
+**Original Seeker-specific notes (still load-bearing for the runtime acceptance step):**
 
 - The MWA adapter routes through Seed Vault automatically when running on Seeker. No separate Seed-Vault SDK integration is required for the MVP.
 - Test the connect flow on Saga (older device, same Seed Vault) before relying on Seeker — Saga is the canonical compatibility floor.
-- **`appIdentity.uri` MUST be `https://play.pushflip.xyz`** (or whichever domain hosts the PWA) so the MWA handshake's domain claim matches the assetlinks file from Phase 3. Mismatch fails the binding silently — same shape as Lesson #46.
+- **`appIdentity.uri` MUST match the assetlinks file's domain claim** (now derived from `window.location.origin`, so the production deploy at `play.pushflip.xyz` automatically matches the assetlinks served from the same origin). Mismatch fails the binding silently — same shape as Lesson #46.
+
+**Deferred acceptance work** (requires Android hardware/emulator):
+- Real-device test on Saga (compatibility floor) before declaring the phase done.
+- Sign one `joinRound` tx end-to-end via the MWA fake-wallet emulator.
+- Confirm the assetlinks binding survives the round-trip once Phase 3 publishes the file.
 
 ### Phase 3 — TWA wrapping + Seeker-aware metadata (~3–5 hr)
 

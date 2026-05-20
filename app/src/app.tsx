@@ -1,6 +1,5 @@
 import { GameBoard } from "@/components/game/game-board";
 import { DemoStageBanner } from "@/components/misc/demo-stage-banner";
-import { UpdateBanner } from "@/components/misc/update-banner";
 import { Toaster } from "@/components/ui/sonner";
 import { ClusterHint } from "@/components/wallet/cluster-hint";
 import { ConnectionStatus } from "@/components/wallet/connection-status";
@@ -42,14 +41,6 @@ function App() {
               <WalletButton />
             </div>
           </header>
-
-          {/* PWA update notice. Renders only when the service worker
-              registered by vite-plugin-pwa detects a newer deploy.
-              Kept ABOVE the other banners so a stale-build user who
-              dismisses everything still sees the update prompt — the
-              only banner whose action (reload) materially affects
-              correctness, not just UX context. */}
-          <UpdateBanner />
 
           {/* Demo-stage notice. Always-on (until dismissed) so first-
               time visitors understand the deploy scope: faucet + join

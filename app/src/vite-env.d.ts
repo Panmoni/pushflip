@@ -1,6 +1,4 @@
 /// <reference types="vite/client" />
-/// <reference types="vite-plugin-pwa/react" />
-/// <reference types="vite-plugin-pwa/info" />
 
 /**
  * Augment Vite's `ImportMetaEnv` so that `VITE_*` env-var typos are caught at

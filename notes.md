@@ -1,12 +1,7 @@
 # NOTES
 
-## ToDo
-- will need tools to analyze patterns to understand how cheating might be happening
-- how to best share deployment privkey with Alex
-- deployment for wiki, host at wiki.pushflip.xyz, link to wiki from www and readmes
-
-### Future
-- should have a powers of tau ceremony involving humans at some point
+docs/EXECUTION_PLAN.md
+docs/DEPLOYMENT_PLAN.md
 
 ## REF
 faucet 5vzyxxJ1NwoN5PgX1p2zCavbxc7mugLMdF7At5syGfA6
